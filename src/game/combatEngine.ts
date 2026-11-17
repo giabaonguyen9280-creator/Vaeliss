@@ -11,10 +11,12 @@ import {
   executePlayerGuard,
   executePlayerSkill,
   executePlayerWeaponAttack,
+  executeSingleActorCombatAction,
   getLimbDebuffBadges,
   LimbDamagePreview,
   LimbDebuffBadge,
   PlayerState,
+  resolveEnemyCombatRound,
 } from './combat';
 
 export type CombatActionType = 'ATTACK' | 'SKILL' | 'ITEM' | 'TALK' | 'GUARD' | 'FLEE';
@@ -447,7 +449,173 @@ export class CombatEngine {
       endingTrigger = {
         id: 'SLAIN_IN_COMBAT',
         title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
-        subtitle: 'Thể Xác Bị Nghiền Nát Trong Giao Tranh',
+        subtitle: 'Sinh Lực Cạn Kiệt Trong Giao Tranh',
+        epilogue:
+          'Những nhát chém tàn khốc của quái vật đã kết thúc hành trình của bạn. Khi bắt đầu lại, Thung Lũng sẽ tái cấu trúc bằng một Seed ngẫu nhiên mới — hoặc bạn có thể tải lại Bản Lưu để quay về Seed cũ.',
+      };
+    } else if (res.enemyDefeated && eCopy.templateId === 'demon_lord_vaelis') {
+      endingTrigger = {
+        id: 'VAELIS_CLIMAX_CHOICE',
+        title: 'NGAI VÀNG MÁU BỎ TRỐNG',
+        subtitle: 'Hiệp Sĩ Trưởng Vaelis Đã Ngã Xuống • Bạn Nắm Giữ Lõi Khóa Hư Vô',
+        epilogue:
+          'Xác thịt nặng trĩu xiềng xích của Vaelis khuỵu xuống dưới chân Ngai Vàng Máu. Lõi Khóa Hư Vô rực sáng trên tay bạn — bạn có thể kết thúc vòng lặp ngay tại đây hoặc mang Lõi Khóa xuống đáy Tầng 3.',
+      };
+    }
+
+    return {
+      updatedPlayer: pCopy,
+      updatedEnemy: eCopy,
+      result: res,
+      endingTrigger,
+    };
+  }
+
+  /**
+   * Executes a single party member's action (actorIndex 0 = Main Player, 1..3 = Allies)
+   * without running the enemy's turn yet.
+   */
+  public executeActorTurn(
+    player: PlayerState,
+    enemy: MapEnemyInstance,
+    seed: string,
+    actorIndex: number,
+    action: CombatActionType,
+    selectedLimbId: string,
+    opts?: { limbId?: string; skillId?: string; itemId?: string }
+  ): CombatEngineTurnOutcome {
+    const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+    const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(enemy));
+    eCopy.lockedLimbIds = eCopy.lockedLimbIds || {};
+    eCopy.severedLimbs = eCopy.severedLimbs || [];
+    pCopy.skillLevels = pCopy.skillLevels || {};
+
+    const rng = new SeededRNG(`${seed}_${eCopy.uid}_${eCopy.turnCount}_a${actorIndex}_${Date.now()}`);
+    const targetLimb = opts?.limbId || selectedLimbId;
+
+    if (action === 'ATTACK' || action === 'SKILL') {
+      this.playerAttackTimerMs = 260;
+      this.enemyHitDelayTimerMs = 110;
+    }
+
+    const res = executeSingleActorCombatAction(
+      pCopy,
+      eCopy,
+      actorIndex,
+      action,
+      targetLimb,
+      opts,
+      rng
+    );
+
+    const tpl = CONFIG.ENEMIES[eCopy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+    const retMap = getLimbReticlePositions(tpl.spriteKey);
+    const actualTargetLimb = res.targetLimbId || targetLimb;
+    const limbNorm = retMap[actualTargetLimb] || { nx: 0.5, ny: 0.36 };
+    const hitX = Math.round(limbNorm.nx * 640);
+    const hitY = Math.round(limbNorm.ny * 440);
+
+    if (res.lastDealtDmg && res.lastDealtDmg > 0) {
+      const pKind =
+        res.particleType ||
+        (opts?.skillId === 'holy_light' || opts?.itemId === 'brown_vial' || opts?.itemId === 'holy_fire_oil'
+          ? 'fire'
+          : res.wasCrit
+          ? 'spark'
+          : 'blood');
+      this.spawnImpactEffects(hitX, hitY, res.lastDealtDmg, Boolean(res.wasCrit), pKind);
+
+      this.floatingTexts.push({
+        id: this.nextFloatId++,
+        text: `-${res.lastDealtDmg}${res.wasCrit ? ' CRIT!' : ''}`,
+        color: res.wasCrit ? '#facc15' : pKind === 'fire' ? '#fb923c' : '#f87171',
+        x: hitX - 28,
+        y: hitY - 22,
+        vy: -0.65,
+        lifeMs: 950,
+        maxLifeMs: 950,
+      });
+    }
+
+    if (res.lastTakenDmg && res.lastTakenDmg > 0) {
+      this.playerHitDelayTimerMs = 200;
+      this.floatingTexts.push({
+        id: this.nextFloatId++,
+        text: `-${res.lastTakenDmg} Sinh Lực`,
+        color: '#fb923c',
+        x: 175,
+        y: 320,
+        vy: -0.55,
+        lifeMs: 950,
+        maxLifeMs: 950,
+      });
+    }
+
+    let endingTrigger: CombatEngineTurnOutcome['endingTrigger'] = undefined;
+    if (res.playerDefeated) {
+      endingTrigger = {
+        id: 'SLAIN_IN_COMBAT',
+        title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
+        subtitle: 'Sinh Lực Cạn Kiệt Trong Giao Tranh',
+        epilogue:
+          'Những nhát chém tàn khốc của quái vật đã kết thúc hành trình của bạn. Khi bắt đầu lại, Thung Lũng sẽ tái cấu trúc bằng một Seed ngẫu nhiên mới — hoặc bạn có thể tải lại Bản Lưu để quay về Seed cũ.',
+      };
+    } else if (res.enemyDefeated && eCopy.templateId === 'demon_lord_vaelis') {
+      endingTrigger = {
+        id: 'VAELIS_CLIMAX_CHOICE',
+        title: 'NGAI VÀNG MÁU BỎ TRỐNG',
+        subtitle: 'Hiệp Sĩ Trưởng Vaelis Đã Ngã Xuống • Bạn Nắm Giữ Lõi Khóa Hư Vô',
+        epilogue:
+          'Xác thịt nặng trĩu xiềng xích của Vaelis khuỵu xuống dưới chân Ngai Vàng Máu. Lõi Khóa Hư Vô rực sáng trên tay bạn — bạn có thể kết thúc vòng lặp ngay tại đây hoặc mang Lõi Khóa xuống đáy Tầng 3.',
+      };
+    }
+
+    return {
+      updatedPlayer: pCopy,
+      updatedEnemy: eCopy,
+      result: res,
+      endingTrigger,
+    };
+  }
+
+  /**
+   * Resolves the Enemy's turn + end-of-round DoTs & Mind decay for all living party members.
+   */
+  public resolveEnemyRound(
+    player: PlayerState,
+    enemy: MapEnemyInstance,
+    seed: string
+  ): CombatEngineTurnOutcome {
+    const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+    const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(enemy));
+    eCopy.lockedLimbIds = eCopy.lockedLimbIds || {};
+    eCopy.severedLimbs = eCopy.severedLimbs || [];
+    pCopy.skillLevels = pCopy.skillLevels || {};
+
+    const rng = new SeededRNG(`${seed}_${eCopy.uid}_${eCopy.turnCount}_enemy_${Date.now()}`);
+    const res = resolveEnemyCombatRound(pCopy, eCopy, rng);
+
+    if (res.lastTakenDmg && res.lastTakenDmg > 0) {
+      this.playerHitDelayTimerMs = 200;
+      this.triggerScreenShake(res.lastTakenDmg > 35 ? 16 : 9, 300);
+      this.floatingTexts.push({
+        id: this.nextFloatId++,
+        text: `-${res.lastTakenDmg} Sinh Lực`,
+        color: '#fb923c',
+        x: 175,
+        y: 320,
+        vy: -0.55,
+        lifeMs: 950,
+        maxLifeMs: 950,
+      });
+    }
+
+    let endingTrigger: CombatEngineTurnOutcome['endingTrigger'] = undefined;
+    if (res.playerDefeated) {
+      endingTrigger = {
+        id: 'SLAIN_IN_COMBAT',
+        title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
+        subtitle: 'Sinh Lực Cạn Kiệt Trong Giao Tranh',
         epilogue:
           'Những nhát chém tàn khốc của quái vật đã kết thúc hành trình của bạn. Khi bắt đầu lại, Thung Lũng sẽ tái cấu trúc bằng một Seed ngẫu nhiên mới — hoặc bạn có thể tải lại Bản Lưu để quay về Seed cũ.',
       };

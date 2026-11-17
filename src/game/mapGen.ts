@@ -321,7 +321,7 @@ function buildExteriorCourtyardRoom(): RoomData {
   grid[gateY + 1][w - 3] = TILE.BARS;
 
   grid[5][4] = TILE.CRATE;
-  grid[gateY + 3][4] = TILE.CRATE;
+  grid[h - 4][6] = TILE.CRATE;
   grid[3][12] = TILE.BOOKSHELF;
   grid[3][15] = TILE.BOOKSHELF;
   grid[h - 3][3] = TILE.BED_SAVE;
@@ -405,7 +405,7 @@ export function generateWorld(seed: string): WorldMapState {
     {
       floor: 1,
       count: 4,
-      titlePrefix: 'Tầng 1: Lâu Đài Hắc Ám (Nắp Hầm Phong Ấn)',
+      titlePrefix: 'Tầng 1: Lâu Đài Hắc Ám',
       sensory:
         'Kiến trúc đá đen dị giới đè nặng lên đỉnh Giáo Đường. Mùi máu sắt và khói búa rèn nồng nặc quanh Ngai Vàng Xương Sắt.',
       normalPool: [
@@ -594,13 +594,18 @@ export function generateWorld(seed: string): WorldMapState {
       const facings: ('up' | 'down' | 'left' | 'right')[] = ['left', 'right', 'down', 'up'];
 
       let roomMiniBossId: string | null = null;
+      let extraRoomMiniBossId: string | null = null;
       if (!isBossRoom) {
         if (fc.floor === 2 && idx === 1) roomMiniBossId = 'penitent_knight';
         else if (fc.floor === 2 && idx === 2) roomMiniBossId = 'grand_abbess';
         else if (fc.floor === 3 && idx === 0) roomMiniBossId = 'ouroboros_serpent';
         else if (fc.floor === 3 && idx === 1) roomMiniBossId = 'astral_kraken';
+        else if (fc.floor === 1 && idx === 0) roomMiniBossId = 'butcher_kaelgor';
         else if (fc.floor === 1 && idx === 1) roomMiniBossId = 'dullahan_knight';
-        else if (fc.floor === 1 && idx === 2) roomMiniBossId = 'fenrir_kin';
+        else if (fc.floor === 1 && idx === 2) {
+          roomMiniBossId = 'countess_carmilla';
+          extraRoomMiniBossId = 'fenrir_kin';
+        }
       }
 
       if (isBossRoom) {
@@ -665,6 +670,16 @@ export function generateWorld(seed: string): WorldMapState {
               facing: 'left',
             })
           );
+        }
+        if (extraRoomMiniBossId) {
+          const mbSpot2 = popTileWithBuffer(rng, 2) || popTileWithBuffer(rng, 1);
+          if (mbSpot2) {
+            enemies.push(
+              createMapEnemyInstance(`${roomId}_MB2`, extraRoomMiniBossId, mbSpot2[0], mbSpot2[1], {
+                facing: 'left',
+              })
+            );
+          }
         }
       } else if (!isBossRoom) {
         const smallCount = rng.int(1, 3);

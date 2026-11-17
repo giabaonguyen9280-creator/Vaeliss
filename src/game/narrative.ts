@@ -389,7 +389,7 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     input.classId === 'forsaken_nun' &&
     input.corruption < 15 &&
     input.child13Rescued &&
-    (input.child13InParty ?? true) &&
+    Boolean(input.child13InParty) &&
     input.readBookIds.length >= 3
   ) {
     return {

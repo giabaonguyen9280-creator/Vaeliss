@@ -8,20 +8,27 @@ import {
   applyDefaultIntroLoadoutForRemainingSteps,
   applyIntroChoiceToPlayer,
   applySupportItemEffects,
+  applySupportItemToAlly,
   bloodForgeWeapon,
+  canAllyEquipGear,
+  canAllyEquipShield,
   canPlayerEquipGear,
   canPlayerEquipShield,
   canPlayerFlee,
   canTargetEnemyLimb,
   canUnequipWeapon,
+  castNecromancyOnChild12,
+  castNecromancyOnCorpse,
   computeArmorFactor,
   computeLimbDamagePreview,
   createInitialPlayer,
+  createRecruitedAlly,
   devourEnemyCorpse,
   executeCombatItem,
   executeCombatTalk,
   executePlayerSkill,
   executePlayerWeaponAttack,
+  executeSingleActorCombatAction,
   exorciseCursedWeapon,
   GEAR_ITEMS,
   getComputedPlayerStats,
@@ -33,21 +40,23 @@ import {
   isPlayerPanicking,
   prayAffinityAtHexen,
   regrowLimbAtHexen,
+  resolveEnemyCombatRound,
   unlockHexenStatNode,
 } from './combat';
 import { CombatEngine } from './combatEngine';
 import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './narrative';
 
-test('CONFIG contains all 26 enemies (15 normal, 8 minibosses, 3 floor bosses), 16 core + 7 canon weapons (23 total), 8 shields, 12 core + en_garde skills (13 total), and 12 lore books', () => {
+test('CONFIG contains all 26 enemies (15 normal, 8 minibosses, 3 floor bosses), 24 weapons, 8 shields, 14 skills (incl. en_garde & necromancy), and 20 lore books', () => {
   const enemies = Object.values(CONFIG.ENEMIES);
   assert.equal(enemies.filter((e) => e.tier === 'normal').length, 15);
   assert.equal(enemies.filter((e) => e.tier === 'miniboss').length, 8);
   assert.equal(enemies.filter((e) => e.tier === 'boss').length, 3);
-  assert.equal(Object.keys(CONFIG.WEAPONS).length, 23);
+  assert.equal(Object.keys(CONFIG.WEAPONS).length, 24);
   assert.equal(Object.keys(CONFIG.SHIELDS).length, 8);
-  assert.equal(CONFIG.SKILLS.length, 13);
+  assert.equal(CONFIG.SKILLS.length, 14);
   assert.equal(CONFIG.SKILLS.some((s) => s.id === 'en_garde'), true);
-  assert.equal(CONFIG.BOOKS.length, 12);
+  assert.equal(CONFIG.SKILLS.some((s) => s.id === 'necromancy'), true);
+  assert.equal(CONFIG.BOOKS.length, 20);
 });
 
 test('Seeded world generation starts at F2_EXTERIOR, includes tutorial enemy & 3 Floor 2 NPCs, and is deterministic', () => {
@@ -451,7 +460,8 @@ test('evaluateCanonEnding resolves all 7 canon endings accurately', () => {
   assert.equal(evaluateCanonEnding({ ...base, corruption: 0, endingAction: 'SACRIFICE_CHILD13_RIFT' }).id, 'ORDER_ENDING');
   assert.equal(evaluateCanonEnding({ ...base, endingAction: 'POUR_ELIXIR_CHILD13_RIFT' }).id, 'TRUE_ENDING');
   assert.equal(evaluateCanonEnding({ ...base, classId: 'fallen_knight', corruption: 10, endingAction: 'STAY_BUILD_GRAVES' }).id, 'S_ENDING_KNIGHT');
-  assert.equal(evaluateCanonEnding({ ...base, classId: 'forsaken_nun', corruption: 5, endingAction: 'ESCAPE_EXTERIOR_GATE' }).id, 'S_ENDING_NUN');
+  assert.equal(evaluateCanonEnding({ ...base, classId: 'forsaken_nun', corruption: 5, child13InParty: true, endingAction: 'ESCAPE_EXTERIOR_GATE' }).id, 'S_ENDING_NUN');
+  assert.notEqual(evaluateCanonEnding({ ...base, classId: 'forsaken_nun', corruption: 5, child13InParty: false, endingAction: 'ESCAPE_EXTERIOR_GATE' }).id, 'S_ENDING_NUN');
   assert.equal(evaluateCanonEnding({ ...base, classId: 'night_hunter', curedPetrification: true, endingAction: 'ESCAPE_EXTERIOR_GATE' }).id, 'S_ENDING_HUNTER');
 });
 
@@ -486,3 +496,62 @@ test('New 22 equipment items, class/limb/corruption equip restrictions, and solo
   assert.equal(CONFIG.ENEMIES[world.rooms.F1_R3.enemies[0].templateId].spriteScale, '3x3');
   assert.equal(Object.keys(GEAR_ITEMS).length >= 20, true);
 });
+
+test('4-person party recruitment, Necromancy summons, Vorath Shield Arm mechanics, and sequential combat actions work accurately', () => {
+  const p = createInitialPlayer('forsaken_nun');
+  p.mind = 100;
+  p.skillLevels.necromancy = 2;
+  p.inventory.blue_vial = 2;
+  p.inventory.dried_meat = 2;
+
+  // Recruit Kael & Child 13
+  const kael = createRecruitedAlly('ally_kael');
+  const child13 = createRecruitedAlly('child_13');
+  p.party.push(kael, child13);
+  assert.equal(p.party.length, 2);
+
+  // Necromancy on defeated corpse raises 3rd party slot (4th member total) and locks gear
+  const world = generateWorld('PARTY-NECRO-TEST');
+  const corpse = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  corpse.defeated = true;
+  const necroRes = castNecromancyOnCorpse(p, corpse);
+  assert.equal(necroRes.success, true);
+  assert.equal(p.party.length, 3);
+  const undead = p.party[2];
+  assert.equal(undead.isUndeadSummon, true);
+  assert.equal(undead.hunger, 0);
+  assert.equal(canAllyEquipGear(undead, 'void_woven_robe').allowed, false);
+  assert.equal(canAllyEquipShield(undead, 'rotten_wood_shield').allowed, false);
+
+  // Party cap of 3 allies blocks raising Child 12 until slot free; test Child 12 raise when slot available
+  p.questFlags.child12Resolved = true;
+  assert.equal(castNecromancyOnChild12(p).success, false);
+  p.party.pop();
+  const c12Res = castNecromancyOnChild12(p);
+  assert.equal(c12Res.success, true);
+  assert.equal(p.party[2].classId, 'summon_child_12');
+
+  // Support item heals ally & keeps undead hunger at 0
+  p.party[0].hp = 30;
+  const logs: string[] = [];
+  assert.equal(applySupportItemToAlly(p, 0, 'blue_vial', logs), true);
+  assert.equal(p.party[0].hp > 30, true);
+  assert.equal(applySupportItemToAlly(p, 2, 'dried_meat', logs), true);
+  assert.equal(p.party[2].hunger, 0);
+
+  // Vorath (dullahan_knight) left_arm has isShieldArm: true & blocks 80% torso/head damage until severed
+  const vorathTpl = CONFIG.ENEMIES.dullahan_knight;
+  assert.equal(vorathTpl.limbs.some((l) => l.id === 'left_arm' && l.isShieldArm === true), true);
+
+  // Sequential combat actions for player + ally + enemy round resolve cleanly
+  const targetEnemy = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  const rng = new SeededRNG('SEQ-COMBAT');
+  const act0 = executeSingleActorCombatAction(p, targetEnemy, 0, 'ATTACK', 'right_arm', undefined, rng);
+  assert.equal(act0.logs.length > 0, true);
+  const act1 = executeSingleActorCombatAction(p, targetEnemy, 1, 'GUARD', 'right_arm', undefined, rng);
+  assert.equal(p.party[0].guarding, true);
+  assert.equal(act1.logs.length > 0, true);
+  const roundEnd = resolveEnemyCombatRound(p, targetEnemy, rng);
+  assert.equal(roundEnd.logs.length > 0, true);
+});
+

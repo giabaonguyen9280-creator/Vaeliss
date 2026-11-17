@@ -492,6 +492,7 @@ export interface PlayerState {
     curedPetrification: boolean;
     child13Rescued: boolean;
     child12Resolved: boolean;
+    child12Raised?: boolean;
     brokenKnightResolved: boolean;
     glassLadyResolved: boolean;
     smithUsed: boolean;
@@ -691,7 +692,7 @@ export function createRecruitedAlly(
       maxMind: 85,
       hunger: 15,
       weaponId: 'broad_iron_sword',
-      equippedShield: 'iron_buckler',
+      equippedShield: 'cathedral_iron_shield',
       equippedHead: 'legion_helm',
       equippedBody: 'vanguard_hauberk',
       equippedAccessory: 'vaelis_signet',
@@ -711,7 +712,7 @@ export function createRecruitedAlly(
       mind: 135,
       maxMind: 135,
       hunger: 10,
-      weaponId: 'silver_cross_mace',
+      weaponId: 'holy_mother_mace',
       equippedShield: null,
       equippedHead: 'ashen_hood',
       equippedBody: 'goethe_cassock',
@@ -732,7 +733,7 @@ export function createRecruitedAlly(
       mind: 105,
       maxMind: 105,
       hunger: 15,
-      weaponId: 'serrated_hunting_knife',
+      weaponId: 'curved_dagger',
       equippedShield: 'rotten_wood_shield',
       equippedHead: 'stalkers_cap',
       equippedBody: 'boiled_cuirass',
@@ -774,7 +775,7 @@ export function createRecruitedAlly(
       mind: 120,
       maxMind: 120,
       hunger: 10,
-      weaponId: 'silver_cross_mace',
+      weaponId: 'holy_mother_mace',
       equippedShield: null,
       equippedHead: 'weeping_hood',
       equippedBody: 'void_woven_robe',
@@ -806,7 +807,7 @@ export function createRecruitedAlly(
   };
 }
 
-export function createNecromancySummon(enemy: MapEnemyInstance): PartyAlly {
+export function createNecromancySummon(enemy: MapEnemyInstance, necromancyLv = 1): PartyAlly {
   const tplId = enemy.templateId;
   let spriteKey = 'summon_ghoul';
   let name = 'Xác Sống Triệu Hồi';
@@ -821,7 +822,7 @@ export function createNecromancySummon(enemy: MapEnemyInstance): PartyAlly {
     tplId === 'hollowed_void_walker'
   ) {
     spriteKey = 'summon_skeleton';
-    name = 'Hài Cốt Kỵ Sĩ';
+    name = 'Xương Đen Triệu Hồi';
     weaponId = 'broad_iron_sword';
     hp = 115;
     mind = 75;
@@ -833,19 +834,22 @@ export function createNecromancySummon(enemy: MapEnemyInstance): PartyAlly {
   ) {
     spriteKey = 'summon_wraith';
     name = 'Oán Linh Hư Vô';
-    weaponId = 'silver_cross_mace';
+    weaponId = 'holy_mother_mace';
     hp = 90;
     mind = 95;
   }
 
+  const hpMult = necromancyLv >= 3 ? 1.4 : necromancyLv === 2 ? 1.2 : 1.0;
+  const maxHp = Math.round(hp * hpMult);
+
   return {
-    id: `undead_${enemy.id}_${Date.now()}`,
+    id: `undead_${enemy.uid}_${Date.now()}`,
     name,
     classId: spriteKey,
     spriteKey,
     isUndeadSummon: true,
-    hp,
-    maxHp: hp,
+    hp: maxHp,
+    maxHp,
     mind,
     maxMind: mind,
     hunger: 0,
@@ -870,7 +874,8 @@ export function castNecromancyOnCorpse(
   player: PlayerState,
   enemy: MapEnemyInstance
 ): { success: boolean; message: string; ally?: PartyAlly } {
-  if ((player.skillLevels?.necromancy || 0) <= 0) {
+  const necLv = player.skillLevels?.necromancy || 0;
+  if (necLv <= 0) {
     return { success: false, message: 'Bạn chưa lĩnh hội Chiêu Hồn Thuật!' };
   }
   if (!enemy.defeated || enemy.corpseDevoured || enemy.corpseRaised) {
@@ -885,12 +890,70 @@ export function castNecromancyOnCorpse(
   enemy.corpseRaised = true;
   player.mind = Math.max(0, player.mind - 15);
   player.corruption = Math.min(100, player.corruption + 12);
-  const summon = createNecromancySummon(enemy);
+  const summon = createNecromancySummon(enemy, necLv);
   player.party.push(summon);
   return {
     success: true,
     ally: summon,
-    message: `💀✨ Bạn niệm [Chiêu Hồn Thuật] (-15 Tâm Trí, +12 Tha Hóa): Cái xác đứng bật dậy thành [${summon.name}] gia nhập tổ đội!`,
+    message: `💀✨ Bạn niệm [Chiêu Hồn Thuật] (-15 Tâm Trí, +12 Tha Hóa): Thi hài đứng bật dậy thành [${summon.name}] gia nhập tổ đội!`,
+  };
+}
+
+export function castNecromancyOnChild12(
+  player: PlayerState
+): { success: boolean; message: string; ally?: PartyAlly } {
+  const necLv = player.skillLevels?.necromancy || 0;
+  if (necLv <= 0) {
+    return { success: false, message: 'Bạn chưa lĩnh hội Chiêu Hồn Thuật!' };
+  }
+  if (!player.questFlags?.child12Resolved) {
+    return { success: false, message: 'Đứa trẻ vẫn còn bị giam trong ống chiết xuất!' };
+  }
+  if (player.questFlags?.child12Raised) {
+    return { success: false, message: 'Linh hồn Thánh Tử Thứ 12 đã được triệu hồi rồi!' };
+  }
+  if (player.party.length >= 3) {
+    return { success: false, message: 'Tổ đội đã đủ tối đa 4 người!' };
+  }
+  if (player.mind < 15) {
+    return { success: false, message: 'Cần ít nhất 15 Tâm Trí để thi triển Chiêu Hồn Thuật!' };
+  }
+  player.questFlags.child12Raised = true;
+  player.mind = Math.max(0, player.mind - 15);
+  player.corruption = Math.min(100, player.corruption + 12);
+  const hpMult = necLv >= 3 ? 1.4 : necLv === 2 ? 1.2 : 1.0;
+  const maxHp = Math.round(105 * hpMult);
+  const summon: PartyAlly = {
+    id: `undead_child_12_${Date.now()}`,
+    name: 'Vong Linh Thánh Tử 12',
+    classId: 'summon_child_12',
+    spriteKey: 'summon_child_12',
+    isUndeadSummon: true,
+    hp: maxHp,
+    maxHp,
+    mind: 85,
+    maxMind: 85,
+    hunger: 0,
+    weaponId: 'holy_mother_mace',
+    equippedShield: null,
+    equippedHead: null,
+    equippedBody: 'goethe_cassock',
+    equippedAccessory: null,
+    guarding: false,
+    limbs: {
+      leftArm: true,
+      rightArm: true,
+      leftLeg: true,
+      rightLeg: true,
+      infected: { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false },
+    },
+    statuses: { bleeding: false, poisoned: false, parasite: false },
+  };
+  player.party.push(summon);
+  return {
+    success: true,
+    ally: summon,
+    message: `🕯️💀 Bạn niệm [Chiêu Hồn Thuật] (-15 Tâm Trí, +12 Tha Hóa): Linh hồn đứa trẻ trỗi dậy trong lớp khói lạnh thành [Vong Linh Thánh Tử 12]!`,
   };
 }
 
@@ -1252,6 +1315,201 @@ export function getEffectiveWeapon(p: PlayerState) {
   return chosen;
 }
 
+export function getAllyEffectiveWeapon(ally: PartyAlly) {
+  const arms = (ally.limbs?.leftArm ? 1 : 0) + (ally.limbs?.rightArm ? 1 : 0);
+  if (arms === 0) return CONFIG.WEAPONS.bite_headbutt;
+  const chosen = CONFIG.WEAPONS[ally.weaponId] || CONFIG.WEAPONS.rusty_knife;
+  if (chosen.hands === 2 && arms < 2) {
+    return CONFIG.WEAPONS.rusty_knife;
+  }
+  return chosen;
+}
+
+export function getAllyAvailableSkills(ally: PartyAlly): string[] {
+  if (ally.classId === 'fallen_knight' || ally.classId === 'broken_knight' || ally.classId === 'ally_kael') {
+    return ['whirlwind_slash', 'hamstring_bind'];
+  }
+  if (ally.classId === 'forsaken_nun' || ally.classId === 'child_13' || ally.classId === 'summon_child_12') {
+    return ['blessed_heal', 'holy_light', 'purification'];
+  }
+  if (ally.classId === 'night_hunter') {
+    return ['hamstring_bind', 'veil_of_blindness'];
+  }
+  if (ally.classId === 'summon_wraith') {
+    return ['void_bite'];
+  }
+  if (ally.classId === 'summon_skeleton') {
+    return ['whirlwind_slash'];
+  }
+  return ['flesh_rend'];
+}
+
+export function getAllyComputedStats(ally: PartyAlly, player?: PlayerState) {
+  const wpn = getAllyEffectiveWeapon(ally);
+  const sh = ally.equippedShield ? CONFIG.SHIELDS[ally.equippedShield] : null;
+  const h = ally.equippedHead ? GEAR_ITEMS[ally.equippedHead] : null;
+  const b = ally.equippedBody ? GEAR_ITEMS[ally.equippedBody] : null;
+  const a = ally.equippedAccessory ? GEAR_ITEMS[ally.equippedAccessory] : null;
+
+  let avgAtk = Math.round((wpn.dmg[0] + wpn.dmg[1]) * 0.5);
+  if (!ally.isUndeadSummon && (ally.hunger || 0) >= 50) {
+    avgAtk = Math.round(avgAtk * 0.75);
+  }
+  if (ally.isUndeadSummon && player) {
+    const necLv = player.skillLevels?.necromancy || 1;
+    if (necLv === 2) avgAtk = Math.round(avgAtk * 1.15);
+    else if (necLv >= 3) avgAtk = Math.round(avgAtk * 1.3);
+  }
+
+  const baseArmor =
+    ally.classId === 'fallen_knight' || ally.classId === 'broken_knight'
+      ? 0.12
+      : ally.classId === 'night_hunter'
+      ? 0.05
+      : 0.03;
+  const physDef = Math.min(
+    0.85,
+    baseArmor +
+      (sh ? sh.guardReduction * 0.2 : 0) +
+      (h ? h.physDef : 0) +
+      (b ? b.physDef : 0) +
+      (a ? a.physDef : 0)
+  );
+  const magDef = Math.min(0.85, (h ? h.magDef : 0) + (b ? b.magDef : 0) + (a ? a.magDef : 0) + 0.06);
+  const magAtk = 100 + (h ? h.magAtk : 0) + (b ? b.magAtk : 0) + (a ? a.magAtk : 0);
+  const lostLegs = (!ally.limbs?.leftLeg ? 1 : 0) + (!ally.limbs?.rightLeg ? 1 : 0);
+  const rawAgility = 12 + (h ? h.agility : 0) + (b ? b.agility : 0) + (a ? a.agility : 0) - lostLegs * 6;
+  const isStarving = !ally.isUndeadSummon && (ally.hunger || 0) >= 90;
+  return {
+    physAtk: avgAtk,
+    physDefPct: Math.round(physDef * 100),
+    magAtk,
+    magDefPct: Math.round(magDef * 100),
+    agility: isStarving ? 0 : Math.max(1, rawAgility),
+    critRatePct: isStarving ? 0 : Math.round(wpn.critChance * 100),
+    evasionPct: isStarving ? 0 : Math.max(0, Math.round((h?.agility || 0) + (a?.agility || 0)) * 2),
+  };
+}
+
+export function canAllyEquipGear(ally: PartyAlly, gearId: string): { allowed: boolean; reason?: string } {
+  if (ally.isUndeadSummon) {
+    return { allowed: false, reason: 'Thuộc hạ Chiêu Hồn bị khóa cứng trang bị sau khi chết!' };
+  }
+  const gear = GEAR_ITEMS[gearId];
+  if (!gear) return { allowed: false, reason: 'Không tìm thấy trang bị.' };
+  if ((ally.classId === 'forsaken_nun' || ally.classId === 'child_13') && (gear.forbidNun || gear.weightClass === 'heavy')) {
+    return { allowed: false, reason: `[${ally.name}] không thể mặc Giáp Hạng Nặng.` };
+  }
+  return { allowed: true };
+}
+
+export function canAllyEquipShield(ally: PartyAlly, shieldId?: string | null): { allowed: boolean; reason?: string } {
+  if (ally.isUndeadSummon) {
+    return { allowed: false, reason: 'Thuộc hạ Chiêu Hồn bị khóa cứng trang bị sau khi chết!' };
+  }
+  if (!ally.limbs.leftArm || !ally.limbs.rightArm) {
+    return { allowed: false, reason: `[${ally.name}] đã mất 1 tay nên không thể cầm thêm Khiên!` };
+  }
+  const wpn = CONFIG.WEAPONS[ally.weaponId];
+  if (wpn && wpn.hands === 2) {
+    return { allowed: false, reason: `[${ally.name}] đang cầm vũ khí 2 tay [${wpn.name}]!` };
+  }
+  void shieldId;
+  return { allowed: true };
+}
+
+export function applySupportItemToAlly(
+  player: PlayerState,
+  allyIndex: number,
+  itemId: string,
+  logs: string[]
+): boolean {
+  const ally = player.party[allyIndex];
+  const item = CONFIG.ITEMS[itemId];
+  if (!ally || !item || (player.inventory[itemId] || 0) <= 0) return false;
+  if (ally.hp <= 0) {
+    logs.push(`💀 [${ally.name}] đã tử trận, không thể dùng vật phẩm!`);
+    return false;
+  }
+
+  player.inventory[itemId] -= 1;
+  ally.statuses = ally.statuses || { bleeding: false, poisoned: false, parasite: false };
+
+  if (item.hpHealPct) {
+    const pctHeal = Math.round(ally.maxHp * item.hpHealPct);
+    ally.hp = Math.min(ally.maxHp, ally.hp + pctHeal);
+    logs.push(`💙 [${item.name}] hồi +${pctHeal} Sinh Lực cho [${ally.name}] (${ally.hp}/${ally.maxHp}).`);
+  }
+  if (item.hpHeal) {
+    ally.hp = Math.min(ally.maxHp, ally.hp + item.hpHeal);
+    logs.push(`💚 [${item.name}] hồi +${item.hpHeal} Sinh Lực cho [${ally.name}] (${ally.hp}/${ally.maxHp}).`);
+  }
+  if (item.mindHeal) {
+    ally.mind = Math.min(ally.maxMind, ally.mind + item.mindHeal);
+    logs.push(`🔮 [${item.name}] hồi +${item.mindHeal} Tâm Trí cho [${ally.name}] (${ally.mind}/${ally.maxMind}).`);
+  }
+  if (item.cureBleed) {
+    ally.statuses.bleeding = false;
+    if (itemId === 'bandage') {
+      ally.hp = Math.min(ally.maxHp, ally.hp + 12);
+      logs.push(`🩹 [${item.name}] cầm máu hoàn toàn & hồi +12 Sinh Lực cho [${ally.name}].`);
+    } else {
+      logs.push(`🩹 [${item.name}] cầm máu cho [${ally.name}].`);
+    }
+  }
+  if (item.curePoison) {
+    ally.statuses.poisoned = false;
+    logs.push(`🏳️ [${item.name}] giải độc cho [${ally.name}].`);
+  }
+  if (item.cureInfection) {
+    ally.limbs.infected = { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false };
+    logs.push(`✨ [${item.name}] xóa sạch Nhiễm Trùng cho [${ally.name}].`);
+  }
+  if (item.cureParasite) {
+    ally.statuses.parasite = false;
+    logs.push(`🏳️ [${item.name}] tiêu diệt Ký Sinh Trùng trên [${ally.name}].`);
+  }
+  if (item.hungerRestore) {
+    if (ally.isUndeadSummon) {
+      logs.push(`💀 [${ally.name}] là thuộc hạ Chiêu Hồn, không có cảm giác đói.`);
+    } else {
+      ally.hunger = Math.max(0, (ally.hunger || 0) - item.hungerRestore);
+      logs.push(`🍖 [${item.name}] giảm ${item.hungerRestore} Độ Đói cho [${ally.name}].`);
+    }
+  }
+  return true;
+}
+
+export function amputateAllyLimbWithBoneSaw(
+  player: PlayerState,
+  allyIndex: number,
+  limbKey: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'
+): { success: boolean; message: string } {
+  const ally = player.party[allyIndex];
+  if (!ally) return { success: false, message: 'Không tìm thấy đồng đội!' };
+  if ((player.inventory.bone_saw || 0) <= 0) {
+    return { success: false, message: 'Bạn cần có Cưa Xương Rỉ Máu trong kho đồ!' };
+  }
+  if (!ally.limbs[limbKey]) {
+    return { success: false, message: 'Bộ phận này của đồng đội đã mất rồi!' };
+  }
+  const labels: Record<'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg', string> = {
+    leftArm: 'Tay Trái',
+    rightArm: 'Tay Phải',
+    leftLeg: 'Chân Trái',
+    rightLeg: 'Chân Phải',
+  };
+  ally.limbs[limbKey] = false;
+  ally.limbs.infected[limbKey] = false;
+  ally.hp = Math.max(5, ally.hp - 12);
+  ally.statuses = ally.statuses || { bleeding: false, poisoned: false, parasite: false };
+  ally.statuses.bleeding = true;
+  return {
+    success: true,
+    message: `🪚 Đã cưa bỏ [${labels[limbKey]}] bị nhiễm trùng của [${ally.name}]! Hãy dùng Băng Gạc cầm máu ngay.`,
+  };
+}
+
 export function getEnemyRemainingTotalHp(enemy: MapEnemyInstance): number {
   const torso = enemy.limbs.find((l) => l.id === 'torso');
   const head = enemy.limbs.find((l) => l.id === 'head');
@@ -1441,9 +1699,9 @@ export function computeLimbDamagePreview(
   if (enemy.oilCovered && isFireOrHolyWeapon) {
     mult *= 2.5;
   }
-  if (tpl.id === 'executioner_paladin' && (limb.id === 'torso' || limb.id === 'head')) {
-    const shieldArm = enemy.limbs.find((l) => l.id === 'left_arm');
-    if (shieldArm && shieldArm.hp > 0) mult *= 0.2;
+  const activeShieldArm = enemy.limbs.find((l) => l.isShieldArm && l.hp > 0);
+  if (activeShieldArm && (limb.id === 'torso' || limb.id === 'head')) {
+    mult *= 0.2;
   }
   if (tpl.id === 'penitent_knight' && limb.id === 'head') {
     const leftLeg = enemy.limbs.find((l) => l.id === 'left_leg');
@@ -1544,12 +1802,14 @@ export function applyLimbDamageToEnemy(
 ): { actualDmg: number; severedNow: boolean } {
   let mult = 1.0;
 
-  if (tpl.id === 'executioner_paladin' && (limb.id === 'torso' || limb.id === 'head')) {
-    const shieldArm = enemy.limbs.find((l) => l.id === 'left_arm');
-    if (shieldArm && shieldArm.hp > 0) {
-      mult *= 0.20;
-      logs.push('🛡️ Khiên Thánh Thập Tự ở Tay Trái của Thánh Kỵ Sĩ chặn mất 80% sát thương! Hãy chặt Tay Trái trước!');
-    }
+  const activeShieldArm = enemy.limbs.find((l) => l.isShieldArm && l.hp > 0);
+  if (activeShieldArm && (limb.id === 'torso' || limb.id === 'head')) {
+    mult *= 0.20;
+    logs.push(
+      tpl.id === 'dullahan_knight'
+        ? '🛡️ Khiên Tháp Rỉ Máu ở Tay Trái của Kỵ Sĩ Vorath chặn mất 80% sát thương! Hãy phá vỡ Tay Trái trước!'
+        : '🛡️ Khiên ở Tay Trái chặn mất 80% sát thương vào Thân và Đầu! Hãy phá vỡ Tay Trái trước!'
+    );
   }
 
   if (tpl.id === 'penitent_knight' && limb.id === 'head') {
@@ -1590,7 +1850,7 @@ export function applyLimbDamageToEnemy(
     if (tpl.id === 'dullahan_knight' && limb.id === 'left_arm') {
       enemy.blindTurns = 99;
       enemy.telegraphing = false;
-      logs.push('💀 GIẢI ĐỐ THÀNH CÔNG! Chiếc Đầu Lâu đang cháy rơi khỏi Tay Trái khiến Dullahan mù lòa và mất phương hướng!');
+      logs.push('🛡️💥 KHIÊN THÁP RỈ MÁU VỠ TAN! Kỵ Sĩ Tiên Phong Vorath mất hoàn toàn thế thủ che chắn và bị mù lòa!');
     }
     if (tpl.id === 'penitent_knight' && limb.id === 'left_leg') {
       logs.push('⚔️ Hiệp Sĩ Chuộc Tội gãy Chân Trái, quỳ sụp xuống làm lộ hoàn toàn phần Đầu (95% Trúng)!');
@@ -2618,6 +2878,34 @@ function finishCombatRoundWithEnemyTurn(
     player.statuses.bleedImmunityTurns -= 1;
   }
 
+  // Ally end-of-round DoTs & Mind decay (including Undead Summons; Undead never gain Hunger)
+  for (const ally of player.party) {
+    if (ally.hp <= 0) continue;
+    ally.statuses = ally.statuses || { bleeding: false, poisoned: false, parasite: false };
+    if (ally.statuses.bleeding) {
+      ally.hp = Math.max(0, ally.hp - 6);
+      logs.push(`🩸 [${ally.name}] mất 6 Sinh Lực vì Chảy máu!`);
+    }
+    if (ally.statuses.poisoned) {
+      ally.hp = Math.max(0, ally.hp - 5);
+      logs.push(`☠️ [${ally.name}] mất 5 Sinh Lực vì Độc tố!`);
+    }
+    if (ally.isUndeadSummon) {
+      ally.hunger = 0;
+      const mindDrain = rng.int(4, 7);
+      ally.mind = Math.max(0, ally.mind - mindDrain);
+      if (ally.mind < 30) {
+        logs.push(`💀💢 Tâm Trí của [${ally.name}] tụt xuống dưới 30 — sắp phát cơn Cuồng Loạn Xác Chết!`);
+      }
+    } else {
+      const mindDrain = rng.int(1, 3);
+      ally.mind = Math.max(0, ally.mind - mindDrain);
+      if (ally.mind < 30) {
+        logs.push(`🧠💥 Tâm Trí của [${ally.name}] tụt xuống dưới 30 — rơi vào Hoảng Loạn!`);
+      }
+    }
+  }
+
   const playerDefeated = player.hp <= 0 || player.headHp <= 0;
   return {
     logs,
@@ -2626,6 +2914,732 @@ function finishCombatRoundWithEnemyTurn(
     severedAnyLimb,
     wasCrit,
     lastTakenDmg,
+  };
+}
+
+export function resolveEnemyCombatRound(
+  player: PlayerState,
+  enemy: MapEnemyInstance,
+  rng: SeededRNG
+): CombatTurnResult {
+  const tpl = CONFIG.ENEMIES[enemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+  return finishCombatRoundWithEnemyTurn(player, enemy, tpl, rng, [], false, false);
+}
+
+export function executeSingleActorCombatAction(
+  player: PlayerState,
+  enemy: MapEnemyInstance,
+  actorIndex: number,
+  action: 'ATTACK' | 'SKILL' | 'ITEM' | 'TALK' | 'GUARD' | 'FLEE',
+  targetLimbId: string,
+  opts: { skillId?: string; itemId?: string } | undefined,
+  rng: SeededRNG
+): CombatTurnResult {
+  const logs: string[] = [];
+  const tpl = CONFIG.ENEMIES[enemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+  enemy.lockedLimbIds = enemy.lockedLimbIds || {};
+  enemy.severedLimbs = enemy.severedLimbs || [];
+  player.skillLevels = player.skillLevels || {};
+
+  const isMain = actorIndex === 0;
+  const ally = isMain ? null : player.party[actorIndex - 1];
+  if (!isMain && (!ally || ally.hp <= 0)) {
+    return { logs: [], enemyDefeated: isEnemyDead(enemy), playerDefeated: false };
+  }
+
+  if (ally && (ally.stunnedTurns || 0) > 0) {
+    ally.stunnedTurns = Math.max(0, (ally.stunnedTurns || 0) - 1);
+    return {
+      logs: [`⛓️ [${ally.name}] đang bị Xúc Tu Hư Vô trói chặt, mất lượt hành động!`],
+      enemyDefeated: false,
+      playerDefeated: false,
+    };
+  }
+
+  // Automatic Panic / Undead Frenzy check (Tâm Trí < 30)
+  const actorPanicking = isMain ? isPlayerPanicking(player) : Boolean(ally && ally.mind < 30);
+  if (actorPanicking) {
+    const validLimbs = enemy.limbs.filter((l) => l.hp > 0 && canTargetEnemyLimb(enemy, tpl, l.id).allowed);
+    const chosenLimb =
+      (validLimbs.length > 0 ? rng.pick(validLimbs) : enemy.limbs.find((l) => l.hp > 0)) || enemy.limbs[0];
+
+    if (ally?.isUndeadSummon) {
+      const wpn = getAllyEffectiveWeapon(ally);
+      let dmg = Math.round(rng.int(wpn.dmg[0], wpn.dmg[1]) * 1.15);
+      const necLv = player.skillLevels?.necromancy || 1;
+      if (necLv === 2) dmg = Math.round(dmg * 1.15);
+      else if (necLv >= 3) dmg = Math.round(dmg * 1.3);
+      if (ally.mind < 15 && rng.chance(0.28)) {
+        const graze = rng.int(6, 12);
+        player.hp = Math.max(1, player.hp - graze);
+        return {
+          logs: [
+            `💀💢 [CUỒNG LOẠN XÁC CHẾT] [${ally.name}] mất kiểm soát hoàn toàn (Tâm Trí ${ally.mind}), vung vũ khí cào sượt qua bạn (-${graze} Sinh Lực)!`,
+          ],
+          enemyDefeated: false,
+          playerDefeated: false,
+        };
+      }
+      if (chosenLimb) {
+        const res = applyLimbDamageToEnemy(player, enemy, tpl, chosenLimb, dmg, false, logs);
+        logs.unshift(
+          `💀💢 [CUỒNG LOẠN XÁC CHẾT] [${ally.name}] gầm rú lao vào xé xác [${chosenLimb.name}] gây ${res.actualDmg} sát thương!`
+        );
+        if (isEnemyDead(enemy)) {
+          return handleEnemyDeath(player, enemy, tpl, logs, res.severedNow, false);
+        }
+        return {
+          logs,
+          enemyDefeated: false,
+          playerDefeated: false,
+          lastDealtDmg: res.actualDmg,
+          severedAnyLimb: res.severedNow,
+          targetLimbId: chosenLimb.id,
+          particleType: 'blood',
+        };
+      }
+    } else {
+      const actorName = isMain ? player.name : ally!.name;
+      const wpn = isMain ? getEffectiveWeapon(player) : getAllyEffectiveWeapon(ally!);
+      if (rng.chance(0.35)) {
+        if (isMain) player.statuses.guarding = true;
+        else if (ally) ally.guarding = true;
+        return {
+          logs: [`🧠💥 [HOẢNG LOẠN] [${actorName}] run rẩy ôm đầu phòng thủ hỗn loạn!`],
+          enemyDefeated: false,
+          playerDefeated: false,
+        };
+      }
+      if (chosenLimb) {
+        const dmg = Math.round(rng.int(wpn.dmg[0], wpn.dmg[1]) * 0.85);
+        const res = applyLimbDamageToEnemy(player, enemy, tpl, chosenLimb, dmg, false, logs);
+        logs.unshift(
+          `🧠💥 [HOẢNG LOẠN] [${actorName}] chém bừa vào [${chosenLimb.name}] gây ${res.actualDmg} sát thương!`
+        );
+        if (isEnemyDead(enemy)) {
+          return handleEnemyDeath(player, enemy, tpl, logs, res.severedNow, false);
+        }
+        return {
+          logs,
+          enemyDefeated: false,
+          playerDefeated: false,
+          lastDealtDmg: res.actualDmg,
+          severedAnyLimb: res.severedNow,
+          targetLimbId: chosenLimb.id,
+          particleType: 'blood',
+        };
+      }
+    }
+  }
+
+  let effectiveLimbId = targetLimbId;
+  const requestedLimb = enemy.limbs.find((l) => l.id === effectiveLimbId);
+  if (!requestedLimb || requestedLimb.hp <= 0) {
+    const fallback =
+      enemy.limbs.find((l) => l.id === 'torso' && l.hp > 0 && canTargetEnemyLimb(enemy, tpl, l.id).allowed) ||
+      enemy.limbs.find((l) => l.hp > 0 && canTargetEnemyLimb(enemy, tpl, l.id).allowed) ||
+      enemy.limbs.find((l) => l.hp > 0);
+    if (fallback) effectiveLimbId = fallback.id;
+  }
+
+  // Main player individual action (without auto-firing allies or enemy phase)
+  if (isMain) {
+    if (action === 'ATTACK') {
+      const targetCheck = canTargetEnemyLimb(enemy, tpl, effectiveLimbId);
+      if (!targetCheck.allowed) {
+        return { logs: [targetCheck.reason || 'Không thể nhắm vào bộ phận này.'], enemyDefeated: false, playerDefeated: false };
+      }
+      const limb = enemy.limbs.find((l) => l.id === effectiveLimbId)!;
+      const wpn = getEffectiveWeapon(player);
+      const hitChance = computeLimbHitChance(player, enemy, tpl, limb);
+      player.statuses.guarding = false;
+      let severedNowOut = false;
+      let wasCrit = false;
+      let totalDealt = 0;
+      let particleType: 'blood' | 'fire' | 'spark' = 'blood';
+
+      if (!rng.chance(hitChance)) {
+        logs.push(`💨 [${player.name}] vung [${wpn.name}] nhắm vào [${limb.name}] nhưng trượt (${Math.round(hitChance * 100)}%)!`);
+      } else {
+        let dmg = rng.int(wpn.dmg[0], wpn.dmg[1]);
+        if (player.bloodForgedWeapons?.includes(wpn.id)) dmg = Math.round(dmg * 1.35);
+        if (player.hexenStatNodes?.includes('atk_1')) dmg = Math.round(dmg * 1.15);
+        if ((player.stimulantBonusPct || 0) > 0) {
+          dmg = Math.round(dmg * (1 + player.stimulantBonusPct));
+          player.stimulantBonusPct = 0;
+        }
+        if ((player.silverOilTurns || 0) > 0) {
+          player.silverOilTurns = Math.max(0, player.silverOilTurns - 1);
+          if (tpl.isUndeadOrDemon) dmg = Math.round(dmg * 1.35);
+        }
+        if ((wpn.isCursed || player.cursedLockedWeapon === wpn.id) && player.mind < 40 && rng.chance(0.35)) {
+          player.hp = Math.max(1, player.hp - 14);
+          player.mind = Math.max(0, player.mind - 8);
+          logs.push(`🩸😱 Lời nguyền trên [${wpn.name}] phản phệ (-14 Sinh Lực, -8 Tâm Trí)!`);
+        }
+        if (player.hunger >= 50) dmg = Math.round(dmg * 0.75);
+        const isStarving90 = player.hunger >= 90;
+        let forceCrit = false;
+        if (player.statuses.bloodPactLevel > 0) {
+          const pactMult = player.statuses.bloodPactLevel === 1 ? 2.0 : player.statuses.bloodPactLevel === 2 ? 2.3 : 2.6;
+          dmg = Math.round(dmg * pactMult);
+          if (player.statuses.bloodPactLevel >= 2 && !isStarving90) forceCrit = true;
+          if (player.statuses.bloodPactLevel >= 3) player.hp = Math.min(player.maxHp, player.hp + 20);
+          player.statuses.bloodPactLevel = 0;
+        }
+        if (wpn.undeadDemonBonus && tpl.isUndeadOrDemon) dmg = Math.round(dmg * (1 + wpn.undeadDemonBonus));
+        if (wpn.limbBonusDmg && limb.id !== 'torso' && limb.id !== 'head') dmg = Math.round(dmg * (1 + wpn.limbBonusDmg));
+        if (tpl.slashResist && wpn.damageType === 'slash') dmg = Math.round(dmg * (1 - tpl.slashResist));
+        if (tpl.bluntWeakness && wpn.damageType === 'blunt') dmg = Math.round(dmg * (1 + tpl.bluntWeakness));
+        const isFireOrHoly = Boolean(wpn.burnDmg || wpn.undeadDemonBonus || wpn.id === 'holy_mother_mace');
+        if (enemy.oilCovered && isFireOrHoly) {
+          dmg = Math.round(dmg * 2.5);
+          enemy.oilCovered = false;
+          enemy.oilTurns = 0;
+          enemy.burnPerTurn = Math.max(enemy.burnPerTurn || 0, 150);
+          enemy.burnTurns = 3;
+          particleType = 'fire';
+          logs.push('🔥✨ Phản ứng Nguyên tố: Kích nổ Tinh Dầu x2.5 sát thương & Thiêu Đốt 150/lượt!');
+        }
+        if (!isStarving90 && (forceCrit || rng.chance(wpn.critChance))) {
+          wasCrit = true;
+          dmg = Math.round(dmg * 1.5);
+          if (particleType === 'blood') particleType = 'spark';
+        }
+        if (wpn.headExecuteChance && limb.id === 'head' && tpl.tier === 'normal' && rng.chance(wpn.headExecuteChance)) {
+          dmg = limb.hp + 999;
+          logs.push('☠️ LƯỠI HÁI ĐEN XỬ TỬ TỨC KHẮC!');
+        }
+        const ignoreArmor = wpn.damageType === 'true' || (wpn.armorPen || 0) >= 1.0;
+        const { actualDmg, severedNow } = applyLimbDamageToEnemy(
+          player,
+          enemy,
+          tpl,
+          limb,
+          dmg,
+          ignoreArmor,
+          logs,
+          wpn.armorPen || 0
+        );
+        totalDealt = actualDmg;
+        severedNowOut = severedNow;
+        logs.unshift(`⚔️ [${player.name}] dùng [${wpn.name}] chém [${limb.name}] gây ${actualDmg} sát thương${wasCrit ? ' (CHÍ MẠNG!)' : ''}!`);
+        if (severedNow && wpn.limbSeverHeal) {
+          player.hp = Math.min(player.maxHp, player.hp + wpn.limbSeverHeal);
+        }
+        if (wpn.bleedDmg) enemy.bleedPerTurn = Math.max(enemy.bleedPerTurn, wpn.bleedDmg);
+        if (wpn.burnDmg && !enemy.oilCovered) {
+          enemy.burnPerTurn = Math.max(enemy.burnPerTurn, wpn.burnDmg);
+          enemy.burnTurns = Math.max(enemy.burnTurns || 0, 2);
+          particleType = 'fire';
+        }
+        const isArmorShredded = (enemy.acidTurns || 0) > 0 || enemy.blindTurns > 0;
+        const totalStun = (wpn.stunChance || 0) + (wpn.damageType === 'blunt' && isArmorShredded ? 0.3 : 0);
+        if (totalStun > 0 && rng.chance(totalStun)) {
+          enemy.stunTurns = Math.max(enemy.stunTurns, 1);
+          particleType = 'spark';
+          logs.push('💫 Đòn đánh làm mục tiêu CHOÁNG 1 lượt!');
+        }
+      }
+      if (isEnemyDead(enemy)) {
+        const deadOut = handleEnemyDeath(player, enemy, tpl, logs, severedNowOut, wasCrit);
+        deadOut.lastDealtDmg = totalDealt;
+        deadOut.particleType = particleType;
+        deadOut.targetLimbId = effectiveLimbId;
+        return deadOut;
+      }
+      return {
+        logs,
+        enemyDefeated: false,
+        playerDefeated: false,
+        severedAnyLimb: severedNowOut,
+        wasCrit,
+        lastDealtDmg: totalDealt,
+        particleType,
+        targetLimbId: effectiveLimbId,
+      };
+    }
+
+    if (action === 'GUARD') {
+      player.statuses.guarding = true;
+      player.mind = Math.min(player.maxMind, player.mind + 4);
+      const shield = player.equippedShield ? CONFIG.SHIELDS[player.equippedShield] : null;
+      return {
+        logs: [
+          shield
+            ? `🛡️ [${player.name}] giơ [${shield.name}] Phòng Thủ (+4 Tâm Trí, chặn đứt chi)!`
+            : `🛡️ [${player.name}] vào thế Phòng Thủ chặt chẽ (+4 Tâm Trí, chặn đứt chi)!`,
+        ],
+        enemyDefeated: false,
+        playerDefeated: false,
+      };
+    }
+
+    if (action === 'TALK') {
+      const savedHp = player.hp;
+      const savedParty = JSON.parse(JSON.stringify(player.party));
+      // Perform talk effect without enemy turn
+      if (enemy.talked) {
+        logs.push(`💬 ${enemy.customName || tpl.name} gầm gừ khước từ mọi lời nói của bạn!`);
+      } else {
+        enemy.talked = true;
+        if (tpl.id === 'demon_lord_vaelis') {
+          player.questFlags.vaelisTalked = true;
+          enemy.telegraphing = false;
+          enemy.stunTurns = Math.max(enemy.stunTurns, 1);
+          logs.push(
+            '🗣️⚔️ HIỆP SĨ TRƯỞNG VAELIS khựng lại giữa vũng máu: “Ngươi xuống tận đây... đừng để lũ giáo sĩ lừa dối! Ta kéo cả Lâu Đài Hắc Ám giáng xuống để làm NẮP HẦM đè lên Vết Rách Vực Sao!” (Vaelis dao động & mất 1 lượt!)'
+          );
+        } else if (
+          tpl.id === 'penitent_knight' ||
+          tpl.id === 'executioner_paladin' ||
+          tpl.id === 'dullahan_knight' ||
+          tpl.id === 'hollowed_void_walker'
+        ) {
+          const head = enemy.limbs.find((l) => l.id === 'head');
+          if (head) {
+            head.armor = 0;
+            head.evasionBonus = 0;
+          }
+          logs.push(`🗣️ Bạn lăng mạ lời thề giả tạo của [${tpl.name}]! Hắn tự giật tung lớp bảo vệ ở Đầu!`);
+        } else if (
+          tpl.id === 'rotting_priest' ||
+          tpl.id === 'fanatic_zealot' ||
+          tpl.id === 'weeping_inquisitor' ||
+          tpl.id === 'grand_abbess'
+        ) {
+          enemy.stunTurns = Math.max(enemy.stunTurns, 1);
+          enemy.telegraphing = false;
+          logs.push(`🗣️ Bạn chất vấn về những giọt máu đen trên tượng Thánh Mẫu! [${enemy.customName || tpl.name}] bàng hoàng MẤT 1 LƯỢT!`);
+        } else {
+          enemy.blindTurns = Math.max(enemy.blindTurns, 1);
+          logs.push(`🗣️ Bạn hét lớn đánh lạc hướng [${enemy.customName || tpl.name}], làm nó khựng lại một nhịp!`);
+        }
+      }
+      void savedHp;
+      void savedParty;
+      return { logs, enemyDefeated: false, playerDefeated: false };
+    }
+
+    if (action === 'FLEE') {
+      if (!canPlayerFlee(player)) {
+        return { logs: ['❌ Bạn đã mất cả 2 chân, không thể Bỏ chạy!'], enemyDefeated: false, playerDefeated: false };
+      }
+      if (tpl.tier === 'boss') {
+        return { logs: ['❌ Không thể chạy trốn khỏi Boss tầng!'], enemyDefeated: false, playerDefeated: false };
+      }
+      let chance = player.baseFleeChance;
+      if (countLostLegs(player) === 1) chance *= 0.6;
+      if (enemy.stunTurns > 0 || enemy.blindTurns > 0) chance = Math.min(0.95, chance + 0.25);
+      if (rng.chance(chance)) {
+        return {
+          logs: [`🏃 Cả đội lách qua bóng tối Bỏ chạy thành công!`],
+          enemyDefeated: false,
+          playerDefeated: false,
+          fledSuccess: true,
+        };
+      }
+      return {
+        logs: [`❌ Bỏ chạy thất bại! Kẻ địch vẫn bám sát ngay sau lưng!`],
+        enemyDefeated: false,
+        playerDefeated: false,
+      };
+    }
+
+    if (action === 'SKILL' && opts?.skillId) {
+      const skillId = opts.skillId;
+      const skill = CONFIG.SKILLS.find((s) => s.id === skillId);
+      const lv = player.skillLevels[skillId] || 0;
+      if (!skill || lv <= 0) {
+        return { logs: ['Bạn chưa học kỹ năng này!'], enemyDefeated: false, playerDefeated: false };
+      }
+      if (skill.branch === 'Thánh Mẫu' && player.holyMagicLocked) {
+        return { logs: ['❌ Thánh Mẫu đã khóa toàn bộ phép nhánh Thánh Mẫu của bạn!'], enemyDefeated: false, playerDefeated: false };
+      }
+      if (player.mind < skill.mindCost) {
+        return { logs: [`Không đủ Tâm Trí (Cần ${skill.mindCost} Tâm Trí)!`], enemyDefeated: false, playerDefeated: false };
+      }
+      if (skill.hpCost && player.hp <= skill.hpCost) {
+        return { logs: ['Sinh Lực quá thấp để hiến tế!'], enemyDefeated: false, playerDefeated: false };
+      }
+
+      player.mind = Math.max(0, player.mind - skill.mindCost);
+      if (skill.hpCost) player.hp = Math.max(1, player.hp - (lv === 1 ? 15 : lv === 2 ? 12 : 10));
+      if (skill.corruptionGain) player.corruption = Math.min(100, player.corruption + skill.corruptionGain);
+
+      const limb = enemy.limbs.find((l) => l.id === effectiveLimbId && l.hp > 0) || enemy.limbs.find((l) => l.hp > 0)!;
+      let dealt = 0;
+      let severedNow = false;
+      if (skillId === 'whirlwind_slash') {
+        const wpn = getEffectiveWeapon(player);
+        const mult = lv === 1 ? 1.0 : lv === 2 ? 1.2 : 1.45;
+        const baseDmg = Math.round(rng.int(wpn.dmg[0], wpn.dmg[1]) * mult);
+        const torso = enemy.limbs.find((l) => l.id === 'torso' && l.hp > 0);
+        const arms = enemy.limbs.filter((l) => (l.isWeaponArm || l.isShieldArm || l.isTentacle) && l.hp > 0);
+        const targets = [...(torso ? [torso] : []), ...arms.slice(0, lv === 1 ? 1 : lv === 2 ? 2 : 4)];
+        const finalTargets = targets.length > 0 ? targets : [limb];
+        logs.push(`🌪️ [${player.name}] thi triển [Nhát Chém Xoáy Lv${lv}]!`);
+        for (const t of finalTargets) {
+          const r = applyLimbDamageToEnemy(player, enemy, tpl, t, baseDmg, false, logs);
+          dealt += r.actualDmg;
+          if (r.severedNow) severedNow = true;
+        }
+        if (lv >= 3) enemy.bleedPerTurn = Math.max(enemy.bleedPerTurn || 0, 160);
+      } else if (skillId === 'hamstring_bind' && limb) {
+        const lockTurns = lv === 1 ? 2 : 3;
+        const dmg = lv === 1 ? 180 : lv === 2 ? 260 : 350;
+        enemy.lockedLimbIds[limb.id] = lockTurns;
+        if (lv >= 2) limb.armor = Math.max(0, (limb.armor || 0) * 0.5);
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, dmg, false, logs);
+        dealt = r.actualDmg;
+        severedNow = r.severedNow;
+        logs.push(`⛓️ [${player.name}] dùng [Trói Gân Lv${lv}] lên [${limb.name}] gây ${r.actualDmg} sát thương!`);
+      } else if (skillId === 'holy_light' && limb) {
+        let dmg = lv === 1 ? rng.int(450, 600) : lv === 2 ? rng.int(600, 780) : rng.int(780, 1000);
+        if (enemy.oilCovered) {
+          dmg = Math.round(dmg * 2.5);
+          enemy.burnPerTurn = Math.max(enemy.burnPerTurn || 0, 150);
+          enemy.burnTurns = 3;
+          enemy.oilCovered = false;
+        }
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, dmg, lv >= 3, logs);
+        dealt = r.actualDmg;
+        severedNow = r.severedNow;
+        if (lv >= 2) enemy.blindTurns = Math.max(enemy.blindTurns || 0, 1);
+        logs.push(`☀️ [${player.name}] giáng [Thánh Quang Lv${lv}] vào [${limb.name}] gây ${r.actualDmg} sát thương!`);
+      } else if (skillId === 'blessed_heal') {
+        const heal = lv === 1 ? 45 : lv === 2 ? 65 : 90;
+        player.hp = Math.min(player.maxHp, player.hp + heal);
+        player.statuses.bleeding = false;
+        if (lv >= 2) player.limbs.infected = { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false };
+        logs.push(`🙏 [${player.name}] niệm [Phép Lành Lv${lv}] hồi +${heal} Sinh Lực & cầm máu!`);
+      } else if (skillId === 'divine_aegis') {
+        player.statuses.divineAegisTurns = lv === 1 ? 2 : 3;
+        player.statuses.divineAegisLevel = lv;
+        player.statuses.guarding = true;
+        logs.push(`🛡️ [${player.name}] dựng [Hộ Thể Lv${lv}] trong ${player.statuses.divineAegisTurns} lượt!`);
+      } else if (skillId === 'purification') {
+        const heal = lv === 1 ? 15 : lv === 2 ? 30 : 45;
+        player.hp = Math.min(player.maxHp, player.hp + heal);
+        if (lv >= 3) player.mind = Math.min(player.maxMind, player.mind + 15);
+        player.statuses.poisoned = false;
+        player.statuses.parasite = false;
+        player.statuses.blindedTurns = 0;
+        player.limbs.infected = { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false };
+        if (lv >= 2) player.statuses.statusImmunityTurns = lv;
+        logs.push(`🌿 [${player.name}] niệm [Thanh Tẩy Lv${lv}] giải trừ ác tật!`);
+      } else if (skillId === 'flesh_rend' && limb) {
+        const dmg = lv === 1 ? 350 : lv === 2 ? 480 : 620;
+        const bleed = lv === 1 ? 180 : lv === 2 ? 250 : 320;
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, dmg, false, logs);
+        dealt = r.actualDmg;
+        severedNow = r.severedNow;
+        enemy.bleedPerTurn = Math.max(enemy.bleedPerTurn || 0, bleed);
+        logs.push(`🩸 [${player.name}] dùng [Xé Xác Lv${lv}] vào [${limb.name}] gây ${r.actualDmg} sát thương!`);
+      } else if (skillId === 'blood_pact') {
+        player.statuses.bloodPactLevel = lv;
+        logs.push(`🩸 [${player.name}] kích hoạt [Huyết Ước Lv${lv}] cho đòn đánh kế tiếp!`);
+      } else if (skillId === 'blood_drain' && limb) {
+        let dmg = lv === 1 ? 380 : lv === 2 ? 520 : 680;
+        let heal = lv === 1 ? 25 : lv === 2 ? 38 : 55;
+        if (lv >= 2 && (enemy.bleedPerTurn || 0) > 0) {
+          dmg = Math.round(dmg * 1.5);
+          heal = Math.round(heal * 1.5);
+        }
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, dmg, false, logs);
+        dealt = r.actualDmg;
+        severedNow = r.severedNow;
+        player.hp = Math.min(player.maxHp, player.hp + heal);
+        logs.push(`🦇 [${player.name}] dùng [Hút Máu Lv${lv}] gây ${r.actualDmg} sát thương và hồi +${heal} Sinh Lực!`);
+      } else if (skillId === 'void_bite' && limb) {
+        const dmg = lv === 1 ? 500 : lv === 2 ? 680 : 880;
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, dmg, true, logs);
+        dealt = r.actualDmg;
+        severedNow = r.severedNow;
+        logs.push(`🌌 [${player.name}] niệm [Hư Vô Cắn Lv${lv}] lên [${limb.name}] gây ${r.actualDmg} sát thương chuẩn!`);
+      } else if (skillId === 'veil_of_blindness') {
+        enemy.blindTurns = Math.max(enemy.blindTurns || 0, lv === 1 ? 2 : 3);
+        if (lv >= 3) enemy.telegraphing = false;
+        logs.push(`🌑 [${player.name}] tung [Che Mắt Lv${lv}] làm mù kẻ thù!`);
+      } else if (skillId === 'obliterate' && limb) {
+        const threshold = lv === 1 ? 400 : lv === 2 ? 650 : 900;
+        const fallbackDmg = lv === 1 ? 400 : lv === 2 ? 550 : 720;
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, limb.hp <= threshold ? limb.hp + 999 : fallbackDmg, true, logs);
+        dealt = r.actualDmg;
+        severedNow = r.severedNow;
+        logs.push(`👁️ [${player.name}] thi triển [Xóa Sổ Lv${lv}] lên [${limb.name}]!`);
+      } else if (skillId === 'en_garde' && limb) {
+        const wpn = getEffectiveWeapon(player);
+        const mult = lv === 1 ? 1.0 : lv === 2 ? 1.3 : 1.6;
+        const baseDmg = Math.round(rng.int(wpn.dmg[0], wpn.dmg[1]) * mult * (lv >= 3 ? 1.25 : 1.0));
+        player.statuses.guarding = true;
+        player.statuses.divineAegisTurns = Math.max(player.statuses.divineAegisTurns || 0, 1);
+        player.statuses.divineAegisLevel = Math.max(player.statuses.divineAegisLevel || 0, lv);
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, baseDmg, false, logs);
+        dealt = r.actualDmg;
+        severedNow = r.severedNow;
+        logs.push(`⚔️🛡️ [${player.name}] dùng [Thế Thủ Phản Kích Lv${lv}] vào [${limb.name}] gây ${r.actualDmg} sát thương!`);
+      }
+
+      if (isEnemyDead(enemy)) {
+        const deadOut = handleEnemyDeath(player, enemy, tpl, logs, severedNow, false);
+        deadOut.lastDealtDmg = dealt;
+        return deadOut;
+      }
+      return { logs, enemyDefeated: false, playerDefeated: false, lastDealtDmg: dealt, severedAnyLimb: severedNow, targetLimbId: limb?.id };
+    }
+
+    if (action === 'ITEM' && opts?.itemId) {
+      const itemId = opts.itemId;
+      const count = player.inventory[itemId] || 0;
+      const item = CONFIG.ITEMS[itemId];
+      if (count <= 0 || !item || !item.combatUsable) {
+        return { logs: ['Không thể dùng vật phẩm này trong trận!'], enemyDefeated: false, playerDefeated: false };
+      }
+      player.inventory[itemId] = count - 1;
+      let dealt = 0;
+      let severedNow = false;
+
+      if (itemId === 'brown_vial') {
+        const dmg = rng.int(CONFIG.BROWN_VIAL_MIN_DMG, CONFIG.BROWN_VIAL_MAX_DMG);
+        const torso = enemy.limbs.find((l) => l.id === 'torso' && l.hp > 0) || enemy.limbs.find((l) => l.hp > 0)!;
+        logs.push(`💣 [${player.name}] ném [Lọ Nâu] phát nổ dữ dội (${dmg} sát thương)!`);
+        if (tpl.id === 'ouroboros_serpent' && enemy.telegraphing) {
+          enemy.telegraphing = false;
+          const head = enemy.limbs.find((l) => l.id === 'head');
+          if (head && head.hp > 0) applyLimbDamageToEnemy(player, enemy, tpl, head, dmg, true, logs);
+        }
+        const res = applyLimbDamageToEnemy(player, enemy, tpl, torso, dmg, true, logs);
+        dealt = res.actualDmg;
+        severedNow = res.severedNow;
+        for (const l of enemy.limbs) {
+          if (l.id !== 'torso' && l.hp > 0 && l.hp <= 420) {
+            const sub = applyLimbDamageToEnemy(player, enemy, tpl, l, l.hp + 50, true, logs);
+            if (sub.severedNow) severedNow = true;
+          }
+        }
+      } else if (itemId === 'red_vial') {
+        enemy.blindTurns = Math.max(enemy.blindTurns, CONFIG.RED_VIAL_BLIND_TURNS);
+        enemy.acidTurns = Math.max(enemy.acidTurns || 0, 3);
+        const head = enemy.limbs.find((l) => l.id === 'head' && l.hp > 0) || enemy.limbs.find((l) => l.hp > 0)!;
+        for (const l of enemy.limbs) l.armor = (l.armor || 0) * (1 - CONFIG.RED_VIAL_ARMOR_SHRED);
+        const sub = applyLimbDamageToEnemy(player, enemy, tpl, head, 190, true, logs);
+        dealt = sub.actualDmg;
+        logs.push(`🧪 [${player.name}] tạt [Lọ Đỏ] làm mù & bào giáp ${tpl.name}!`);
+      } else if (itemId === 'white_vial') {
+        player.statuses.parasite = false;
+        player.statuses.poisoned = false;
+        player.limbs.infected = { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false };
+        logs.push(`🏳️ [${player.name}] uống [Lọ Trắng] thanh tẩy ký sinh & độc tố!`);
+      } else if (itemId === 'purple_vial') {
+        enemy.oilCovered = true;
+        enemy.oilTurns = 3;
+        if (tpl.tier === 'normal' && canPlayerFlee(player)) {
+          return { logs: ['🟣 [Lọ Tím] tạo màn khói đặc giúp cả đội Bỏ chạy thành công!'], enemyDefeated: false, playerDefeated: false, fledSuccess: true };
+        }
+        logs.push(`🟣 [${player.name}] ném [Lọ Tím] phủ Tinh Dầu lên ${tpl.name}!`);
+      } else if (itemId === 'rotten_meat') {
+        if (tpl.isBeast) {
+          enemy.stunTurns = Math.max(enemy.stunTurns, 1);
+          enemy.telegraphing = false;
+          logs.push(`🥩 [${player.name}] ném [Thịt Thối] dụ ${tpl.name} bỏ qua 1 lượt!`);
+        } else {
+          logs.push(`🥩 ${tpl.name} không bị mắc bẫy [Thịt Thối]!`);
+        }
+      } else if (itemId === 'silver_sword_oil') {
+        player.silverOilTurns = 6;
+        logs.push(`🗡️✨ [${player.name}] bôi [Dầu Kiếm Bạc] lên vũ khí!`);
+      } else if (itemId === 'holy_fire_oil') {
+        const torso = enemy.limbs.find((l) => l.id === 'torso' && l.hp > 0) || enemy.limbs.find((l) => l.hp > 0)!;
+        const sub = applyLimbDamageToEnemy(player, enemy, tpl, torso, enemy.oilCovered ? 1050 : 420, true, logs);
+        dealt = sub.actualDmg;
+        enemy.oilCovered = false;
+        enemy.burnPerTurn = Math.max(enemy.burnPerTurn || 0, 180);
+        enemy.burnTurns = 3;
+        logs.push(`🔥✝️ [${player.name}] ném [Lọ Dầu Lửa Thánh] gây ${sub.actualDmg} sát thương!`);
+      } else if (itemId === 'void_acid_vial') {
+        enemy.acidTurns = Math.max(enemy.acidTurns || 0, 4);
+        for (const l of enemy.limbs) l.armor = (l.armor || 0) * 0.3;
+        const torso = enemy.limbs.find((l) => l.id === 'torso' && l.hp > 0) || enemy.limbs.find((l) => l.hp > 0)!;
+        const sub = applyLimbDamageToEnemy(player, enemy, tpl, torso, 380, true, logs);
+        dealt = sub.actualDmg;
+        logs.push(`🧪🌌 [${player.name}] ném [Lọ Axit Hư Vô] ăn mòn giáp gây ${sub.actualDmg} sát thương!`);
+      } else if (itemId === 'steel_trap') {
+        const leg = enemy.limbs.find((l) => l.isSupportLeg && l.hp > 0) || enemy.limbs.find((l) => l.hp > 0)!;
+        enemy.lockedLimbIds[leg.id] = 2;
+        enemy.telegraphing = false;
+        const sub = applyLimbDamageToEnemy(player, enemy, tpl, leg, 280, false, logs);
+        dealt = sub.actualDmg;
+        severedNow = sub.severedNow;
+        logs.push(`🪤 [${player.name}] gài [Bẫy Dây Thép] khóa [${leg.name}]!`);
+      } else {
+        applySupportItemEffects(player, itemId, logs);
+      }
+
+      if (isEnemyDead(enemy)) {
+        const deadOut = handleEnemyDeath(player, enemy, tpl, logs, severedNow, false);
+        deadOut.lastDealtDmg = dealt;
+        return deadOut;
+      }
+      return { logs, enemyDefeated: false, playerDefeated: false, lastDealtDmg: dealt, severedAnyLimb: severedNow };
+    }
+    return { logs, enemyDefeated: false, playerDefeated: false };
+  }
+
+  // Ally individual action (actorIndex >= 1)
+  if (!ally) return { logs: [], enemyDefeated: false, playerDefeated: false };
+  ally.guarding = false;
+
+  if (action === 'GUARD') {
+    ally.guarding = true;
+    ally.mind = Math.min(ally.maxMind, ally.mind + 4);
+    return {
+      logs: [`🛡️ [${ally.name}] vào thế Phòng Thủ bảo vệ đội hình (+4 Tâm Trí)!`],
+      enemyDefeated: false,
+      playerDefeated: false,
+    };
+  }
+
+  if (action === 'ITEM' && opts?.itemId) {
+    const itemId = opts.itemId;
+    const item = CONFIG.ITEMS[itemId];
+    if ((player.inventory[itemId] || 0) <= 0 || !item || !item.combatUsable) {
+      return { logs: ['Vật phẩm không khả dụng!'], enemyDefeated: false, playerDefeated: false };
+    }
+    // Offensive tactical vials target enemy; healing/support items apply to this ally
+    if (['brown_vial', 'red_vial', 'purple_vial', 'rotten_meat', 'holy_fire_oil', 'void_acid_vial', 'steel_trap'].includes(itemId)) {
+      return executeSingleActorCombatAction(player, enemy, 0, 'ITEM', effectiveLimbId, opts, rng);
+    }
+    applySupportItemToAlly(player, actorIndex - 1, itemId, logs);
+    return { logs, enemyDefeated: false, playerDefeated: false };
+  }
+
+  if (action === 'SKILL' && opts?.skillId) {
+    const skillId = opts.skillId;
+    const skill = CONFIG.SKILLS.find((s) => s.id === skillId);
+    if (!skill || ally.mind < skill.mindCost) {
+      return { logs: [`[${ally.name}] không đủ Tâm Trí để dùng kỹ năng này!`], enemyDefeated: false, playerDefeated: false };
+    }
+    ally.mind = Math.max(0, ally.mind - skill.mindCost);
+    const limb = enemy.limbs.find((l) => l.id === effectiveLimbId && l.hp > 0) || enemy.limbs.find((l) => l.hp > 0)!;
+    let dealt = 0;
+    let severedNow = false;
+
+    if (skillId === 'blessed_heal') {
+      const target = [player, ...player.party.filter((a) => a.hp > 0)].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+      if (target && 'classId' in target && 'inventory' in target) {
+        target.hp = Math.min(target.maxHp, target.hp + 45);
+        target.statuses.bleeding = false;
+        logs.push(`🙏 [${ally.name}] niệm [Phép Lành] hồi +45 Sinh Lực & cầm máu cho [${target.name}]!`);
+      } else if (target) {
+        target.hp = Math.min(target.maxHp, target.hp + 45);
+        if (target.statuses) target.statuses.bleeding = false;
+        logs.push(`🙏 [${ally.name}] niệm [Phép Lành] hồi +45 Sinh Lực cho [${target.name}]!`);
+      }
+    } else if (skillId === 'purification') {
+      player.statuses.poisoned = false;
+      player.statuses.parasite = false;
+      player.limbs.infected = { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false };
+      ally.statuses = { bleeding: false, poisoned: false, parasite: false };
+      logs.push(`🌿 [${ally.name}] niệm [Thanh Tẩy] xóa sạch Độc & Ký sinh cho tổ đội!`);
+    } else if (skillId === 'veil_of_blindness') {
+      enemy.blindTurns = Math.max(enemy.blindTurns || 0, 2);
+      logs.push(`🌑 [${ally.name}] tung [Che Mắt] làm mù ${tpl.name} 2 lượt!`);
+    } else if (skillId === 'hamstring_bind' && limb) {
+      enemy.lockedLimbIds[limb.id] = 2;
+      const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, 190, false, logs);
+      dealt = r.actualDmg;
+      severedNow = r.severedNow;
+      logs.push(`⛓️ [${ally.name}] dùng [Trói Gân] khóa [${limb.name}] & gây ${r.actualDmg} sát thương!`);
+    } else if (skillId === 'whirlwind_slash') {
+      const wpn = getAllyEffectiveWeapon(ally);
+      const baseDmg = rng.int(wpn.dmg[0], wpn.dmg[1]);
+      const torso = enemy.limbs.find((l) => l.id === 'torso' && l.hp > 0);
+      const arm = enemy.limbs.find((l) => (l.isWeaponArm || l.isShieldArm) && l.hp > 0);
+      const tList = [torso, arm].filter(Boolean) as LimbConfig[];
+      logs.push(`🌪️ [${ally.name}] thi triển [Nhát Chém Xoáy]!`);
+      for (const t of tList.length ? tList : [limb]) {
+        const r = applyLimbDamageToEnemy(player, enemy, tpl, t, baseDmg, false, logs);
+        dealt += r.actualDmg;
+        if (r.severedNow) severedNow = true;
+      }
+    } else if (skillId === 'holy_light' && limb) {
+      const dmg = rng.int(440, 580);
+      const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, dmg, false, logs);
+      dealt = r.actualDmg;
+      severedNow = r.severedNow;
+      logs.push(`☀️ [${ally.name}] giáng [Thánh Quang] vào [${limb.name}] gây ${r.actualDmg} sát thương!`);
+    } else if (skillId === 'void_bite' && limb) {
+      const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, 460, true, logs);
+      dealt = r.actualDmg;
+      severedNow = r.severedNow;
+      logs.push(`🌌 [${ally.name}] niệm [Hư Vô Cắn] vào [${limb.name}] gây ${r.actualDmg} sát thương chuẩn!`);
+    } else if (limb) {
+      const r = applyLimbDamageToEnemy(player, enemy, tpl, limb, 320, false, logs);
+      dealt = r.actualDmg;
+      severedNow = r.severedNow;
+      enemy.bleedPerTurn = Math.max(enemy.bleedPerTurn || 0, 150);
+      logs.push(`🩸 [${ally.name}] cào xé [${limb.name}] gây ${r.actualDmg} sát thương!`);
+    }
+
+    if (isEnemyDead(enemy)) {
+      const deadOut = handleEnemyDeath(player, enemy, tpl, logs, severedNow, false);
+      deadOut.lastDealtDmg = dealt;
+      return deadOut;
+    }
+    return { logs, enemyDefeated: false, playerDefeated: false, lastDealtDmg: dealt, severedAnyLimb: severedNow, targetLimbId: limb?.id };
+  }
+
+  // Ally ATTACK
+  const targetCheck = canTargetEnemyLimb(enemy, tpl, effectiveLimbId);
+  const limb =
+    (targetCheck.allowed ? enemy.limbs.find((l) => l.id === effectiveLimbId) : null) ||
+    enemy.limbs.find((l) => l.hp > 0 && canTargetEnemyLimb(enemy, tpl, l.id).allowed) ||
+    enemy.limbs.find((l) => l.hp > 0);
+  if (!limb) return { logs, enemyDefeated: isEnemyDead(enemy), playerDefeated: false };
+
+  const allyWpn = getAllyEffectiveWeapon(ally);
+  const hitChance = Math.max(0.25, Math.min(0.96, 0.86 + allyWpn.hitBonus - (limb.evasionBonus || 0)));
+  if (!rng.chance(hitChance)) {
+    return {
+      logs: [`💨 [${ally.name}] vung [${allyWpn.name}] nhắm vào [${limb.name}] nhưng trượt!`],
+      enemyDefeated: false,
+      playerDefeated: false,
+      targetLimbId: limb.id,
+    };
+  }
+  let allyDmg = rng.int(allyWpn.dmg[0], allyWpn.dmg[1]);
+  if (!ally.isUndeadSummon && (ally.hunger || 0) >= 50) allyDmg = Math.round(allyDmg * 0.75);
+  if (ally.isUndeadSummon) {
+    const necLv = player.skillLevels?.necromancy || 1;
+    if (necLv === 2) allyDmg = Math.round(allyDmg * 1.15);
+    else if (necLv >= 3) allyDmg = Math.round(allyDmg * 1.3);
+  }
+  let wasCrit = false;
+  if ((ally.isUndeadSummon || (ally.hunger || 0) < 90) && rng.chance(allyWpn.critChance)) {
+    wasCrit = true;
+    allyDmg = Math.round(allyDmg * 1.5);
+  }
+  const ignoreArmor = allyWpn.damageType === 'true' || (allyWpn.armorPen || 0) >= 1.0;
+  const sub = applyLimbDamageToEnemy(player, enemy, tpl, limb, allyDmg, ignoreArmor, logs, allyWpn.armorPen || 0);
+  logs.unshift(
+    `🗡️ [${ally.name}] dùng [${allyWpn.name}] đánh vào [${limb.name}] gây ${sub.actualDmg} sát thương${wasCrit ? ' (CHÍ MẠNG!)' : ''}!`
+  );
+  if (isEnemyDead(enemy)) {
+    const deadOut = handleEnemyDeath(player, enemy, tpl, logs, sub.severedNow, wasCrit);
+    deadOut.lastDealtDmg = sub.actualDmg;
+    deadOut.targetLimbId = limb.id;
+    return deadOut;
+  }
+  return {
+    logs,
+    enemyDefeated: false,
+    playerDefeated: false,
+    lastDealtDmg: sub.actualDmg,
+    severedAnyLimb: sub.severedNow,
+    wasCrit,
+    targetLimbId: limb.id,
+    particleType: wasCrit ? 'spark' : 'blood',
   };
 }
 

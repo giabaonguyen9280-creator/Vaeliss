@@ -66,29 +66,47 @@ export function getLimbReticlePositions(spriteKey: string): Record<string, { nx:
   }
   if (spriteKey === 'demon_lord_vaelis') {
     return {
-      head: { nx: 0.50, ny: 0.19 },
+      void_conduit: { nx: 0.50, ny: 0.08 },
+      head: { nx: 0.50, ny: 0.21 },
+      throne_claw_left: { nx: 0.24, ny: 0.45 },
       torso: { nx: 0.50, ny: 0.44 },
-      left_arm: { nx: 0.26, ny: 0.48 },
-      right_arm: { nx: 0.76, ny: 0.44 },
-      legs: { nx: 0.50, ny: 0.76 },
+      throne_ensor_right: { nx: 0.76, ny: 0.45 },
+      void_tendrils: { nx: 0.50, ny: 0.79 },
     };
   }
-  if (spriteKey === 'dullahan_knight' || spriteKey === 'butcher_kaelgor') {
+  if (spriteKey === 'butcher_kaelgor') {
     return {
-      head: { nx: 0.50, ny: 0.18 }, // Lồng sắt nhốt quạ hàn trên cổ cụt
+      head: { nx: 0.50, ny: 0.18 },
+      left_arm: { nx: 0.25, ny: 0.46 },
+      torso: { nx: 0.50, ny: 0.45 },
+      right_arm: { nx: 0.76, ny: 0.44 },
+      legs: { nx: 0.50, ny: 0.77 },
+    };
+  }
+  if (spriteKey === 'dullahan_knight') {
+    return {
+      head: { nx: 0.50, ny: 0.18 },
+      left_arm: { nx: 0.28, ny: 0.46 },
+      torso: { nx: 0.52, ny: 0.46 },
+      right_arm: { nx: 0.76, ny: 0.44 },
+      legs: { nx: 0.50, ny: 0.77 },
+    };
+  }
+  if (spriteKey === 'countess_carmilla') {
+    return {
+      head: { nx: 0.50, ny: 0.19 },
       left_arm: { nx: 0.25, ny: 0.46 },
       torso: { nx: 0.50, ny: 0.46 },
       right_arm: { nx: 0.75, ny: 0.44 },
-      legs: { nx: 0.50, ny: 0.76 },
+      legs: { nx: 0.50, ny: 0.78 },
     };
   }
-  if (spriteKey === 'countess_carmilla' || spriteKey === 'fenrir_kin') {
-    // Quái Vật Hợp Thể Kỵ Đoàn: 4 đầu gào thét (head), Khối giáp thịt nung chảy (torso), 6 tay bò dưới sàn
+  if (spriteKey === 'fenrir_kin') {
     return {
-      head: { nx: 0.50, ny: 0.22 },
-      torso: { nx: 0.50, ny: 0.46 },
-      left_arm: { nx: 0.23, ny: 0.54 },
-      right_arm: { nx: 0.77, ny: 0.54 },
+      head: { nx: 0.50, ny: 0.21 },
+      left_arm: { nx: 0.23, ny: 0.48 },
+      torso: { nx: 0.50, ny: 0.47 },
+      right_arm: { nx: 0.77, ny: 0.48 },
       legs: { nx: 0.50, ny: 0.78 },
     };
   }
@@ -544,48 +562,33 @@ function drawDetailedWeapon(
     ctx.fill();
     ctx.stroke();
   } else if (spriteKey === 'butcher_kaelgor') {
-    // Spinning Serrated Chainsaw spraying orange sparks (Cưa xích răng cưa quay tít bắn tia lửa)
-    ctx.fillStyle = '#991b1b';
-    ctx.fillRect(-4 * scale, -10 * scale, 15 * scale, 15 * scale);
-    ctx.strokeRect(-4 * scale, -10 * scale, 15 * scale, 15 * scale);
-
-    ctx.fillStyle = '#64748b';
+    // Đại Phủ Chặt Đầu khổng lồ (Executioner Cleaver)
+    ctx.strokeStyle = '#5c3a21';
+    ctx.lineWidth = 4.5 * scale;
     ctx.beginPath();
-    ctx.moveTo(6 * scale, -6 * scale);
-    ctx.lineTo(28 * scale, -54 * scale);
-    ctx.lineTo(37 * scale, -49 * scale);
-    ctx.lineTo(15 * scale, -1 * scale);
+    ctx.moveTo(0, 12 * scale);
+    ctx.lineTo(18 * scale, -44 * scale);
+    ctx.stroke();
+
+    ctx.fillStyle = '#475569';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2.2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(10 * scale, -18 * scale);
+    ctx.lineTo(36 * scale, -54 * scale);
+    ctx.lineTo(44 * scale, -24 * scale);
+    ctx.lineTo(14 * scale, -6 * scale);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Serrated Saw Teeth
-    ctx.fillStyle = '#f8fafc';
-    for (let t = 0; t < 7; t++) {
-      const tx = (8 + t * 3.0) * scale;
-      const ty = (-10 - t * 6.4) * scale;
-      ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(tx - 5 * scale, ty - 3 * scale);
-      ctx.lineTo(tx + 1 * scale, ty - 6 * scale);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // Flying Orange Sparks from spinning chain
-    ctx.strokeStyle = '#facc15';
-    ctx.lineWidth = 2 * scale;
-    for (const [sx, sy] of [
-      [-8, -18],
-      [-12, -28],
-      [26, -34],
-      [34, -44],
-    ]) {
-      ctx.beginPath();
-      ctx.moveTo(sx * scale, sy * scale);
-      ctx.lineTo((sx - 6) * scale, (sy - 5) * scale);
-      ctx.stroke();
-    }
+    // Bloodstained cleaver edge
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 2.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(35 * scale, -51 * scale);
+    ctx.lineTo(42 * scale, -25 * scale);
+    ctx.stroke();
   } else if (spriteKey === 'grand_abbess' || spriteKey === 'rotting_priest') {
     // Glowing Holy Mother Staff (Trượng Thánh Mẫu phát hào quang chói lòa)
     ctx.strokeStyle = '#b45309';
@@ -656,12 +659,12 @@ function drawDetailedWeapon(
     ctx.quadraticCurveTo(6 * scale, 6 * scale, 18 * scale, 8 * scale);
     ctx.stroke();
   } else {
-    // Broad Iron Sword / Penitent Greatsword / Butcher Cleaver
+    // Broad Iron Sword / Penitent Greatsword / Vorath Dark Greatsword
     const isColossal = spriteKey === 'penitent_knight' || spriteKey === 'dullahan_knight';
     const len = isColossal ? -58 : -46;
     const bGrad = ctx.createLinearGradient(4 * scale, 0, 22 * scale, len * scale);
-    bGrad.addColorStop(0, '#64748b');
-    bGrad.addColorStop(0.55, '#e2e8f0');
+    bGrad.addColorStop(0, spriteKey === 'dullahan_knight' ? '#1e293b' : '#64748b');
+    bGrad.addColorStop(0.55, spriteKey === 'dullahan_knight' ? '#475569' : '#e2e8f0');
     bGrad.addColorStop(1, '#991b1b');
     ctx.fillStyle = bGrad;
     ctx.beginPath();
@@ -1506,7 +1509,7 @@ export function drawPixelSprite(
     ctx.lineWidth = 14 * scale;
     ctx.beginPath();
     ctx.moveTo(cx - 32 * scale, destH * 0.78);
-    ctx.bezierCurveTo(cx - 42 * scale, destH * 0.52, cx + 42 * scale, destH * 0.56, cx + 34 * subScale(scale), destH * 0.80);
+    ctx.bezierCurveTo(cx - 42 * scale, destH * 0.52, cx + 42 * scale, destH * 0.56, cx + 34 * scale, destH * 0.80);
     ctx.stroke();
     // Upper torso & hooded fanged head
     ctx.strokeStyle = '#7e22ce';
@@ -1657,83 +1660,81 @@ export function drawPixelSprite(
   }
 
   // =========================================================================
-  // FLOOR 1 BOSS: HIỆP SĨ TRƯỞNG VAELIS (`demon_lord_vaelis` — Fused to Blood Throne, 5 Impaled Greatswords, Hollow Bleeding Eyes)
+  // FLOOR 1 BOSS: MA VƯƠNG VAELIS (`demon_lord_vaelis` — Motionless God-Emperor on Iron-Bone Throne)
   // =========================================================================
   if (spriteKey === 'demon_lord_vaelis') {
-    // 1. Hậu cảnh: Ngai Vàng Máu đúc từ xương sọ và sắt đen + 5 thanh đại kiếm gỉ sét cắm xuyên chéo
-    ctx.fillStyle = '#0d090f';
+    const drawBlackBloodSplash = (bx: number, by: number, rad: number) => {
+      ctx.save();
+      ctx.fillStyle = '#09040d';
+      ctx.strokeStyle = '#7e22ce';
+      ctx.lineWidth = 1.6 * scale;
+      ctx.beginPath();
+      ctx.arc(bx, by, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3 + 0.3;
+        ctx.beginPath();
+        ctx.moveTo(bx + Math.cos(a) * rad * 0.6, by + Math.sin(a) * rad * 0.6);
+        ctx.lineTo(bx + Math.cos(a) * rad * 1.55, by + Math.sin(a) * rad * 1.55);
+        ctx.strokeStyle = i % 2 === 0 ? '#1c1917' : '#a855f7';
+        ctx.lineWidth = 2.2 * scale;
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+
+    // 1. Iron-Bone Throne Backrest & Dais (Bất động như tượng đài cổ)
+    ctx.fillStyle = '#0f0b14';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2.6 * scale;
     ctx.beginPath();
-    ctx.moveTo(cx - 44 * scale, destH * 0.88);
-    ctx.lineTo(cx - 38 * scale, destH * 0.08);
-    ctx.lineTo(cx, destH * 0.02);
-    ctx.lineTo(cx + 38 * scale, destH * 0.08);
-    ctx.lineTo(cx + 44 * scale, destH * 0.88);
+    ctx.moveTo(cx - 46 * scale, destH * 0.88);
+    ctx.lineTo(cx - 40 * scale, destH * 0.12);
+    ctx.lineTo(cx, destH * 0.03);
+    ctx.lineTo(cx + 40 * scale, destH * 0.12);
+    ctx.lineTo(cx + 46 * scale, destH * 0.88);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Skulls embedded in the Blood Throne backrest
-    ctx.fillStyle = '#9ca3af';
-    for (const [skX, skY] of [[-26, 0.14], [26, 0.14], [-32, 0.28], [32, 0.28], [0, 0.07]]) {
+    // Throne spikes & skulls
+    ctx.fillStyle = '#a8a29e';
+    for (const [skX, skY] of [[-28, 0.16], [28, 0.16], [-34, 0.30], [34, 0.30], [0, 0.09]]) {
       ctx.beginPath();
-      ctx.arc(cx + skX * scale, destH * skY, 5.5 * scale, 0, Math.PI * 2);
+      ctx.arc(cx + skX * scale, destH * skY, 5.2 * scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
 
-    // 5 Rusted Greatswords impaling diagonally through Vaelis's ribcage into the throne back
-    ctx.strokeStyle = '#78716c';
-    ctx.lineWidth = 3.2 * scale;
-    for (const [sx, sy, ex, ey] of [
-      [-48, 0.10, -6, 0.46],
-      [48, 0.10, 6, 0.46],
-      [-46, 0.24, -8, 0.52],
-      [46, 0.24, 8, 0.52],
-      [0, 0.04, 0, 0.48],
-    ]) {
-      ctx.beginPath();
-      ctx.moveTo(cx + sx * scale, destH * sy);
-      ctx.lineTo(cx + ex * scale, destH * ey);
-      ctx.stroke();
-      // Crossguard at outer hilt
-      ctx.beginPath();
-      ctx.moveTo(cx + (sx - 5) * scale, destH * (sy + 0.03));
-      ctx.lineTo(cx + (sx + 5) * scale, destH * (sy - 0.03));
-      ctx.stroke();
-    }
-
-    // legs: Đôi chân giáp nặng bị xiềng xích quấn chặt vào chân ngai xương (nx: 0.50, ny: 0.76)
-    if (!severedLimbs.has('legs')) {
-      for (const dir of [-1, 1]) {
-        ctx.fillStyle = '#334155';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
-        ctx.fillRect(cx + (dir * 18 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
-        ctx.strokeRect(cx + (dir * 18 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
+    // 2. void_tendrils: Xúc Tu Hư Vô Đen quằn quại dưới bệ ngai (nx: 0.50, ny: 0.79)
+    if (!severedLimbs.has('void_tendrils')) {
+      for (let t = -3; t <= 3; t++) {
+        ctx.strokeStyle = t % 2 === 0 ? '#1e1b4b' : '#581c87';
+        ctx.lineWidth = 5.5 * scale;
+        const sway = Math.sin(animPhase * 1.4 + t) * 5 * scale;
+        ctx.beginPath();
+        ctx.moveTo(cx + t * 8 * scale, destH * 0.68);
+        ctx.quadraticCurveTo(cx + t * 14 * scale + sway, destH * 0.82, cx + t * 15 * scale - sway, destH * 0.93);
+        ctx.stroke();
       }
-      // Heavy black chains binding legs to throne base
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 3 * scale;
-      ctx.setLineDash([4 * scale, 2 * scale]);
-      ctx.beginPath();
-      ctx.moveTo(cx - 38 * scale, destH * 0.70);
-      ctx.lineTo(cx + 38 * scale, destH * 0.76);
-      ctx.moveTo(cx - 38 * scale, destH * 0.80);
-      ctx.lineTo(cx + 38 * scale, destH * 0.72);
-      ctx.stroke();
-      ctx.setLineDash([]);
     } else {
-      drawArterialStump(ctx, cx, destH * 0.74, 12 * scale);
+      drawBlackBloodSplash(cx, destH * 0.78, 13 * scale);
     }
 
-    // torso: Cơ thể Vaelis khổng lồ hốc hác ngồi hợp nhất vào ngai, lồng ngực lộ xương sườn xám ngoét & máu tím (nx: 0.50, ny: 0.44)
-    ctx.save();
-    ctx.translate(0, torsoBreathY * 0.5);
+    // 3. Motionless Seated Legs & Iron Greaves (fused into throne base)
+    for (const dir of [-1, 1]) {
+      ctx.fillStyle = '#334155';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.2 * scale;
+      ctx.fillRect(cx + (dir * 16 - 8) * scale, destH * 0.58, 16 * scale, 26 * scale);
+      ctx.strokeRect(cx + (dir * 16 - 8) * scale, destH * 0.58, 16 * scale, 26 * scale);
+    }
+
+    // 4. torso: Thân Thể Hóa Thạch Đen ngồi bất động uy nghi trên ngai (nx: 0.50, ny: 0.44)
     ctx.fillStyle = '#1e293b';
     ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2.5 * scale;
+    ctx.lineWidth = 2.6 * scale;
     ctx.beginPath();
     ctx.moveTo(cx - 28 * scale, destH * 0.28);
     ctx.lineTo(cx + 28 * scale, destH * 0.28);
@@ -1742,115 +1743,136 @@ export function drawPixelSprite(
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    // Exposed ashen ribcage & purple blood oozing down to floor
+    // Exposed ribcage & Void Core fissure on chest
     ctx.strokeStyle = '#cbd5e1';
-    ctx.lineWidth = 2.2 * scale;
+    ctx.lineWidth = 2 * scale;
     for (let r = 0; r < 4; r++) {
       const ry = destH * (0.34 + r * 0.05);
       ctx.beginPath();
       ctx.moveTo(cx - 16 * scale, ry);
-      ctx.quadraticCurveTo(cx, ry + 4 * scale, cx + 16 * scale, ry);
+      ctx.quadraticCurveTo(cx, ry + 3.5 * scale, cx + 16 * scale, ry);
       ctx.stroke();
     }
-    ctx.fillStyle = '#7e22ce';
-    ctx.fillRect(cx - 5 * scale, destH * 0.44, 10 * scale, 28 * scale);
-    ctx.restore();
+    ctx.fillStyle = '#9333ea';
+    ctx.beginPath();
+    ctx.arc(cx, destH * 0.44, 6.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
 
-    // left_arm: Tay trái gầy guộc giật tung các sợi xiềng xích sắt đen ghim xuống sàn (nx: 0.26, ny: 0.48)
-    if (!severedLimbs.has('left_arm')) {
-      ctx.strokeStyle = '#64748b';
-      ctx.lineWidth = 7 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 26 * scale, destH * 0.32);
-      ctx.lineTo(cx - 38 * scale, destH * 0.50 + leftArmBobY);
-      ctx.stroke();
-      // Black iron chains pulled taut to floor
-      ctx.strokeStyle = '#09070c';
-      ctx.lineWidth = 3.2 * scale;
-      ctx.setLineDash([5 * scale, 2 * scale]);
-      ctx.beginPath();
-      ctx.moveTo(cx - 38 * scale, destH * 0.50 + leftArmBobY);
-      ctx.lineTo(cx - 48 * scale, destH * 0.88);
-      ctx.moveTo(cx - 38 * scale, destH * 0.50 + leftArmBobY);
-      ctx.lineTo(cx - 26 * scale, destH * 0.88);
-      ctx.stroke();
-      ctx.setLineDash([]);
+    // 5. void_conduit: Cột Sống / Ống Dẫn Huyết Tủy nối đỉnh ngai vàng vào gáy Vaelis (nx: 0.50, ny: 0.08)
+    if (!severedLimbs.has('void_conduit')) {
+      const pulse = 0.6 + 0.4 * Math.sin(animPhase * 2);
+      ctx.strokeStyle = `rgba(220, 38, 38, ${pulse})`;
+      ctx.lineWidth = 4 * scale;
+      for (const ox of [-10, 0, 10]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + ox * 1.6 * scale, destH * 0.04);
+        ctx.quadraticCurveTo(cx + ox * scale, destH * 0.14, cx + ox * 0.5 * scale, destH * 0.24);
+        ctx.stroke();
+      }
     } else {
-      drawArterialStump(ctx, cx - 28 * scale, destH * 0.36, 9 * scale);
+      drawBlackBloodSplash(cx, destH * 0.09, 10 * scale);
     }
 
-    // right_arm: Tay phải bọc giáp siết thanh Trường Kiếm Thống Khổ rực lửa đen (nx: 0.76, ny: 0.44)
-    if (!severedLimbs.has('right_arm')) {
-      ctx.save();
-      ctx.translate(0, rightArmBobY);
-      ctx.strokeStyle = '#475569';
-      ctx.lineWidth = 8 * scale;
+    // 6. throne_claw_left: Tay Ngai Vuốt Sắt khổng lồ bên trái (nx: 0.24, ny: 0.45)
+    if (!severedLimbs.has('throne_claw_left')) {
+      ctx.fillStyle = '#475569';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.4 * scale;
       ctx.beginPath();
-      ctx.moveTo(cx + 26 * scale, destH * 0.32);
-      ctx.lineTo(cx + 38 * scale, destH * 0.48);
-      ctx.stroke();
-      // Trường Kiếm Thống Khổ rực lửa đen-đỏ
-      ctx.fillStyle = '#070509';
-      ctx.strokeStyle = '#dc2626';
-      ctx.lineWidth = 2.2 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 34 * scale, destH * 0.52);
-      ctx.lineTo(cx + 46 * scale, destH * 0.06);
-      ctx.lineTo(cx + 54 * scale, destH * 0.10);
-      ctx.lineTo(cx + 42 * scale, destH * 0.56);
+      ctx.moveTo(cx - 26 * scale, destH * 0.34);
+      ctx.lineTo(cx - 50 * scale, destH * 0.46);
+      ctx.lineTo(cx - 44 * scale, destH * 0.62);
+      ctx.lineTo(cx - 24 * scale, destH * 0.52);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.restore();
+      // Three razor iron claws
+      ctx.fillStyle = '#e2e8f0';
+      for (const cyOff of [0.42, 0.48, 0.54]) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 46 * scale, destH * cyOff);
+        ctx.lineTo(cx - 60 * scale, destH * (cyOff + 0.05));
+        ctx.lineTo(cx - 45 * scale, destH * (cyOff + 0.04));
+        ctx.closePath();
+        ctx.fill();
+      }
     } else {
-      drawArterialStump(ctx, cx + 28 * scale, destH * 0.36, 9 * scale);
+      drawBlackBloodSplash(cx - 32 * scale, destH * 0.42, 10 * scale);
     }
 
-    // head: Mũ trụ kỵ sĩ vỡ toác một nửa, lộ khuôn mặt già nua với 2 hốc mắt đen rỗng chảy lệ máu đen (nx: 0.50, ny: 0.19)
+    // 7. throne_ensor_right: Tay Ngai Lư Hương Huyết Hỏa bên phải (nx: 0.76, ny: 0.45)
+    if (!severedLimbs.has('throne_ensor_right')) {
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 7 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 26 * scale, destH * 0.34);
+      ctx.lineTo(cx + 46 * scale, destH * 0.44);
+      ctx.stroke();
+      // Hanging Blood-Fire Censer swinging gently
+      const censerX = cx + (48 + Math.sin(animPhase * 1.2) * 5) * scale;
+      const censerY = destH * 0.58;
+      ctx.strokeStyle = '#d4af37';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 46 * scale, destH * 0.44);
+      ctx.lineTo(censerX, censerY);
+      ctx.stroke();
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(censerX, censerY, 9 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fb923c';
+      ctx.beginPath();
+      ctx.arc(censerX, censerY - 4 * scale, 4.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      drawBlackBloodSplash(cx + 32 * scale, destH * 0.42, 10 * scale);
+    }
+
+    // 8. head: Đầu Vua Xương Đội Vương Miện Sắt Có Sừng (nx: 0.50, ny: 0.21)
     if (!severedLimbs.has('head')) {
-      const hy = destH * 0.19 + headBobY * 0.4;
-      // Gaunt aged face
+      const hy = destH * 0.21;
       ctx.fillStyle = '#9ca3af';
       ctx.strokeStyle = '#070509';
       ctx.lineWidth = 2.2 * scale;
       ctx.beginPath();
-      ctx.arc(cx, hy, 13 * scale, 0, Math.PI * 2);
+      ctx.arc(cx, hy, 12.5 * scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      // Half-shattered knight helm covering left half of head
+      // Half-shattered knight helm + Horned Iron Crown
       ctx.fillStyle = '#334155';
       ctx.beginPath();
-      ctx.arc(cx, hy, 14 * scale, Math.PI * 0.55, Math.PI * 1.65);
+      ctx.arc(cx, hy, 13.5 * scale, Math.PI * 0.55, Math.PI * 1.65);
       ctx.lineTo(cx, hy);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      // Two hollow black eye sockets weeping black blood
+      ctx.strokeStyle = '#eab308';
+      ctx.lineWidth = 2.6 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 12 * scale, hy - 8 * scale);
+      ctx.lineTo(cx - 20 * scale, hy - 22 * scale);
+      ctx.moveTo(cx + 12 * scale, hy - 8 * scale);
+      ctx.lineTo(cx + 20 * scale, hy - 22 * scale);
+      ctx.stroke();
+      // Weeping black eyes
       ctx.fillStyle = '#050307';
       ctx.beginPath();
-      ctx.arc(cx - 4.5 * scale, hy - 1 * scale, 2.8 * scale, 0, Math.PI * 2);
-      ctx.arc(cx + 4.5 * scale, hy - 1 * scale, 2.8 * scale, 0, Math.PI * 2);
+      ctx.arc(cx - 4.5 * scale, hy - 1 * scale, 2.6 * scale, 0, Math.PI * 2);
+      ctx.arc(cx + 4.5 * scale, hy - 1 * scale, 2.6 * scale, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 4.5 * scale, hy + 2 * scale);
-      ctx.lineTo(cx - 4.5 * scale, hy + 11 * scale);
-      ctx.moveTo(cx + 4.5 * scale, hy + 2 * scale);
-      ctx.lineTo(cx + 4.5 * scale, hy + 11 * scale);
-      ctx.stroke();
     } else {
-      drawArterialStump(ctx, cx, destH * 0.19, 10 * scale);
+      drawBlackBloodSplash(cx, destH * 0.21, 10 * scale);
     }
     ctx.restore();
     return;
   }
 
   // =========================================================================
-  // FLOOR 1 MINIBOSS 1: ĐAO PHỦ HẦM NGỤC (`butcher_kaelgor` & `dullahan_knight` — Iron Crow Cage on Neck Stump + Barbed-Wire Butcher Apron)
+  // FLOOR 1 MINIBOSS 1: ĐAO PHỦ HUYẾT NGỤC – MALAKOR (`butcher_kaelgor`)
   // =========================================================================
-  if (spriteKey === 'butcher_kaelgor' || spriteKey === 'dullahan_knight') {
-    // legs: Đôi ủng sắt đẫm máu (nx: 0.50, ny: 0.76)
+  if (spriteKey === 'butcher_kaelgor') {
     if (!severedLimbs.has('legs')) {
       for (const dir of [-1, 1]) {
         ctx.fillStyle = '#1c1917';
@@ -1863,10 +1885,10 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx, destH * 0.72, 11 * scale);
     }
 
-    // torso: Thân hình đồ sộ mặc tạp dề da thuộc dày cộp bê bết máu khô và khâu bằng dây thép gai (nx: 0.50, ny: 0.46)
+    // torso: Thân Bọc Thép & tạp dề đồ tể đẫm máu
     ctx.save();
     ctx.translate(0, torsoBreathY);
-    ctx.fillStyle = '#451a03';
+    ctx.fillStyle = '#475569';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2.6 * scale;
     ctx.beginPath();
@@ -1877,24 +1899,12 @@ export function drawPixelSprite(
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    // 45% Grimdark Black Shadow Mass on right side + blood-caked apron
     ctx.fillStyle = '#7f1d1d';
-    ctx.fillRect(cx - 22 * scale, destH * 0.32, 44 * scale, 32 * scale);
-    ctx.strokeRect(cx - 22 * scale, destH * 0.32, 44 * scale, 32 * scale);
-    ctx.fillStyle = 'rgba(7, 5, 9, 0.55)';
-    ctx.fillRect(cx, destH * 0.28, 28 * scale, 36 * scale);
-    // Barbed-wire stitches across apron
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 1.8 * scale;
-    for (const sy of [0.38, 0.46, 0.54]) {
-      ctx.beginPath();
-      ctx.moveTo(cx - 20 * scale, destH * sy);
-      ctx.lineTo(cx + 20 * scale, destH * (sy + 0.03));
-      ctx.stroke();
-    }
+    ctx.fillRect(cx - 20 * scale, destH * 0.34, 40 * scale, 28 * scale);
+    ctx.strokeRect(cx - 20 * scale, destH * 0.34, 40 * scale, 28 * scale);
     ctx.restore();
 
-    // left_arm: Kéo lê sợi xích sắt nặng gắn móc treo thịt / lồng quạ phụ (nx: 0.25, ny: 0.46)
+    // left_arm: Xích Móc Sắt
     if (!severedLimbs.has('left_arm')) {
       ctx.save();
       ctx.translate(leftArmSwayX, leftArmBobY);
@@ -1904,7 +1914,6 @@ export function drawPixelSprite(
       ctx.moveTo(cx - 30 * scale, destH * 0.32);
       ctx.lineTo(cx - 40 * scale, destH * 0.52);
       ctx.stroke();
-      // Heavy chain + iron meat hook
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 2.8 * scale;
       ctx.beginPath();
@@ -1917,7 +1926,7 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 30 * scale, destH * 0.36, 9 * scale);
     }
 
-    // right_arm: Cầm Rìu Chặt Đầu / Cưa Xích Rỉ Máu khổng lồ mẻ lưỡi (nx: 0.75, ny: 0.44)
+    // right_arm: Đại Phủ Chặt Đầu
     if (!severedLimbs.has('right_arm')) {
       ctx.save();
       ctx.translate(rightArmSwayX, rightArmBobY);
@@ -1933,144 +1942,330 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx + 30 * scale, destH * 0.36, 9 * scale);
     }
 
-    // head: Cổ cụt ngang hàn chặt chiếc lồng sắt hình trụ nhốt đầy quạ đen chết (nx: 0.50, ny: 0.18)
+    // head: Đầu Mặt Nạ Sắt với khe mắt đỏ rực
     if (!severedLimbs.has('head')) {
-      const cyCage = destH * 0.17 + headBobY * 0.5;
-      // Dead black crows stuffed inside cage
-      ctx.fillStyle = '#09070c';
-      ctx.beginPath();
-      ctx.arc(cx - 4 * scale, cyCage + 3 * scale, 8 * scale, 0, Math.PI * 2);
-      ctx.arc(cx + 5 * scale, cyCage + 1 * scale, 7 * scale, 0, Math.PI * 2);
-      ctx.fill();
-      if (!severedLimbs.has('left_arm') && !isBlinded) {
-        ctx.fillStyle = '#ef4444';
-        ctx.beginPath();
-        ctx.arc(cx - 5 * scale, cyCage + 1 * scale, 2 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 5 * scale, cyCage, 2 * scale, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // Cylindrical rusted iron cage bars welded to neck stump
-      ctx.strokeStyle = '#475569';
+      const hy = destH * 0.18 + headBobY * 0.5;
+      ctx.fillStyle = '#334155';
+      ctx.strokeStyle = '#070509';
       ctx.lineWidth = 2.4 * scale;
-      ctx.strokeRect(cx - 15 * scale, cyCage - 11 * scale, 30 * scale, 22 * scale);
-      for (const bx of [-9, -3, 3, 9]) {
-        ctx.beginPath();
-        ctx.moveTo(cx + bx * scale, cyCage - 11 * scale);
-        ctx.lineTo(cx + bx * scale, cyCage + 11 * scale);
-        ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 13 * scale, hy - 12 * scale);
+      ctx.lineTo(cx + 13 * scale, hy - 12 * scale);
+      ctx.lineTo(cx + 11 * scale, hy + 12 * scale);
+      ctx.lineTo(cx - 11 * scale, hy + 12 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      if (!isBlinded) {
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(cx - 8 * scale, hy - 2 * scale, 5 * scale, 2.5 * scale);
+        ctx.fillRect(cx + 3 * scale, hy - 2 * scale, 5 * scale, 2.5 * scale);
       }
     } else {
-      drawArterialStump(ctx, cx, destH * 0.24, 10 * scale);
+      drawArterialStump(ctx, cx, destH * 0.22, 10 * scale);
     }
     ctx.restore();
     return;
   }
 
   // =========================================================================
-  // FLOOR 1 MINIBOSS 2: QUÁI VẬT HỢP THỂ KỴ ĐOÀN (`countess_carmilla` & `fenrir_kin` — Melted Fused Armor Mass, 4 Screaming Heads, 6 Crawling Armored Arms)
+  // FLOOR 1 MINIBOSS 2: KỴ SĨ TIÊN PHONG – VORATH (`dullahan_knight` — Giant Rusted Tower Shield on Left Arm)
   // =========================================================================
-  if (spriteKey === 'countess_carmilla' || spriteKey === 'fenrir_kin') {
-    // Broken spears & shattered shields jutting from back
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = 3 * scale;
-    for (const [sx, sy, ex, ey] of [
-      [-28, 0.34, -44, 0.08],
-      [0, 0.30, -8, 0.04],
-      [26, 0.34, 42, 0.08],
-    ]) {
-      ctx.beginPath();
-      ctx.moveTo(cx + sx * scale, destH * sy);
-      ctx.lineTo(cx + ex * scale, destH * ey);
-      ctx.stroke();
+  if (spriteKey === 'dullahan_knight') {
+    if (!severedLimbs.has('legs')) {
+      for (const dir of [-1, 1]) {
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#070509';
+        ctx.lineWidth = 2.4 * scale;
+        ctx.fillRect(cx + (dir * 15 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
+        ctx.strokeRect(cx + (dir * 15 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
+      }
+    } else {
+      drawArterialStump(ctx, cx, destH * 0.72, 11 * scale);
     }
 
-    // 6 Crawling Rusted Armored Arms on floor (left_arm = 2 left arms, right_arm = 2 right arms, legs = 2 front lower arms)
-    const drawCrawlingArmPair = (
-      limbId: string,
-      anchors: Array<[number, number, number, number]>
-    ) => {
-      if (severedLimbs.has(limbId)) {
-        const [sx, sy] = anchors[0];
-        drawArterialStump(ctx, cx + sx * scale, destH * sy, 9 * scale);
-        return;
-      }
-      for (const [sx, sy, ex, ey] of anchors) {
-        ctx.strokeStyle = '#475569';
-        ctx.lineWidth = 7 * scale;
-        ctx.beginPath();
-        ctx.moveTo(cx + sx * scale, destH * sy);
-        ctx.lineTo(cx + ex * scale, destH * ey);
-        ctx.stroke();
-        // Broken sword/spear in crawling hand
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 2.5 * scale;
-        ctx.beginPath();
-        ctx.moveTo(cx + ex * scale, destH * ey);
-        ctx.lineTo(cx + (ex + (ex < 0 ? -12 : 12)) * scale, destH * (ey - 0.08));
-        ctx.stroke();
-      }
-    };
+    // torso: Thân Giáp đen nặng
+    ctx.save();
+    ctx.translate(0, torsoBreathY);
+    ctx.fillStyle = '#1e293b';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2.6 * scale;
+    ctx.fillRect(cx - 26 * scale, destH * 0.28, 52 * scale, 34 * scale);
+    ctx.strokeRect(cx - 26 * scale, destH * 0.28, 52 * scale, 34 * scale);
+    ctx.strokeStyle = '#991b1b';
+    ctx.lineWidth = 2 * scale;
+    ctx.strokeRect(cx - 18 * scale, destH * 0.34, 36 * scale, 22 * scale);
+    ctx.restore();
 
-    drawCrawlingArmPair('left_arm', [
-      [-26, 0.48, -48, 0.62],
-      [-24, 0.58, -44, 0.76],
-    ]);
-    drawCrawlingArmPair('right_arm', [
-      [26, 0.48, 48, 0.62],
-      [24, 0.58, 44, 0.76],
-    ]);
-    drawCrawlingArmPair('legs', [
-      [-14, 0.64, -22, 0.88],
-      [14, 0.64, 22, 0.88],
-    ]);
+    // right_arm: Trọng Kiếm Đen
+    if (!severedLimbs.has('right_arm')) {
+      ctx.save();
+      ctx.translate(rightArmSwayX, rightArmBobY);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 8 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 26 * scale, destH * 0.32);
+      ctx.lineTo(cx + 38 * scale, destH * 0.50);
+      ctx.stroke();
+      drawDetailedWeapon(ctx, 'dullahan_knight', 'right', cx + 36 * scale, destH * 0.50, scale, isTelegraphing);
+      ctx.restore();
+    } else {
+      drawArterialStump(ctx, cx + 28 * scale, destH * 0.36, 9 * scale);
+    }
 
-    // torso: Khối thịt dị dạng khổng lồ bọc trong những mảnh giáp sắt kỵ sĩ nứt toác bị nung chảy dính vào nhau (nx: 0.50, ny: 0.46)
+    // left_arm: Khiên Tháp Rỉ Máu khổng lồ che chắn Thân & Đầu (`isShieldArm: true`)
+    if (!severedLimbs.has('left_arm')) {
+      ctx.save();
+      ctx.translate(leftArmSwayX * 0.5, leftArmBobY * 0.5);
+      ctx.fillStyle = '#475569';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.6 * scale;
+      ctx.fillRect(cx - 48 * scale, destH * 0.24, 30 * scale, 52 * scale);
+      ctx.strokeRect(cx - 48 * scale, destH * 0.24, 30 * scale, 52 * scale);
+      // Rust & dried blood smears on Tower Shield
+      ctx.fillStyle = '#7f1d1d';
+      ctx.fillRect(cx - 43 * scale, destH * 0.32, 20 * scale, 32 * scale);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 33 * scale, destH * 0.28);
+      ctx.lineTo(cx - 33 * scale, destH * 0.68);
+      ctx.moveTo(cx - 44 * scale, destH * 0.44);
+      ctx.lineTo(cx - 22 * scale, destH * 0.44);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      drawArterialStump(ctx, cx - 28 * scale, destH * 0.38, 9 * scale);
+    }
+
+    // head: Đầu Mũ Trụ Gãy Sừng
+    if (!severedLimbs.has('head')) {
+      const hy = destH * 0.18 + headBobY * 0.5;
+      ctx.fillStyle = '#334155';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.4 * scale;
+      ctx.beginPath();
+      ctx.arc(cx, hy, 13 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Left intact horn, right broken horn
+      ctx.fillStyle = '#94a3b8';
+      ctx.beginPath();
+      ctx.moveTo(cx - 10 * scale, hy - 6 * scale);
+      ctx.lineTo(cx - 20 * scale, hy - 22 * scale);
+      ctx.lineTo(cx - 5 * scale, hy - 11 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + 8 * scale, hy - 9 * scale);
+      ctx.lineTo(cx + 14 * scale, hy - 14 * scale);
+      ctx.lineTo(cx + 11 * scale, hy - 6 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = isBlinded ? '#5c1616' : '#f97316';
+      ctx.fillRect(cx - 6 * scale, hy - 1 * scale, 12 * scale, 3 * scale);
+    } else {
+      drawArterialStump(ctx, cx, destH * 0.22, 10 * scale);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // =========================================================================
+  // FLOOR 1 MINIBOSS 3: NỮ TẾ HUYẾT NGHI – SERAPHINA (`countess_carmilla`)
+  // =========================================================================
+  if (spriteKey === 'countess_carmilla') {
+    // legs: Vạt Áo Chướng Khí xoáy tím đen
+    if (!severedLimbs.has('legs')) {
+      const mGrad = ctx.createLinearGradient(cx, destH * 0.56, cx, destH * 0.90);
+      mGrad.addColorStop(0, '#581c87');
+      mGrad.addColorStop(1, 'rgba(9, 5, 16, 0.2)');
+      ctx.fillStyle = mGrad;
+      ctx.beginPath();
+      ctx.moveTo(cx - 24 * scale, destH * 0.56);
+      ctx.lineTo(cx + 24 * scale, destH * 0.56);
+      ctx.lineTo(cx + 38 * scale, destH * 0.90);
+      ctx.lineTo(cx - 38 * scale, destH * 0.90);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      drawArterialStump(ctx, cx, destH * 0.74, 10 * scale);
+    }
+
+    // torso: Lễ phục huyết tế đỏ sẫm
+    ctx.save();
+    ctx.translate(0, torsoBreathY);
+    ctx.fillStyle = '#7f1d1d';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2.4 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 20 * scale, destH * 0.30);
+    ctx.lineTo(cx + 20 * scale, destH * 0.30);
+    ctx.lineTo(cx + 26 * scale, destH * 0.62);
+    ctx.lineTo(cx - 26 * scale, destH * 0.62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // left_arm: Cụm Tim Huyết Tinh phát sáng
+    if (!severedLimbs.has('left_arm')) {
+      ctx.strokeStyle = '#d6b89c';
+      ctx.lineWidth = 5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 20 * scale, destH * 0.34);
+      ctx.lineTo(cx - 36 * scale, destH * 0.48 + leftArmBobY);
+      ctx.stroke();
+      ctx.fillStyle = '#ef4444';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2 * scale;
+      for (const [hx, hy] of [[-38, 0.46], [-44, 0.51], [-33, 0.52]]) {
+        ctx.beginPath();
+        ctx.arc(cx + hx * scale, destH * hy + leftArmBobY, 5.5 * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else {
+      drawArterialStump(ctx, cx - 22 * scale, destH * 0.36, 8 * scale);
+    }
+
+    // right_arm: Trượng Xương
+    if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#d6b89c';
+      ctx.lineWidth = 5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 20 * scale, destH * 0.34);
+      ctx.lineTo(cx + 36 * scale, destH * 0.48 + rightArmBobY);
+      ctx.stroke();
+      ctx.strokeStyle = '#e7e5e4';
+      ctx.lineWidth = 3.2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 36 * scale, destH * 0.14 + rightArmBobY);
+      ctx.lineTo(cx + 36 * scale, destH * 0.80 + rightArmBobY);
+      ctx.stroke();
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(cx + 36 * scale, destH * 0.14 + rightArmBobY, 6 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      drawArterialStump(ctx, cx + 22 * scale, destH * 0.36, 8 * scale);
+    }
+
+    // head: Đầu Đội Mũ Tế cao có sừng vàng
+    if (!severedLimbs.has('head')) {
+      const hy = destH * 0.20 + headBobY * 0.5;
+      ctx.fillStyle = '#3b0764';
+      ctx.strokeStyle = '#eab308';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 14 * scale, hy + 4 * scale);
+      ctx.lineTo(cx, hy - 22 * scale);
+      ctx.lineTo(cx + 14 * scale, hy + 4 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f1f5f9';
+      ctx.beginPath();
+      ctx.arc(cx, hy + 2 * scale, 9 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = isBlinded ? '#5c1616' : '#dc2626';
+      ctx.fillRect(cx - 5 * scale, hy, 3 * scale, 2 * scale);
+      ctx.fillRect(cx + 2 * scale, hy, 3 * scale, 2 * scale);
+    } else {
+      drawArterialStump(ctx, cx, destH * 0.24, 9 * scale);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // =========================================================================
+  // FLOOR 1 MINIBOSS 4: CỰ THÚ HỘ ĐIỆN – GRENDEL (`fenrir_kin`)
+  // =========================================================================
+  if (spriteKey === 'fenrir_kin') {
+    // legs: Bướu Chướng Khí phồng rộp màu xanh lục độc
+    if (!severedLimbs.has('legs')) {
+      ctx.fillStyle = '#365314';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.4 * scale;
+      for (const [bx, by, r] of [[-16, 0.72, 13], [0, 0.74, 15], [16, 0.72, 13]]) {
+        ctx.beginPath();
+        ctx.arc(cx + bx * scale, destH * by, r * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#84cc16';
+      ctx.beginPath();
+      ctx.arc(cx - 10 * scale, destH * 0.72, 4 * scale, 0, Math.PI * 2);
+      ctx.arc(cx + 12 * scale, destH * 0.74, 4.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      drawArterialStump(ctx, cx, destH * 0.74, 11 * scale);
+    }
+
+    // torso: Thân Ghép Xác khổng lồ khâu chỉ sắt
     ctx.save();
     ctx.translate(0, torsoBreathY);
     ctx.fillStyle = '#7f1d1d';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2.6 * scale;
     ctx.beginPath();
-    ctx.ellipse(cx, destH * 0.48, 36 * scale, 26 * scale, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, destH * 0.46, 36 * scale, 26 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // Melted cracked knight armor plates fused over the flesh mass
-    ctx.fillStyle = '#475569';
-    for (const [px, py, pw, ph] of [
-      [-26, 0.34, 24, 18],
-      [4, 0.36, 24, 20],
-      [-18, 0.50, 34, 16],
-    ]) {
-      ctx.fillRect(cx + px * scale, destH * py, pw * scale, ph * scale);
-      ctx.strokeRect(cx + px * scale, destH * py, pw * scale, ph * scale);
-    }
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 24 * scale, destH * 0.36);
+    ctx.lineTo(cx + 22 * scale, destH * 0.56);
+    ctx.stroke();
     ctx.restore();
 
-    // head: 4 cái đầu người trồi ra ở các góc khác nhau với biểu cảm gào thét đau đớn (nx: 0.50, ny: 0.22)
+    // left_arm: Càng Xương Khổng Lồ Trái
+    if (!severedLimbs.has('left_arm')) {
+      ctx.fillStyle = '#e7e5e4';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 32 * scale, destH * 0.38);
+      ctx.lineTo(cx - 56 * scale, destH * 0.52 + leftArmBobY);
+      ctx.lineTo(cx - 42 * scale, destH * 0.66 + leftArmBobY);
+      ctx.lineTo(cx - 26 * scale, destH * 0.50);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      drawArterialStump(ctx, cx - 32 * scale, destH * 0.44, 9 * scale);
+    }
+
+    // right_arm: Cánh Tay Búa Thịt Phải
+    if (!severedLimbs.has('right_arm')) {
+      ctx.fillStyle = '#991b1b';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.4 * scale;
+      ctx.beginPath();
+      ctx.ellipse(cx + 42 * scale, destH * 0.50 + rightArmBobY, 15 * scale, 20 * scale, 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      drawArterialStump(ctx, cx + 32 * scale, destH * 0.44, 9 * scale);
+    }
+
+    // head: Đầu Ghép Đa Mặt
     if (!severedLimbs.has('head')) {
-      for (const [hx, hy, tilt] of [
-        [-18, 0.22, -0.25],
-        [0, 0.18, 0],
-        [18, 0.22, 0.25],
-        [6, 0.30, 0.15],
-      ]) {
-        ctx.save();
-        ctx.translate(cx + hx * scale, destH * hy + headBobY * 0.5);
-        ctx.rotate(tilt);
+      for (const [hx, hy] of [[-12, 0.22], [10, 0.20], [0, 0.26]]) {
         ctx.fillStyle = '#d6b89c';
         ctx.strokeStyle = '#070509';
         ctx.lineWidth = 2 * scale;
         ctx.beginPath();
-        ctx.arc(0, 0, 8.5 * scale, 0, Math.PI * 2);
+        ctx.arc(cx + hx * scale, destH * hy + headBobY * 0.5, 9 * scale, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        // Agonized screaming mouth bleeding
-        ctx.fillStyle = '#450a0a';
-        ctx.fillRect(-4 * scale, 1 * scale, 8 * scale, 5 * scale);
-        ctx.restore();
+        ctx.fillStyle = '#070509';
+        ctx.fillRect(cx + (hx - 4) * scale, destH * hy + 1 * scale + headBobY * 0.5, 8 * scale, 4 * scale);
       }
     } else {
-      drawArterialStump(ctx, cx, destH * 0.22, 12 * scale);
+      drawArterialStump(ctx, cx, destH * 0.22, 11 * scale);
     }
     ctx.restore();
     return;
@@ -2594,6 +2789,150 @@ export function drawPixelSprite(
   }
 
   // =========================================================================
+  // ALLY & NECROMANCY SUMMON OVERWORLD / PORTRAIT SPRITES
+  // =========================================================================
+  if (spriteKey === 'ally_kael') {
+    // Kael (Tù Nhân): Tóc đen rối bù, KHÔNG mũ trụ, áo tù rách rưới, vòng cùm xích gãy ở hai cổ tay, KHÔNG khiên
+    ctx.fillStyle = '#44403c';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2 * scale;
+    // Legs
+    ctx.fillRect(cx - 12 * scale, destH * 0.58, 9 * scale, 28 * scale);
+    ctx.strokeRect(cx - 12 * scale, destH * 0.58, 9 * scale, 28 * scale);
+    ctx.fillRect(cx + 3 * scale, destH * 0.58, 9 * scale, 28 * scale);
+    ctx.strokeRect(cx + 3 * scale, destH * 0.58, 9 * scale, 28 * scale);
+    // Torn prison tunic
+    ctx.fillStyle = '#57534e';
+    ctx.beginPath();
+    ctx.moveTo(cx - 20 * scale, destH * 0.30);
+    ctx.lineTo(cx + 20 * scale, destH * 0.30);
+    ctx.lineTo(cx + 16 * scale, destH * 0.62);
+    ctx.lineTo(cx - 16 * scale, destH * 0.62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Arms & Broken Iron Wrist Shackles (NO shield)
+    ctx.fillStyle = '#d6b89c';
+    ctx.fillRect(cx - 28 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    ctx.strokeRect(cx - 28 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    ctx.fillRect(cx + 20 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    ctx.strokeRect(cx + 20 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2.6 * scale;
+    ctx.strokeRect(cx - 29 * scale, destH * 0.50, 10 * scale, 4 * scale);
+    ctx.strokeRect(cx + 19 * scale, destH * 0.50, 10 * scale, 4 * scale);
+    ctx.beginPath();
+    ctx.moveTo(cx - 25 * scale, destH * 0.54);
+    ctx.lineTo(cx - 30 * scale, destH * 0.66);
+    ctx.moveTo(cx + 25 * scale, destH * 0.54);
+    ctx.lineTo(cx + 30 * scale, destH * 0.66);
+    ctx.stroke();
+    // Face + Tousled Black Hair (NO helmet)
+    ctx.fillStyle = '#d6b89c';
+    ctx.beginPath();
+    ctx.arc(cx, destH * 0.21 + headBobY * 0.4, 11 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2 * scale;
+    ctx.stroke();
+    ctx.fillStyle = '#09090b';
+    ctx.beginPath();
+    ctx.moveTo(cx - 13 * scale, destH * 0.20 + headBobY * 0.4);
+    ctx.lineTo(cx - 8 * scale, destH * 0.08 + headBobY * 0.4);
+    ctx.lineTo(cx - 2 * scale, destH * 0.13 + headBobY * 0.4);
+    ctx.lineTo(cx + 4 * scale, destH * 0.07 + headBobY * 0.4);
+    ctx.lineTo(cx + 13 * scale, destH * 0.19 + headBobY * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (spriteKey === 'broken_knight') {
+    // Kỵ Sĩ Roland: Áo giáp xám sứt mẻ, mũ sắt không chỏm lông, râu rậm
+    ctx.fillStyle = '#475569';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2 * scale;
+    ctx.fillRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
+    ctx.strokeRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
+    ctx.fillRect(cx - 14 * scale, destH * 0.62, 10 * scale, 26 * scale);
+    ctx.strokeRect(cx - 14 * scale, destH * 0.62, 10 * scale, 26 * scale);
+    ctx.fillRect(cx + 4 * scale, destH * 0.62, 10 * scale, 26 * scale);
+    ctx.strokeRect(cx + 4 * scale, destH * 0.62, 10 * scale, 26 * scale);
+    ctx.fillStyle = '#64748b';
+    ctx.beginPath();
+    ctx.arc(cx, destH * 0.20 + headBobY * 0.4, 11 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#09070c';
+    ctx.fillRect(cx - 7 * scale, destH * 0.18 + headBobY * 0.4, 14 * scale, 3 * scale);
+    ctx.restore();
+    return;
+  }
+
+  if (spriteKey === 'summon_ghoul' || spriteKey === 'summon_skeleton' || spriteKey === 'summon_wraith' || spriteKey === 'summon_child_12') {
+    const auraCol = spriteKey === 'summon_wraith' ? 'rgba(168,85,247,0.45)' : spriteKey === 'summon_child_12' ? 'rgba(125,211,252,0.42)' : 'rgba(74,222,128,0.32)';
+    const aura = ctx.createRadialGradient(cx, destH * 0.46, 4 * scale, cx, destH * 0.46, 32 * scale);
+    aura.addColorStop(0, auraCol);
+    aura.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(cx, destH * 0.46, 32 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (spriteKey === 'summon_skeleton') {
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 4.5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx, destH * 0.24);
+      ctx.lineTo(cx, destH * 0.58);
+      ctx.moveTo(cx - 8 * scale, destH * 0.58);
+      ctx.lineTo(cx - 10 * scale, destH * 0.88);
+      ctx.moveTo(cx + 8 * scale, destH * 0.58);
+      ctx.lineTo(cx + 10 * scale, destH * 0.88);
+      ctx.stroke();
+      ctx.fillStyle = '#27272a';
+      ctx.beginPath();
+      ctx.arc(cx, destH * 0.19, 10 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(cx - 4 * scale, destH * 0.18, 2.5 * scale, 2.5 * scale);
+      ctx.fillRect(cx + 1.5 * scale, destH * 0.18, 2.5 * scale, 2.5 * scale);
+    } else if (spriteKey === 'summon_wraith') {
+      ctx.fillStyle = 'rgba(88, 28, 135, 0.82)';
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 1.6 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx, destH * 0.12);
+      ctx.lineTo(cx + 22 * scale, destH * 0.82);
+      ctx.lineTo(cx, destH * 0.72);
+      ctx.lineTo(cx - 22 * scale, destH * 0.82);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (spriteKey === 'summon_child_12') {
+      ctx.fillStyle = 'rgba(186, 230, 253, 0.78)';
+      ctx.fillRect(cx - 9 * scale, destH * 0.50, 18 * scale, 28 * scale);
+      ctx.beginPath();
+      ctx.arc(cx, destH * 0.42, 8.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // summon_ghoul
+      ctx.fillStyle = '#4d7c0f';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2 * scale;
+      ctx.fillRect(cx - 18 * scale, destH * 0.34, 36 * scale, 30 * scale);
+      ctx.strokeRect(cx - 18 * scale, destH * 0.34, 36 * scale, 30 * scale);
+      ctx.beginPath();
+      ctx.arc(cx, destH * 0.24, 10 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // =========================================================================
   // PLAYABLE CLASSES & GRIMDARK CHURCH / DUNGEON HUMANOIDS
   // (`fallen_knight`, `forsaken_nun`, `night_hunter`, `fanatic_zealot`, `rotting_priest`,
   //  `weeping_inquisitor`, `flagellant_monk`, `crypt_keybearer`, `armored_ghoul`, `orc_berserker`, `forge_goblin`)
@@ -2910,8 +3249,131 @@ export function drawPartyBackSprite(
   const offsetY = isAttacking ? -26 : isHit ? 10 : 0;
   ctx.translate(x + offsetX, y + offsetY);
 
+  // Special shorter silhouette for Child 13 & Vong Linh Thánh Tử 12
+  if (classId === 'child_13' || classId === 'summon_child_12') {
+    const isSpecter = classId === 'summon_child_12';
+    ctx.globalAlpha = isSpecter ? 0.82 : 1;
+    ctx.fillStyle = isHit ? '#dc2626' : isSpecter ? '#bae6fd' : '#cbd5e1';
+    ctx.strokeStyle = isSpecter ? '#38bdf8' : '#070608';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.28, h);
+    ctx.lineTo(w * 0.34, h * 0.56);
+    ctx.lineTo(w * 0.66, h * 0.56);
+    ctx.lineTo(w * 0.72, h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Bleached white hair / small child head
+    ctx.fillStyle = isSpecter ? '#e0f2fe' : '#f8fafc';
+    ctx.beginPath();
+    ctx.arc(w * 0.50, h * 0.46, w * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (classId === 'child_13') {
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.85)';
+      ctx.beginPath();
+      ctx.arc(w * 0.24, h * 0.68, 6, 0, Math.PI * 2);
+      ctx.arc(w * 0.76, h * 0.68, 6, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Severed brass extraction tubes trailing from back
+      ctx.strokeStyle = '#eab308';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.44, h * 0.62);
+      ctx.lineTo(w * 0.30, h * 0.88);
+      ctx.moveTo(w * 0.56, h * 0.62);
+      ctx.lineTo(w * 0.70, h * 0.88);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Distinct undead summons (Ghoul, Black Skeleton, Wraith)
+  if (classId === 'summon_wraith') {
+    ctx.globalAlpha = 0.85;
+    const wGrad = ctx.createLinearGradient(0, h * 0.16, 0, h);
+    wGrad.addColorStop(0, isHit ? '#dc2626' : '#6b21a8');
+    wGrad.addColorStop(1, 'rgba(15, 5, 28, 0.1)');
+    ctx.fillStyle = wGrad;
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.50, h * 0.14);
+    ctx.quadraticCurveTo(w * 0.88, h * 0.36, w * 0.86, h);
+    ctx.lineTo(w * 0.65, h * 0.88);
+    ctx.lineTo(w * 0.50, h * 0.98);
+    ctx.lineTo(w * 0.35, h * 0.88);
+    ctx.lineTo(w * 0.14, h);
+    ctx.quadraticCurveTo(w * 0.12, h * 0.36, w * 0.50, h * 0.14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (classId === 'summon_skeleton') {
+    ctx.strokeStyle = isHit ? '#dc2626' : '#27272a';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.50, h * 0.30);
+    ctx.lineTo(w * 0.50, h * 0.95);
+    ctx.stroke();
+    ctx.lineWidth = 4;
+    for (const ry of [0.40, 0.50, 0.60, 0.70]) {
+      ctx.beginPath();
+      ctx.moveTo(w * 0.28, h * ry);
+      ctx.lineTo(w * 0.72, h * ry);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#27272a';
+    ctx.strokeStyle = '#070608';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(w * 0.50, h * 0.22, w * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (limbs.rightArm) {
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.72, h * 0.56);
+      ctx.lineTo(w * 0.88, h * 0.14);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (classId === 'summon_ghoul') {
+    ctx.fillStyle = isHit ? '#dc2626' : '#3f6212';
+    ctx.strokeStyle = '#070608';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.18, h);
+    ctx.quadraticCurveTo(w * 0.16, h * 0.38, w * 0.50, h * 0.28);
+    ctx.quadraticCurveTo(w * 0.84, h * 0.38, w * 0.82, h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#4d7c0f';
+    ctx.beginPath();
+    ctx.arc(w * 0.50, h * 0.24, w * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
   const cloakLight = isHit
     ? '#dc2626'
+    : classId === 'ally_kael'
+    ? '#57534e'
+    : classId === 'broken_knight'
+    ? '#475569'
     : classId === 'fallen_knight'
     ? '#7f1d1d'
     : classId === 'forsaken_nun'
@@ -2919,7 +3381,7 @@ export function drawPartyBackSprite(
     : '#27382b';
   const cloakDark = '#09070c';
 
-  // 1. Broad, Voluminous Multi-Fold Back Cloak / Habit / Leather Coat
+  // 1. Broad, Voluminous Multi-Fold Back Cloak / Habit / Prison Tunic
   const grad = ctx.createLinearGradient(0, h * 0.25, 0, h);
   grad.addColorStop(0, cloakLight);
   grad.addColorStop(1, cloakDark);
@@ -2947,7 +3409,6 @@ export function drawPartyBackSprite(
   }
 
   if (classId === 'night_hunter') {
-    // Crossed Leather Back Straps
     ctx.strokeStyle = '#78350f';
     ctx.lineWidth = 5;
     ctx.beginPath();
@@ -2956,23 +3417,67 @@ export function drawPartyBackSprite(
     ctx.moveTo(w * 0.76, h * 0.38);
     ctx.lineTo(w * 0.24, h * 0.86);
     ctx.stroke();
-  }
-
-  // 2. Broad Layered Shoulder Pauldrons / Mantle
-  ctx.fillStyle =
-    classId === 'forsaken_nun' ? '#f5ebd6' : classId === 'night_hunter' ? '#3f2e21' : '#64748b';
-  ctx.strokeStyle = classId === 'forsaken_nun' ? '#eab308' : '#070608';
-  ctx.lineWidth = 2.2;
-  for (const dir of [-1, 1]) {
-    const px = w * (0.5 + dir * 0.28);
+  } else if (classId === 'ally_kael') {
+    // Broken iron wrist shackles + dangling chain links on left/right wrists (NO shield)
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(w * 0.14, h * 0.56, 10, 6);
     ctx.beginPath();
-    ctx.ellipse(px, h * 0.40, w * 0.19, h * 0.095, dir * 0.22, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(w * 0.18, h * 0.62);
+    ctx.lineTo(w * 0.12, h * 0.82);
     ctx.stroke();
   }
 
-  // 3. Headgear from Behind (Knight Great-Helm + Plume | Nun Gold-Trimmed Veil | Hunter Wide-Brimmed Hat)
-  if (classId === 'forsaken_nun') {
+  // 2. Shoulder Pauldrons / Mantle (omitted on tattered ally_kael prisoner)
+  if (classId !== 'ally_kael') {
+    ctx.fillStyle =
+      classId === 'forsaken_nun'
+        ? '#f5ebd6'
+        : classId === 'night_hunter'
+        ? '#3f2e21'
+        : classId === 'broken_knight'
+        ? '#64748b'
+        : '#64748b';
+    ctx.strokeStyle = classId === 'forsaken_nun' ? '#eab308' : '#070608';
+    ctx.lineWidth = 2.2;
+    for (const dir of [-1, 1]) {
+      const px = w * (0.5 + dir * 0.28);
+      ctx.beginPath();
+      ctx.ellipse(px, h * 0.40, w * 0.19, h * 0.095, dir * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // 3. Headgear from Behind
+  if (classId === 'ally_kael') {
+    // Tousled wild dark black hair from behind, NO helmet!
+    ctx.fillStyle = '#09090b';
+    ctx.strokeStyle = '#070608';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(w * 0.50, h * 0.24, w * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Jagged spiky hair tufts
+    ctx.beginPath();
+    ctx.moveTo(w * 0.34, h * 0.20);
+    ctx.lineTo(w * 0.38, h * 0.08);
+    ctx.lineTo(w * 0.48, h * 0.14);
+    ctx.lineTo(w * 0.55, h * 0.06);
+    ctx.lineTo(w * 0.64, h * 0.18);
+    ctx.closePath();
+    ctx.fill();
+  } else if (classId === 'broken_knight') {
+    // Dented grey helm WITHOUT crimson plume
+    ctx.fillStyle = '#475569';
+    ctx.strokeStyle = '#070608';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(w * 0.50, h * 0.24, w * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else if (classId === 'forsaken_nun') {
     ctx.fillStyle = '#f5ebd6';
     ctx.strokeStyle = '#eab308';
     ctx.lineWidth = 2.2;
@@ -3019,7 +3524,6 @@ export function drawPartyBackSprite(
   // 4. Right Arm Class Weapon Raised in Foreground
   if (limbs.rightArm) {
     if (classId === 'forsaken_nun') {
-      // Holy Mother Cross Mace
       ctx.strokeStyle = '#78350f';
       ctx.lineWidth = 5;
       ctx.beginPath();
@@ -3035,7 +3539,6 @@ export function drawPartyBackSprite(
       ctx.fill();
       ctx.stroke();
     } else if (classId === 'night_hunter') {
-      // Serrated Curved Dagger
       ctx.fillStyle = '#e2e8f0';
       ctx.strokeStyle = '#070608';
       ctx.lineWidth = 2;
@@ -3046,8 +3549,20 @@ export function drawPartyBackSprite(
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+    } else if (classId === 'ally_kael') {
+      // Rusted short prison knife / heavy iron bar
+      ctx.fillStyle = '#94a3b8';
+      ctx.strokeStyle = '#070608';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.74, h * 0.58);
+      ctx.lineTo(w * 0.88, h * 0.16);
+      ctx.lineTo(w * 0.94, h * 0.19);
+      ctx.lineTo(w * 0.80, h * 0.60);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     } else {
-      // Broad Iron Sword
       const bladeGrad = ctx.createLinearGradient(w * 0.74, h * 0.56, w * 0.96, h * 0.02);
       bladeGrad.addColorStop(0, '#94a3b8');
       bladeGrad.addColorStop(0.6, '#f8fafc');
@@ -3615,137 +4130,271 @@ export function drawPrologueScene(
 
   const sky = ctx.createLinearGradient(0, 0, 0, h);
   if (step === 0) {
-    sky.addColorStop(0, '#1a060d');
-    sky.addColorStop(0.55, '#4a101d');
-    sky.addColorStop(1, '#09070b');
-  } else if (step === 1) {
-    sky.addColorStop(0, '#0f0818');
-    sky.addColorStop(0.6, '#2e1645');
+    sky.addColorStop(0, '#14040a');
+    sky.addColorStop(0.55, '#470d1b');
     sky.addColorStop(1, '#08060a');
+  } else if (step === 1) {
+    sky.addColorStop(0, '#0d0614');
+    sky.addColorStop(0.6, '#28123d');
+    sky.addColorStop(1, '#07050a');
   } else {
-    sky.addColorStop(0, '#141917');
-    sky.addColorStop(0.7, '#0d1110');
-    sky.addColorStop(1, '#080709');
+    sky.addColorStop(0, '#121417');
+    sky.addColorStop(0.65, '#0b0c10');
+    sky.addColorStop(1, '#060508');
   }
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
 
   if (step === 0) {
-    // Red Moon & Cosmic Rift behind descending Black Castle crushing Goethe Cathedral
-    const moonGrad = ctx.createRadialGradient(w * 0.5, h * 0.25, 10, w * 0.5, h * 0.25, 76);
-    moonGrad.addColorStop(0, '#ef4444');
-    moonGrad.addColorStop(0.7, '#991b1b');
-    moonGrad.addColorStop(1, 'rgba(153,27,27,0)');
+    // Khung 0: Trăng Đỏ rực & bóng Lâu Đài Hắc Ám đè sập mái vòm + tháp chuông Giáo Đường Goethe
+    const moonGrad = ctx.createRadialGradient(w * 0.5, h * 0.24, 14, w * 0.5, h * 0.24, 92);
+    moonGrad.addColorStop(0, '#f87171');
+    moonGrad.addColorStop(0.45, '#b91c1c');
+    moonGrad.addColorStop(0.85, 'rgba(127, 29, 29, 0.35)');
+    moonGrad.addColorStop(1, 'rgba(127, 29, 29, 0)');
     ctx.fillStyle = moonGrad;
     ctx.beginPath();
-    ctx.arc(w * 0.5, h * 0.25, 76, 0, Math.PI * 2);
+    ctx.arc(w * 0.5, h * 0.24, 92, 0, Math.PI * 2);
     ctx.fill();
 
-    // Purple Void crack behind castle
-    ctx.strokeStyle = '#a855f7';
-    ctx.lineWidth = 3;
+    // Moon disc
+    ctx.fillStyle = '#dc2626';
     ctx.beginPath();
-    ctx.moveTo(w * 0.2, h * 0.05);
-    ctx.lineTo(w * 0.35, h * 0.22);
-    ctx.lineTo(w * 0.65, h * 0.2);
-    ctx.lineTo(w * 0.82, h * 0.06);
-    ctx.stroke();
+    ctx.arc(w * 0.5, h * 0.24, 42, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Falling Dark Castle (Floor 1) slamming onto Goethe Cathedral dome (Floor 2)
-    ctx.fillStyle = '#140b10';
+    // Shadow silhouette of descending Black Castle crushing the Cathedral Bell Tower
+    ctx.fillStyle = '#0e070b';
+    ctx.strokeStyle = '#991b1b';
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
-    ctx.moveTo(w * 0.28, 0);
-    ctx.lineTo(w * 0.33, h * 0.45);
-    ctx.lineTo(w * 0.46, h * 0.58);
-    ctx.lineTo(w * 0.54, h * 0.58);
-    ctx.lineTo(w * 0.67, h * 0.45);
-    ctx.lineTo(w * 0.72, 0);
+    ctx.moveTo(w * 0.26, 0);
+    ctx.lineTo(w * 0.31, h * 0.44);
+    ctx.lineTo(w * 0.42, h * 0.54);
+    ctx.lineTo(w * 0.58, h * 0.54);
+    ctx.lineTo(w * 0.69, h * 0.44);
+    ctx.lineTo(w * 0.74, 0);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Crushed Cathedral roof & spires below
-    ctx.fillStyle = '#241d22';
-    ctx.fillRect(w * 0.16, h * 0.62, w * 0.68, h * 0.38);
-    ctx.fillStyle = '#1a1418';
+    // Castle battlements & Gothic spire teeth
+    ctx.fillStyle = '#180b10';
+    for (let tx = w * 0.32; tx <= w * 0.66; tx += 22) {
+      ctx.fillRect(tx, h * 0.46, 12, 16);
+    }
+
+    // Crushed Goethe Cathedral Roof & Collapsing Bell Tower on right
+    ctx.fillStyle = '#1b151a';
+    ctx.fillRect(w * 0.14, h * 0.64, w * 0.72, h * 0.36);
+
+    // Left shattered spire
+    ctx.fillStyle = '#140f14';
     ctx.beginPath();
-    ctx.moveTo(w * 0.2, h * 0.62);
-    ctx.lineTo(w * 0.24, h * 0.46);
-    ctx.lineTo(w * 0.28, h * 0.62);
-    ctx.moveTo(w * 0.72, h * 0.62);
-    ctx.lineTo(w * 0.76, h * 0.44);
-    ctx.lineTo(w * 0.8, h * 0.62);
+    ctx.moveTo(w * 0.18, h * 0.64);
+    ctx.lineTo(w * 0.23, h * 0.42);
+    ctx.lineTo(w * 0.28, h * 0.64);
     ctx.fill();
+
+    // Tilted collapsing Central Bell Tower (Tháp chuông sụp nghiêng)
+    ctx.save();
+    ctx.translate(w * 0.72, h * 0.64);
+    ctx.rotate(0.24);
+    ctx.fillStyle = '#1a1419';
+    ctx.fillRect(-16, -54, 32, 54);
+    ctx.beginPath();
+    ctx.moveTo(-20, -54);
+    ctx.lineTo(0, -84);
+    ctx.lineTo(20, -54);
+    ctx.closePath();
+    ctx.fill();
+    // Cracked bronze bell falling out of belfry arch
+    ctx.fillStyle = '#b45309';
+    ctx.beginPath();
+    ctx.arc(10, -24, 7, Math.PI, 0);
+    ctx.lineTo(18, -12);
+    ctx.lineTo(2, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
 
     // Glowing blood fissures radiating from impact
-    ctx.strokeStyle = '#f87171';
+    ctx.strokeStyle = '#ef4444';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(w * 0.5, h * 0.58);
-    ctx.lineTo(w * 0.41, h * 0.84);
-    ctx.moveTo(w * 0.5, h * 0.58);
-    ctx.lineTo(w * 0.6, h * 0.88);
+    ctx.moveTo(w * 0.5, h * 0.54);
+    ctx.lineTo(w * 0.40, h * 0.86);
+    ctx.moveTo(w * 0.5, h * 0.54);
+    ctx.lineTo(w * 0.58, h * 0.90);
+    ctx.moveTo(w * 0.47, h * 0.68);
+    ctx.lineTo(w * 0.32, h * 0.80);
     ctx.stroke();
   } else if (step === 1) {
-    // Rising Void Tentacles & Black Blood Statue of Holy Mother
+    // Khung 1: Tượng cổ vỡ trong sương tím & nhiều đốm mắt đỏ rình rập
+    // Swirling purple miasma fog bands
     for (let i = 0; i < 6; i++) {
-      ctx.strokeStyle = i % 2 === 0 ? '#9d4edd' : '#b91c1c';
-      ctx.lineWidth = 5;
+      const fogGrad = ctx.createRadialGradient(
+        w * (0.18 + i * 0.14),
+        h * (0.58 + (i % 2) * 0.14),
+        8,
+        w * (0.18 + i * 0.14),
+        h * (0.58 + (i % 2) * 0.14),
+        120
+      );
+      fogGrad.addColorStop(0, 'rgba(147, 51, 234, 0.32)');
+      fogGrad.addColorStop(1, 'rgba(15, 6, 28, 0)');
+      ctx.fillStyle = fogGrad;
       ctx.beginPath();
-      ctx.moveTo(w * (0.12 + i * 0.15), h);
-      ctx.quadraticCurveTo(w * 0.5, h * 0.35, w * (0.14 + i * 0.14), h * 0.14);
-      ctx.stroke();
+      ctx.arc(w * (0.18 + i * 0.14), h * (0.58 + (i % 2) * 0.14), 120, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    // Silhouette of Weeping Holy Mother Statue
-    ctx.fillStyle = '#1f1924';
+    // Broken Ancient Statue on cracked pedestal (fractured torso, severed stone wing, cracked head)
+    ctx.fillStyle = '#241e29';
+    ctx.strokeStyle = '#6b21a8';
+    ctx.lineWidth = 1.6;
+    // Pedestal
+    ctx.fillRect(w * 0.41, h * 0.78, w * 0.18, h * 0.22);
+    ctx.strokeRect(w * 0.41, h * 0.78, w * 0.18, h * 0.22);
+    // Draped broken statue torso
     ctx.beginPath();
-    ctx.arc(w * 0.5, h * 0.32, 26, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(w * 0.42, h * 0.42);
-    ctx.lineTo(w * 0.58, h * 0.42);
-    ctx.lineTo(w * 0.64, h * 0.96);
-    ctx.lineTo(w * 0.36, h * 0.96);
+    ctx.moveTo(w * 0.43, h * 0.38);
+    ctx.lineTo(w * 0.55, h * 0.35);
+    ctx.lineTo(w * 0.60, h * 0.78);
+    ctx.lineTo(w * 0.40, h * 0.78);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#a855f7';
-    ctx.lineWidth = 1.5;
     ctx.stroke();
-
-    // Black blood tears weeping from eyes
-    ctx.strokeStyle = '#090507';
-    ctx.lineWidth = 4;
+    // Cracked tilted head & weeping black tears
     ctx.beginPath();
-    ctx.moveTo(w * 0.485, h * 0.33);
-    ctx.lineTo(w * 0.478, h * 0.65);
-    ctx.moveTo(w * 0.515, h * 0.33);
-    ctx.lineTo(w * 0.522, h * 0.65);
+    ctx.arc(w * 0.49, h * 0.27, 19, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 1.5;
+    // Diagonal fracture crack across statue face
+    ctx.strokeStyle = '#09050c';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.46, h * 0.21);
+    ctx.lineTo(w * 0.52, h * 0.33);
     ctx.stroke();
-  } else {
-    // Jagged Iron Gate of Goethe Exterior + Hero's chosen class
-    ctx.fillStyle = '#241f1c';
-    ctx.fillRect(w * 0.14, h * 0.18, w * 0.16, h * 0.82);
-    ctx.fillRect(w * 0.7, h * 0.18, w * 0.16, h * 0.82);
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 3;
-    for (let x = w * 0.32; x <= w * 0.68; x += 16) {
+    // Fallen shattered stone wing/head chunk at base
+    ctx.fillStyle = '#1b1620';
+    ctx.beginPath();
+    ctx.moveTo(w * 0.28, h * 0.94);
+    ctx.lineTo(w * 0.36, h * 0.82);
+    ctx.lineTo(w * 0.40, h * 0.96);
+    ctx.closePath();
+    ctx.fill();
+
+    // Sinister pairs of glowing red eyes lurking inside the violet fog
+    const eyePairs = [
+      [0.14, 0.44],
+      [0.24, 0.62],
+      [0.74, 0.40],
+      [0.84, 0.56],
+      [0.68, 0.70],
+    ];
+    for (const [ex, ey] of eyePairs) {
+      const gx = w * ex;
+      const gy = h * ey;
+      const eGlow = ctx.createRadialGradient(gx, gy, 1, gx, gy, 16);
+      eGlow.addColorStop(0, 'rgba(239, 68, 68, 0.55)');
+      eGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = eGlow;
       ctx.beginPath();
-      ctx.moveTo(x, h * 0.24);
-      ctx.lineTo(x, h * 0.92);
+      ctx.arc(gx, gy, 16, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(gx - 5, gy, 2.4, 0, Math.PI * 2);
+      ctx.arc(gx + 5, gy, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    // Khung 2: Bức tường sương chướng khí đặc quánh ép sát sau lưng nhân vật đối diện Cổng Sắt Răng Cưa Gothic
+    // 1. Two Carved Gothic Stone Gate Pillars framing the portcullis
+    const pillarXs = [w * 0.16, w * 0.72];
+    for (const px of pillarXs) {
+      ctx.fillStyle = '#242022';
+      ctx.fillRect(px, h * 0.12, w * 0.12, h * 0.88);
+      ctx.strokeStyle = '#09070a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px, h * 0.12, w * 0.12, h * 0.88);
+      // Carved Gothic relief arches & masonry lines on pillars
+      ctx.strokeStyle = '#474044';
+      ctx.lineWidth = 1.6;
+      for (let ry = h * 0.20; ry < h * 0.88; ry += 32) {
+        ctx.strokeRect(px + 10, ry, w * 0.12 - 20, 22);
+      }
+      // Stone finial spire on top of each pillar
+      ctx.fillStyle = '#1c181b';
+      ctx.beginPath();
+      ctx.moveTo(px - 4, h * 0.12);
+      ctx.lineTo(px + w * 0.06, h * 0.02);
+      ctx.lineTo(px + w * 0.12 + 4, h * 0.12);
+      ctx.closePath();
+      ctx.fill();
       ctx.stroke();
     }
-    ctx.beginPath();
-    ctx.moveTo(w * 0.3, h * 0.38);
-    ctx.lineTo(w * 0.7, h * 0.38);
-    ctx.moveTo(w * 0.3, h * 0.7);
-    ctx.lineTo(w * 0.7, h * 0.7);
-    ctx.stroke();
+
+    // Heavy Gothic stone lintel arch connecting the two pillars
+    ctx.fillStyle = '#1d191c';
+    ctx.fillRect(w * 0.28, h * 0.14, w * 0.44, h * 0.10);
+    ctx.strokeStyle = '#09070a';
+    ctx.strokeRect(w * 0.28, h * 0.14, w * 0.44, h * 0.10);
+
+    // 2. Gothic Jagged Iron Portcullis Gate with Hanging Sharpened Spears (Hàng mũi giáo nhọn treo lơ lửng)
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 3;
+    for (let x = w * 0.31; x <= w * 0.69; x += 20) {
+      ctx.beginPath();
+      ctx.moveTo(x, h * 0.24);
+      ctx.lineTo(x, h * 0.90);
+      ctx.stroke();
+      // Hanging sharpened iron spearhead teeth along bottom & top suspension
+      ctx.fillStyle = '#cbd5e1';
+      ctx.beginPath();
+      ctx.moveTo(x - 5, h * 0.24);
+      ctx.lineTo(x, h * 0.36);
+      ctx.lineTo(x + 5, h * 0.24);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(x - 4.5, h * 0.84);
+      ctx.lineTo(x, h * 0.95);
+      ctx.lineTo(x + 4.5, h * 0.84);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Horizontal riveted iron crossbars
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(w * 0.28, h * 0.42, w * 0.44, 6);
+    ctx.fillRect(w * 0.28, h * 0.68, w * 0.44, 6);
+
+    // 3. Thick Swirling Miasma Wall pressing right behind the hero's back (Bức tường sương chướng khí ép sát sau lưng)
+    const wallGrad = ctx.createLinearGradient(0, h * 0.56, 0, h);
+    wallGrad.addColorStop(0, 'rgba(88, 28, 135, 0)');
+    wallGrad.addColorStop(0.42, 'rgba(107, 33, 168, 0.55)');
+    wallGrad.addColorStop(0.75, 'rgba(127, 29, 29, 0.78)');
+    wallGrad.addColorStop(1, 'rgba(24, 6, 36, 0.95)');
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(0, h * 0.54, w, h * 0.46);
+
+    for (let i = 0; i < 9; i++) {
+      const mx = w * (0.06 + i * 0.11);
+      const my = h * (0.84 + (i % 2) * 0.08);
+      const puff = ctx.createRadialGradient(mx, my, 8, mx, my, 76);
+      puff.addColorStop(0, i % 2 === 0 ? 'rgba(147, 51, 234, 0.62)' : 'rgba(153, 27, 27, 0.54)');
+      puff.addColorStop(1, 'rgba(10, 4, 16, 0)');
+      ctx.fillStyle = puff;
+      ctx.beginPath();
+      ctx.arc(mx, my, 76, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Hero silhouette standing between the miasma wall behind and the Gothic Gate ahead
     drawPartyBackSprite(ctx, classId, w * 0.44, h * 0.56, 68, 92, { leftArm: true, rightArm: true });
   }
 
@@ -3763,8 +4412,8 @@ export function getFloorTileTexture(
   variant: number,
   isExterior: boolean = false
 ): HTMLCanvasElement {
-  const v = Math.abs(variant) % 4;
-  const key = `v3_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}`;
+  const v = Math.abs(variant) % 6;
+  const key = `v4_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}`;
   const cached = tileCache.get(key);
   if (cached) return cached;
 
@@ -3808,44 +4457,46 @@ export function getFloorTileTexture(
     } else if (floor === 3) {
       // Cosmic Starfield & Nebula dust
       ctx.fillStyle = v % 2 === 0 ? '#a855f7' : '#e9d5ff';
-      ctx.fillRect(10 + v * 6, 12 + v * 4, 2, 2);
-      ctx.fillRect(34 - v * 5, 28 + v * 3, 1.5, 1.5);
+      ctx.fillRect(8 + v * 5, 10 + v * 4, 2, 2);
+      ctx.fillRect(36 - v * 4, 28 + v * 2, 1.5, 1.5);
     }
     tileCache.set(key, canvas);
     return canvas;
   }
 
-  // 2. 3D TOP-DOWN STONE WALL & CRACKED WALL (Lighter Top Ledge + Darker Front Masonry Face + Drop Shadow)
+  // 2. 2.5D STONE WALL & CRACKED WALL (28px Top Ledge + 20px Front Staggered Masonry Face)
   if (tileType === 'WALL' || tileType === 'CRACKED_WALL') {
-    const topCol = floor === 1 ? '#4a2024' : floor === 3 ? '#3b2859' : '#4a4e48';
-    const frontCol = floor === 1 ? '#291114' : floor === 3 ? '#1e1330' : '#262925';
-    const mortarCol = '#09080a';
+    const topCol = floor === 1 ? '#451d21' : floor === 3 ? '#362354' : '#464a44';
+    const frontCol = floor === 1 ? '#261013' : floor === 3 ? '#1c112d' : '#232622';
+    const mortarCol = '#08070a';
 
-    // Top horizontal roof/ledge (upper 18px)
+    // Top horizontal wall roof/ledge (upper 28px)
     ctx.fillStyle = topCol;
-    ctx.fillRect(0, 0, 48, 18);
-
-    // Highlight bevel between top and front face
-    ctx.fillStyle = floor === 1 ? '#7f1d1d' : floor === 3 ? '#6d28d9' : '#6c756b';
-    ctx.fillRect(0, 17, 48, 2);
-
-    // Front vertical stone masonry face (lower 30px)
-    ctx.fillStyle = frontCol;
-    ctx.fillRect(0, 19, 48, 29);
-
-    // Staggered brick mortar lines
+    ctx.fillRect(0, 0, 48, 28);
     ctx.strokeStyle = mortarCol;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(1, 1, 46, 16);
-    ctx.strokeRect(1, 19, 23, 14);
-    ctx.strokeRect(24, 19, 23, 14);
-    ctx.strokeRect(1, 33, 15, 14);
-    ctx.strokeRect(16, 33, 16, 14);
-    ctx.strokeRect(32, 33, 15, 14);
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(1, 1, 46, 26);
+
+    // Highlight bevel edge separating top ledge from 20px vertical front face
+    ctx.fillStyle = floor === 1 ? '#7f1d1d' : floor === 3 ? '#6d28d9' : '#6c756b';
+    ctx.fillRect(0, 26, 48, 2);
+
+    // Front vertical stone masonry face (exact 20px height: y = 28..48)
+    ctx.fillStyle = frontCol;
+    ctx.fillRect(0, 28, 48, 20);
+
+    // Staggered stone bricks across the 20px front face (two 10px courses offset by half brick)
+    ctx.strokeStyle = mortarCol;
+    ctx.lineWidth = 1.3;
+    ctx.strokeRect(1, 28, 23, 10);
+    ctx.strokeRect(24, 28, 23, 10);
+    ctx.strokeRect(1, 38, 12, 9);
+    ctx.strokeRect(13, 38, 22, 9);
+    ctx.strokeRect(35, 38, 12, 9);
 
     // Moss / Grime at wall base
-    ctx.fillStyle = floor === 1 ? 'rgba(220, 38, 38, 0.25)' : 'rgba(30, 58, 28, 0.45)';
-    ctx.fillRect(0, 42, 48, 6);
+    ctx.fillStyle = floor === 1 ? 'rgba(220, 38, 38, 0.25)' : 'rgba(26, 52, 24, 0.45)';
+    ctx.fillRect(0, 44, 48, 4);
 
     if (tileType === 'CRACKED_WALL') {
       // Glowing structural fissure indicating Brown Vial destructible wall
@@ -3853,9 +4504,9 @@ export function getFloorTileTexture(
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(22, 3);
-      ctx.lineTo(28, 17);
-      ctx.lineTo(18, 31);
-      ctx.lineTo(27, 45);
+      ctx.lineTo(28, 18);
+      ctx.lineTo(18, 32);
+      ctx.lineTo(27, 46);
       ctx.stroke();
     }
 
@@ -3877,100 +4528,275 @@ export function getFloorTileTexture(
     return canvas;
   }
 
-  // 4. BASE FLOOR TEXTURE (Exterior Grass/Pebbles vs Floor 2 Mossy/Bloody Flagstones vs Floor 1 Magma vs Floor 3 Runes)
+  // 4. 6 PROCEDURAL FLOOR VARIANTS PER FLOOR (0..5)
   if (isExterior) {
-    // Withered yellow-moss grass & gravel dirt path
-    ctx.fillStyle = v % 2 === 0 ? '#282e22' : '#23291e';
+    // Ngoại vi Tầng 2: Đất bùn ẩm, cỏ úa, đá cuội, vũng nước (6 biến thể)
+    ctx.fillStyle = v % 2 === 0 ? '#24291e' : '#1f241a';
     ctx.fillRect(0, 0, 48, 48);
 
-    // Gravel pebbles
-    ctx.fillStyle = '#3d382e';
-    ctx.beginPath();
-    ctx.arc(12 + v * 4, 16, 2.2, 0, Math.PI * 2);
-    ctx.arc(34 - v * 3, 36, 1.8, 0, Math.PI * 2);
-    ctx.fill();
+    // Subtle damp earth grain
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    for (let i = 0; i < 6; i++) {
+      ctx.fillRect(((i * 17 + v * 9) % 40) + 4, ((i * 13 + v * 7) % 40) + 4, 3, 2);
+    }
 
-    // Multi-layered withered yellow-olive grass tufts
-    ctx.strokeStyle = v % 2 === 0 ? '#5c6638' : '#47542c';
-    ctx.lineWidth = 1.4;
-    for (const [gx, gy] of [
-      [14, 36],
-      [34, 22],
-      [22, 14],
-    ]) {
+    if (v === 0 || v === 4) {
+      // Damp mud patches + dry roots
+      ctx.fillStyle = '#191c14';
       ctx.beginPath();
-      ctx.moveTo(gx, gy);
-      ctx.lineTo(gx - 4, gy - 9);
-      ctx.moveTo(gx, gy);
-      ctx.lineTo(gx, gy - 11);
-      ctx.moveTo(gx, gy);
-      ctx.lineTo(gx + 4, gy - 8);
+      ctx.ellipse(24, 26, 13, 8, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      if (v === 4) {
+        ctx.strokeStyle = '#3d3124';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(8, 38);
+        ctx.quadraticCurveTo(20, 30, 36, 36);
+        ctx.stroke();
+      }
+    } else if (v === 1) {
+      // Withered yellow-olive grass tufts
+      ctx.strokeStyle = '#5c6638';
+      ctx.lineWidth = 1.4;
+      for (const [gx, gy] of [
+        [14, 36],
+        [34, 22],
+        [22, 14],
+      ]) {
+        ctx.beginPath();
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(gx - 4, gy - 9);
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(gx, gy - 11);
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(gx + 4, gy - 8);
+        ctx.stroke();
+      }
+    } else if (v === 2 || v === 5) {
+      // River cobblestones & gravel / cracked stone in mud
+      ctx.fillStyle = '#3d3a32';
+      for (const [px, py, rx, ry] of [
+        [12, 16, 4.5, 3.2],
+        [28, 14, 5.2, 3.8],
+        [18, 34, 6, 4],
+        [36, 32, 4.2, 3.4],
+      ]) {
+        ctx.beginPath();
+        ctx.ellipse(px, py, rx, ry, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#12130f';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    } else if (v === 3) {
+      // Dark rainwater puddle reflecting pale mist
+      ctx.fillStyle = '#151c20';
+      ctx.beginPath();
+      ctx.ellipse(24, 25, 14, 9, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(21, 23, 6, Math.PI * 1.1, Math.PI * 1.7);
       ctx.stroke();
     }
   } else if (floor === 2) {
-    // Goethe Cathedral: Irregular grimy flagstones + cracks + corner moss + dried blood + grain noise
-    ctx.fillStyle = v % 2 === 0 ? '#232522' : '#1e201d';
+    // Nội điện Tầng 2 (Giáo Đường Goethe): Gạch đá xám tro, vết sáp nến chảy, mảnh kính màu vỡ, vệt máu đen (6 biến thể)
+    ctx.fillStyle = v % 2 === 0 ? '#272926' : '#212320';
     ctx.fillRect(0, 0, 48, 48);
 
-    // Irregular flagstone joints
+    // Ash-grey cathedral flagstone joints
     ctx.strokeStyle = '#0d0e0c';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.4;
     ctx.strokeRect(1, 1, 46, 46);
     ctx.beginPath();
-    ctx.moveTo(0, 24 + (v - 1) * 3);
-    ctx.lineTo(48, 24 - (v - 1) * 3);
+    ctx.moveTo(0, 24 + (v % 3 - 1) * 3);
+    ctx.lineTo(48, 24 - (v % 3 - 1) * 3);
     ctx.moveTo(24 + (v % 2) * 5, 0);
     ctx.lineTo(22, 24);
     ctx.stroke();
 
     // Stone grain speckles
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 8; i++) {
       ctx.fillRect(((i * 13 + v * 7) % 42) + 3, ((i * 19 + v * 11) % 42) + 3, 2, 2);
     }
 
-    // Dull green moss in slab corners
-    ctx.fillStyle = 'rgba(45, 76, 43, 0.55)';
-    ctx.beginPath();
-    ctx.arc(6, 6, 6 + v, 0, Math.PI * 2);
-    ctx.arc(42, 40, 5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Dried dark bloodstain on some variants
-    if (v === 1 || v === 3) {
-      ctx.fillStyle = 'rgba(88, 16, 20, 0.55)';
+    if (v === 1 || v === 5) {
+      // Melted candle wax drips & pool (Vết sáp nến chảy)
+      ctx.fillStyle = 'rgba(231, 219, 188, 0.72)';
       ctx.beginPath();
-      ctx.ellipse(28, 30, 8, 5, 0.4, 0, Math.PI * 2);
+      ctx.ellipse(18, 28, 7, 4.5, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(250, 240, 215, 0.85)';
+      ctx.beginPath();
+      ctx.arc(32, 16, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (v === 2) {
+      // Shattered stained-glass shards (Mảnh kính màu vỡ)
+      const shards: Array<[number, number, string]> = [
+        [14, 18, '#dc2626'],
+        [30, 14, '#2563eb'],
+        [24, 34, '#d97706'],
+        [36, 30, '#9333ea'],
+      ];
+      for (const [sx, sy, col] of shards) {
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 3);
+        ctx.lineTo(sx + 4, sy + 2);
+        ctx.lineTo(sx - 3, sy + 3);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (v === 3) {
+      // Black blood smear & puddle (Vệt máu đen)
+      ctx.fillStyle = 'rgba(18, 5, 10, 0.82)';
+      ctx.beginPath();
+      ctx.ellipse(26, 28, 10, 6, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(88, 12, 18, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(14, 22);
+      ctx.lineTo(36, 35);
+      ctx.stroke();
+    } else if (v === 4) {
+      // Dull moss in flagstone corners
+      ctx.fillStyle = 'rgba(45, 76, 43, 0.55)';
+      ctx.beginPath();
+      ctx.arc(6, 6, 6, 0, Math.PI * 2);
+      ctx.arc(41, 40, 5, 0, Math.PI * 2);
       ctx.fill();
     }
   } else if (floor === 1) {
-    // Demon Lord Castle: Black basalt stone with glowing red magma veins
-    ctx.fillStyle = '#1c1012';
+    // Tầng 1 (Lâu Đài Hắc Ám): Đá bazan đen xám nứt nẻ, thảm nhung đỏ viền vàng sờn rách, rãnh thoát máu, xương vụn, xiềng xích đứt, khe lửa đỏ (6 biến thể)
+    ctx.fillStyle = v % 2 === 0 ? '#1b1619' : '#161214';
     ctx.fillRect(0, 0, 48, 48);
-    ctx.strokeStyle = '#090405';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#090608';
+    ctx.lineWidth = 1.4;
     ctx.strokeRect(1, 1, 46, 46);
 
-    // Glowing magma crack
-    ctx.strokeStyle = v % 2 === 0 ? '#dc2626' : '#ea580c';
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(6, 10 + v * 4);
-    ctx.lineTo(24, 26);
-    ctx.lineTo(42, 38 - v * 3);
-    ctx.stroke();
+    if (v === 0) {
+      // Cracked dark charcoal basalt
+      ctx.strokeStyle = '#2d2529';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(8, 12);
+      ctx.lineTo(22, 24);
+      ctx.lineTo(18, 40);
+      ctx.stroke();
+    } else if (v === 1) {
+      // Tattered crimson velvet carpet with frayed gold-thread trim (Thảm nhung đỏ thẫm viền chỉ vàng sờn rách)
+      ctx.fillStyle = '#5c1118';
+      ctx.fillRect(6, 0, 36, 48);
+      // Frayed darker velvet pattern
+      ctx.fillStyle = '#7f1d1d';
+      ctx.fillRect(10, 4, 28, 40);
+      // Worn gold trim lines
+      ctx.strokeStyle = '#ca8a04';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(8, 0);
+      ctx.lineTo(8, 48);
+      ctx.moveTo(40, 0);
+      ctx.lineTo(40, 48);
+      ctx.stroke();
+      // Torn / frayed notches along carpet edge
+      ctx.fillStyle = '#161214';
+      ctx.fillRect(6, 18, 6, 5);
+      ctx.fillRect(36, 30, 6, 6);
+    } else if (v === 2) {
+      // Recessed blood drainage groove (Rãnh thoát máu âm sàn)
+      ctx.fillStyle = '#0c080a';
+      ctx.fillRect(0, 20, 48, 8);
+      ctx.fillStyle = '#6b0f16';
+      ctx.fillRect(0, 22, 48, 4);
+    } else if (v === 3) {
+      // Scattered bone fragments (Xương vụn)
+      ctx.fillStyle = '#d6cbb9';
+      ctx.strokeStyle = '#1c1917';
+      ctx.lineWidth = 1;
+      ctx.fillRect(12, 16, 11, 3);
+      ctx.fillRect(28, 30, 9, 3);
+      ctx.beginPath();
+      ctx.arc(31, 16, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else if (v === 4) {
+      // Broken iron shackle chain links (Xiềng xích đứt)
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(15, 22, 5, 3, 0.4, 0, Math.PI * 2);
+      ctx.ellipse(24, 26, 5, 3, -0.3, 0, Math.PI * 2);
+      ctx.ellipse(34, 22, 4.5, 3, 0.6, 0, Math.PI * 1.6);
+      ctx.stroke();
+    } else {
+      // Red-orange glowing magma/ember fissure (Khe nứt hắt ánh lửa đỏ)
+      ctx.strokeStyle = 'rgba(234, 88, 12, 0.45)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(6, 12);
+      ctx.lineTo(24, 25);
+      ctx.lineTo(42, 36);
+      ctx.stroke();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
   } else {
-    // Floor 3 Astral Abyss: Indigo rune stone with faint glowing purple magic circle
-    ctx.fillStyle = '#181126';
+    // Tầng 3 (Đáy Vực Sao): Đá thiên thạch đen tím nứt phát sáng ánh tím tinh vân, vòng cổ ngữ mờ & tinh thể tím (6 biến thể)
+    ctx.fillStyle = v % 2 === 0 ? '#160f24' : '#120c1e';
     ctx.fillRect(0, 0, 48, 48);
-    ctx.strokeStyle = '#2e1d4a';
+    ctx.strokeStyle = '#291a42';
+    ctx.lineWidth = 1.4;
     ctx.strokeRect(1, 1, 46, 46);
 
-    ctx.strokeStyle = 'rgba(168, 85, 247, 0.28)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(24, 24, 15, 0, Math.PI * 2);
-    ctx.stroke();
+    if (v === 0 || v === 3) {
+      // Glowing purple nebula fissure + stardust
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.45)';
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.moveTo(8, 36);
+      ctx.lineTo(23, 24);
+      ctx.lineTo(40, 12);
+      ctx.stroke();
+      ctx.strokeStyle = '#e879f9';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    } else if (v === 1 || v === 4) {
+      // Faint glowing arcane rune circle (Vòng cổ ngữ mờ)
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.34)';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(24, 24, 15, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(232, 121, 249, 0.55)';
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2;
+        ctx.fillRect(24 + Math.cos(a) * 15 - 1, 24 + Math.sin(a) * 15 - 1, 2, 2);
+      }
+    } else {
+      // Violet astral crystal cluster (Tinh thể tím)
+      const crystals: Array<[number, number, number]> = [
+        [18, 28, 9],
+        [25, 30, 12],
+        [31, 29, 7],
+      ];
+      for (const [cx, cy, ch] of crystals) {
+        ctx.fillStyle = '#9333ea';
+        ctx.strokeStyle = '#e9d5ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - 3.5, cy);
+        ctx.lineTo(cx, cy - ch);
+        ctx.lineTo(cx + 3.5, cy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
   }
 
   // 5. ARCHITECTURAL PROPS OVERLAID ON FLOOR
