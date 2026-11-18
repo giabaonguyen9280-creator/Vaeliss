@@ -420,7 +420,7 @@ export class CombatEngine {
 
       this.floatingTexts.push({
         id: this.nextFloatId++,
-        text: `-${res.lastDealtDmg}${res.wasCrit ? ' CRIT!' : ''}`,
+        text: `-${res.lastDealtDmg}${res.wasCrit ? ' CHÍ MẠNG!' : ''}`,
         color: res.wasCrit ? '#facc15' : pKind === 'fire' ? '#fb923c' : '#f87171',
         x: hitX - 28,
         y: hitY - 22,
@@ -527,7 +527,7 @@ export class CombatEngine {
 
       this.floatingTexts.push({
         id: this.nextFloatId++,
-        text: `-${res.lastDealtDmg}${res.wasCrit ? ' CRIT!' : ''}`,
+        text: `-${res.lastDealtDmg}${res.wasCrit ? ' CHÍ MẠNG!' : ''}`,
         color: res.wasCrit ? '#facc15' : pKind === 'fire' ? '#fb923c' : '#f87171',
         x: hitX - 28,
         y: hitY - 22,

@@ -14,17 +14,21 @@ import {
   Volume2,
   VolumeX,
   HelpCircle,
+  Settings,
 } from 'lucide-react';
-import { CONFIG } from './game/config';
+import { CONFIG, WeaponCategory } from './game/config';
 import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './game/narrative';
 import { SeededRNG } from './game/prng';
-import { sfx } from './game/audio';
+import { sfx, AudioVisualSettings } from './game/audio';
 import {
   drawPixelSprite,
   drawPartyBackSprite,
   drawItemIcon,
   getLimbReticlePositions,
   drawEngravedGoldCoin,
+  drawInventoryPaperdoll,
+  drawCharacterBustPortrait,
+  PaperdollSpec,
 } from './game/pixelArt';
 import prologueFrame1Img from './assets/images/prologue_castle_colossal_1794938768880.jpg';
 import prologueFrame2Img from './assets/images/prologue_statue_mother_1794938322367.jpg';
@@ -39,6 +43,7 @@ import {
   WorldMapState,
   RoomData,
   MapEnemyInstance,
+  RitualDeityType,
   isWalkableTile,
   advanceRoomEnemiesOneTurn,
 } from './game/mapGen';
@@ -64,17 +69,24 @@ import {
   applyDefaultIntroLoadoutForRemainingSteps,
   isPlayerPanicking,
   canUnequipWeapon,
+  canMemberEquipWeapon,
+  leaveOrDismissPartyMember,
   canPlayerEquipGear,
   canPlayerEquipShield,
   canAllyEquipGear,
   canAllyEquipShield,
   isPureTankSummon,
   isAllyGearLocked,
+  isHolyMotherBanned,
+  banHolyMother,
+  grantAffinityOnce,
+  HOLY_MOTHER_REFUSAL_MSG,
   bloodForgeWeapon,
   exorciseCursedWeapon,
   regrowLimbAtHexen,
   unlockHexenStatNode,
   learnOrUpgradeHexenSkill,
+  isEnemyWeaponLimbSevered,
   GEAR_ITEMS,
 } from './game/combat';
 import { CombatEngine, CombatActionType } from './game/combatEngine';
@@ -87,6 +99,7 @@ type ActiveModal =
   | 'hexen'
   | 'saves'
   | 'guide'
+  | 'settings'
   | 'npc_priest'
   | 'npc_smuggler'
   | 'npc_prisoner'
@@ -209,6 +222,116 @@ const ItemArtworkCanvas: React.FC<{ itemOrWeaponId: string; size?: number; class
   );
 };
 
+// Reusable Character / Ally Portrait Box: renders .jpg portrait when available or dark-fantasy vector bust fallback
+const CharacterPortraitBox: React.FC<{
+  spriteKey: string;
+  portraitUrl?: string;
+  size?: number;
+  alt?: string;
+  className?: string;
+  isError?: boolean;
+  onPortraitError?: (url: string) => void;
+}> = ({
+  spriteKey,
+  portraitUrl,
+  size = 52,
+  alt = '',
+  className = '',
+  isError = false,
+  onPortraitError,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const showImage = Boolean(portraitUrl && !isError);
+
+  useEffect(() => {
+    if (showImage) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    drawCharacterBustPortrait(ctx, spriteKey, size);
+  }, [showImage, spriteKey, size]);
+
+  if (showImage && portraitUrl) {
+    return (
+      <div
+        style={{ width: size, height: size }}
+        className={`relative overflow-hidden border border-[#6a5a44] bg-[#0b090d] shrink-0 ${className}`}
+      >
+        <img
+          src={portraitUrl}
+          alt={alt}
+          onError={() => onPortraitError?.(portraitUrl)}
+          className="w-full h-full object-cover object-top"
+          style={{ filter: 'contrast(1.06) brightness(0.92) saturate(0.88)' }}
+        />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 42%, transparent 48%, rgba(7, 5, 10, 0.72) 100%)',
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={size}
+      className={`border border-[#6a5a44] bg-[#0b090d] shrink-0 ${className}`}
+    />
+  );
+};
+
+// Reusable 120x160 Full-Body Equipment Paperdoll Preview Canvas for Inventory [I]
+const PaperdollPreviewCanvas: React.FC<{
+  spec: PaperdollSpec;
+  width?: number;
+  height?: number;
+  className?: string;
+}> = ({ spec, width = 120, height = 160, className = '' }) => {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    drawInventoryPaperdoll(ctx, spec, width, height);
+  }, [
+    spec.spriteKey,
+    spec.equippedWeapon,
+    spec.weaponCategory,
+    spec.weaponHands,
+    spec.vfxColor,
+    spec.equippedShield,
+    spec.equippedHead,
+    spec.equippedBody,
+    spec.limbs?.leftArm,
+    spec.limbs?.rightArm,
+    spec.limbs?.leftLeg,
+    spec.limbs?.rightLeg,
+    spec.limbs?.infected?.leftArm,
+    spec.limbs?.infected?.rightArm,
+    spec.limbs?.infected?.leftLeg,
+    spec.limbs?.infected?.rightLeg,
+    width,
+    height,
+  ]);
+
+  return (
+    <canvas
+      ref={ref}
+      width={width}
+      height={height}
+      className={`border border-[#6a5a44] bg-[#0b090d] shrink-0 ${className}`}
+    />
+  );
+};
+
 // 160x160 3D Embossed Antique Gold Coin Canvas for Fate Coin Flip Modal
 const EngravedGoldCoinCanvas: React.FC<{
   side: 'HEADS' | 'TAILS' | null;
@@ -285,9 +408,71 @@ export default function App() {
   const [combatLogs, setCombatLogs] = useState<string[]>([]);
   const [selectedLimbId, setSelectedLimbId] = useState<string>('torso');
   const [focusedLimbId, setFocusedLimbId] = useState<string | null>(null); // 2-step click confirmation
-  const [hoveredLimbId, setHoveredLimbId] = useState<string | null>(null);
   const [combatMenuMode, setCombatMenuMode] = useState<CombatMenuMode>('main');
   const [activeActorIdx, setActiveActorIdx] = useState<number>(0);
+  const [combatFocusPhase, setCombatFocusPhase] = useState<
+    'action' | 'skills_menu' | 'items_menu' | 'limb'
+  >('action');
+  const [combatActionCursor, setCombatActionCursor] = useState<number>(0);
+  const [combatSubCursor, setCombatSubCursor] = useState<number>(0);
+  const [pendingSkillId, setPendingSkillId] = useState<string | null>(null);
+
+  // Audio & Visual Preferences (persisted in localStorage)
+  const [audioSettings, setAudioSettings] = useState<AudioVisualSettings>(() => sfx.getSettings());
+  const [confirmReturnTitle, setConfirmReturnTitle] = useState<boolean>(false);
+
+  // Combat VFX overlay, screen-shake, async turn pacing, and portrait fallback tracking
+  const [activeVfx, setActiveVfx] = useState<{
+    category: WeaponCategory;
+    color: string;
+    key: number;
+  } | null>(null);
+  const [screenShakeMode, setScreenShakeMode] = useState<'none' | 'normal' | 'heavy'>('none');
+  const [isResolvingTurn, setIsResolvingTurn] = useState<boolean>(false);
+  const isResolvingTurnRef = useRef<boolean>(false);
+  const [portraitErrorMap, setPortraitErrorMap] = useState<Record<string, boolean>>({});
+  const portraitErrorRef = useRef<Record<string, boolean>>({});
+  const combatAbortRef = useRef<number>(0);
+  const vfxTimerRef = useRef<number | null>(null);
+  const shakeTimerRef = useRef<number | null>(null);
+
+  const markPortraitError = useCallback((url: string) => {
+    if (!url || portraitErrorRef.current[url]) return;
+    portraitErrorRef.current = { ...portraitErrorRef.current, [url]: true };
+    setPortraitErrorMap((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
+  }, []);
+
+  const triggerCombatVfx = useCallback(
+    (category: WeaponCategory | undefined, color: string | undefined, isHeavy: boolean) => {
+      if (category && category !== 'unarmed') {
+        if (vfxTimerRef.current) window.clearTimeout(vfxTimerRef.current);
+        setActiveVfx({
+          category,
+          color: color || '#e2e8f0',
+          key: Date.now() + Math.floor(Math.random() * 1000),
+        });
+        vfxTimerRef.current = window.setTimeout(() => {
+          setActiveVfx(null);
+          vfxTimerRef.current = null;
+        }, 560);
+      }
+      if (audioSettings.screenShakeEnabled) {
+        if (shakeTimerRef.current) window.clearTimeout(shakeTimerRef.current);
+        setScreenShakeMode(isHeavy ? 'heavy' : 'normal');
+        shakeTimerRef.current = window.setTimeout(() => {
+          setScreenShakeMode('none');
+          shakeTimerRef.current = null;
+        }, isHeavy ? 380 : 280);
+      }
+    },
+    [audioSettings.screenShakeEnabled]
+  );
+
+  const sleepCombatStep = useCallback((ms: number) => {
+    return new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }, []);
 
   // Prologue state
   const [prologueFrame, setPrologueFrame] = useState<0 | 1 | 2>(0);
@@ -378,8 +563,15 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      combatAbortRef.current += 1;
       if (affinityToastTimerRef.current) {
         window.clearTimeout(affinityToastTimerRef.current);
+      }
+      if (vfxTimerRef.current) {
+        window.clearTimeout(vfxTimerRef.current);
+      }
+      if (shakeTimerRef.current) {
+        window.clearTimeout(shakeTimerRef.current);
       }
     };
   }, []);
@@ -426,7 +618,8 @@ export default function App() {
     playerRef.current = player;
   }, [player]);
   const [animTick, setAnimTick] = useState<number>(0);
-  const [muted, setMuted] = useState<boolean>(false);
+  const [muted, setMuted] = useState<boolean>(() => sfx.getSettings().muted);
+  const sanitySecondsRef = useRef<number>(0);
   const [saveSlots, setSaveSlots] = useState<Array<SaveSlotData | null>>([
     null,
     null,
@@ -537,7 +730,9 @@ export default function App() {
           onResolve,
           onLockpick,
         });
+        sfx.playSfx('coin_flip');
         setTimeout(() => {
+          sfx.playSfx('coin_land');
           const rng = new SeededRNG(`${world.seed}_panic_coin_${Date.now()}`);
           const won = rng.chance(0.38);
           const landed: 'HEADS' | 'TAILS' = won ? autoSide : autoSide === 'HEADS' ? 'TAILS' : 'HEADS';
@@ -577,7 +772,7 @@ export default function App() {
   const handleChooseCoinSide = useCallback(
     (side: 'HEADS' | 'TAILS', tossTwoWithShift: boolean = false) => {
       if (!coinToss || coinToss.flipping || coinToss.resultSide) return;
-      sfx.playHealOrChime();
+      sfx.playSfx('coin_flip');
       setCoinToss({
         ...coinToss,
         chosenSide: side,
@@ -586,6 +781,7 @@ export default function App() {
       });
 
       setTimeout(() => {
+        sfx.playSfx('coin_land');
         const rng = new SeededRNG(`${world.seed}_coin_${Date.now()}`);
         const computed = getComputedPlayerStats(player);
         const hasClawBoost =
@@ -842,6 +1038,11 @@ export default function App() {
     (enemyInst: MapEnemyInstance) => {
       const tpl = CONFIG.ENEMIES[enemyInst.templateId];
       if (!tpl) return;
+      combatAbortRef.current += 1;
+      isResolvingTurnRef.current = false;
+      setIsResolvingTurn(false);
+      setActiveVfx(null);
+      setScreenShakeMode('none');
       isInputLockedRef.current = true;
       setIsInputLocked(true);
       setActiveEnemyUid(enemyInst.uid);
@@ -853,6 +1054,10 @@ export default function App() {
       setFocusedLimbId(null);
       setCombatMenuMode('main');
       setActiveActorIdx(0);
+      setCombatFocusPhase('action');
+      setCombatActionCursor(0);
+      setCombatSubCursor(0);
+      setPendingSkillId(null);
       combatEngineRef.current.resetStageEffects();
       setCombatLogs([
         `⚔️ CHẠM TRÁN: ${enemyInst.customName || tpl.name}!`,
@@ -868,6 +1073,93 @@ export default function App() {
     [addLog]
   );
 
+  // Unlock Web Audio on first user interaction & synchronize procedural BGM per screen
+  useEffect(() => {
+    const unlock = () => {
+      sfx.unlockAndResume();
+    };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (screen === 'combat' && activeCombatEnemy) {
+      const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId];
+      const isBoss = tpl?.tier === 'boss' || tpl?.tier === 'miniboss';
+      sfx.playBgm(isBoss ? 'boss' : 'combat', { mind: player.mind });
+    } else if (screen === 'playing') {
+      sfx.playBgm('explore', { mind: player.mind });
+    } else if (screen === 'title' || screen === 'prologue') {
+      sfx.playBgm('title', { mind: player.mind });
+    } else {
+      sfx.stopBgm();
+    }
+  }, [screen, activeCombatEnemy, player.mind, audioSettings.bgmVolume, audioSettings.muted]);
+
+  // Real-Time 30s Sanity Decay outside Holy Mother safe zones during active exploration
+  useEffect(() => {
+    if (screen !== 'playing') {
+      sanitySecondsRef.current = 0;
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (activeModal || interactionMenu || coinToss || logOverlayVisible) return;
+      const room = worldRef.current.rooms[worldRef.current.currentRoomId];
+      const pos = playerPosRef.current;
+      if (!room) return;
+      const roomW = room.width || room.grid[0]?.length || CONFIG.GRID_W;
+      const roomH = room.height || room.grid.length || CONFIG.GRID_H;
+
+      let inSafeZone = false;
+      for (let ry = 0; ry < roomH && !inSafeZone; ry++) {
+        for (let rx = 0; rx < roomW; rx++) {
+          const tile = room.grid[ry]?.[rx];
+          if (tile === TILE.HEXEN_ALTAR && Math.abs(pos.x - rx) + Math.abs(pos.y - ry) <= 2) {
+            inSafeZone = true;
+            break;
+          }
+          if (
+            tile === TILE.RITUAL_CIRCLE &&
+            room.ritualCircles?.[`${rx},${ry}`]?.deityType === 'holy_mother' &&
+            Math.abs(pos.x - rx) <= 1 &&
+            Math.abs(pos.y - ry) <= 1
+          ) {
+            inSafeZone = true;
+            break;
+          }
+        }
+      }
+
+      if (inSafeZone) {
+        sanitySecondsRef.current = 0;
+        return;
+      }
+
+      sanitySecondsRef.current += 1;
+      if (sanitySecondsRef.current >= 30) {
+        sanitySecondsRef.current = 0;
+        setPlayer((prev) => {
+          const drain = prev.hunger >= 50 ? 2 : 1;
+          return {
+            ...prev,
+            mind: Math.max(0, prev.mind - drain),
+            party: prev.party.map((ally) =>
+              ally.hp > 0 && !ally.isUndeadSummon
+                ? { ...ally, mind: Math.max(0, ally.mind - 1) }
+                : ally
+            ),
+          };
+        });
+        addLog('Bóng tối đặc quánh và sự tĩnh lặng chết chóc đang bào mòn tâm trí...');
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [screen, activeModal, interactionMenu, coinToss, logOverlayVisible, addLog]);
+
   const triggerCombat = useCallback(
     (enemyInst: MapEnemyInstance) => {
       startCombatWithEnemy(enemyInst);
@@ -878,6 +1170,11 @@ export default function App() {
   // Cleanly exit combat: reset inCombat & isInputLocked, and remove defeated enemy from active `enemies` list (archiving to `corpses`)
   const handleCombatEnd = useCallback(
     (opts?: { defeatedEnemyUid?: string; fled?: boolean; nextScreen?: ScreenMode }) => {
+      combatAbortRef.current += 1;
+      isResolvingTurnRef.current = false;
+      setIsResolvingTurn(false);
+      setActiveVfx(null);
+      setScreenShakeMode('none');
       const roomId = worldRef.current.currentRoomId;
       if (opts?.defeatedEnemyUid) {
         setWorld((prev) => {
@@ -1117,6 +1414,10 @@ export default function App() {
               setPlayer((prev) => ({
                 ...prev,
                 party: prev.party.length < 3 ? [...prev.party, ally] : prev.party,
+                npcLifecycle: {
+                  ...(prev.npcLifecycle || {}),
+                  [npcId]: 'recruited',
+                },
               }));
               markCoordLooted(tileCoordKey);
               setInteractionMenu(null);
@@ -1175,31 +1476,25 @@ export default function App() {
               }
               const useWhite = (player.inventory.green_herb || 0) <= 0;
               const secondBookId = CONFIG.BOOKS[1].id;
-              const gainedHolyAff = !player.holyMagicLocked;
-              setPlayer((prev) => ({
-                ...prev,
-                energyStones: prev.energyStones + 2,
-                affinities: {
-                  ...prev.affinities,
-                  holyMother: prev.holyMagicLocked
-                    ? prev.affinities.holyMother
-                    : prev.affinities.holyMother + 1,
-                },
-                readBookIds: prev.readBookIds.includes(secondBookId)
-                  ? prev.readBookIds
-                  : [...prev.readBookIds, secondBookId],
-                inventory: {
-                  ...prev.inventory,
-                  energy_stone: (prev.inventory.energy_stone ?? prev.energyStones) + 2,
-                  green_herb: useWhite
-                    ? prev.inventory.green_herb
-                    : Math.max(0, (prev.inventory.green_herb || 0) - 1),
-                  white_vial: useWhite
-                    ? Math.max(0, (prev.inventory.white_vial || 0) - 1)
-                    : prev.inventory.white_vial,
-                },
-                npcFlags: { ...prev.npcFlags, priestHelped: true },
-              }));
+              let gainedHolyAff = false;
+              setPlayer((prev) => {
+                const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                next.energyStones += 2;
+                if (!isHolyMotherBanned(next)) {
+                  gainedHolyAff = grantAffinityOnce(next, 'milestone_help_priest', 'holyMother', 1);
+                }
+                if (!next.readBookIds.includes(secondBookId)) {
+                  next.readBookIds.push(secondBookId);
+                }
+                next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 2) + 2;
+                if (useWhite) {
+                  next.inventory.white_vial = Math.max(0, (next.inventory.white_vial || 0) - 1);
+                } else {
+                  next.inventory.green_herb = Math.max(0, (next.inventory.green_herb || 0) - 1);
+                }
+                next.npcFlags.priestHelped = true;
+                return next;
+              });
               setInteractionMenu(null);
               addLog(
                 `✨ Giáo Sĩ Mù trao tặng +2 Đá Năng Lượng và [Sổ Kiểm Kê Tế Lễ]${
@@ -1246,22 +1541,17 @@ export default function App() {
             {
               label: '✝ Giải thoát nhẹ nhàng (-10 Tha Hóa, +1 Thiện cảm Thánh Mẫu & [Mảnh Linh Hồn Thuần Khiết])',
               onSelect: () => {
-                const gainedHoly = !player.holyMagicLocked;
-                setPlayer((prev) => ({
-                  ...prev,
-                  corruption: Math.max(0, prev.corruption - 10),
-                  affinities: {
-                    ...prev.affinities,
-                    holyMother: prev.holyMagicLocked
-                      ? prev.affinities.holyMother
-                      : prev.affinities.holyMother + 1,
-                  },
-                  inventory: {
-                    ...prev.inventory,
-                    pure_soul_shard: (prev.inventory.pure_soul_shard || 0) + 1,
-                  },
-                  questFlags: { ...prev.questFlags, child12Resolved: true },
-                }));
+                let gainedHoly = false;
+                setPlayer((prev) => {
+                  const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                  next.corruption = Math.max(0, next.corruption - 10);
+                  if (!isHolyMotherBanned(next)) {
+                    gainedHoly = grantAffinityOnce(next, 'milestone_free_child_12', 'holyMother', 1);
+                  }
+                  next.inventory.pure_soul_shard = (next.inventory.pure_soul_shard || 0) + 1;
+                  next.questFlags.child12Resolved = true;
+                  return next;
+                });
                 setInteractionMenu(null);
                 addLog(
                   `✝️ Bạn nhẹ nhàng tháo gỡ các ống đồng lạnh lẽo, trả lại sự thanh thản cho Thánh Tử Thứ 12 và thu nhận [Mảnh Linh Hồn Thuần Khiết]${
@@ -1274,21 +1564,17 @@ export default function App() {
             {
               label: '🩸 Rút cạn máu vàng tế đàn (+15 Tha Hóa, +1 Thiện cảm Ác Quỷ, +2 Đá NL & +2 Bình Máu)',
               onSelect: () => {
-                setPlayer((prev) => ({
-                  ...prev,
-                  corruption: Math.min(100, prev.corruption + 15),
-                  energyStones: prev.energyStones + 2,
-                  affinities: {
-                    ...prev.affinities,
-                    demonicPact: prev.affinities.demonicPact + 1,
-                  },
-                  inventory: {
-                    ...prev.inventory,
-                    energy_stone: (prev.inventory.energy_stone ?? prev.energyStones) + 2,
-                    blood_vial: (prev.inventory.blood_vial || 0) + 2,
-                  },
-                  questFlags: { ...prev.questFlags, child12Resolved: true },
-                }));
+                setPlayer((prev) => {
+                  const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                  next.corruption = Math.min(100, next.corruption + 15);
+                  next.energyStones += 2;
+                  grantAffinityOnce(next, 'milestone_drain_child_12', 'demonicPact', 1);
+                  banHolyMother(next);
+                  next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 2) + 2;
+                  next.inventory.blood_vial = (next.inventory.blood_vial || 0) + 2;
+                  next.questFlags.child12Resolved = true;
+                  return next;
+                });
                 setInteractionMenu(null);
                 addLog(
                   '🩸 Bạn rút cạn dòng máu vàng từ tế đàn của Thánh Tử Thứ 12, thu về Đá Năng Lượng, hai Bình Máu đặc quánh (+1 Thiện cảm Ác Quỷ).'
@@ -1360,17 +1646,21 @@ export default function App() {
             {
               label: '⚔️ Ban cái chết êm ái (+8 Tha Hóa, +12 Bạc & nhận [Nhẫn Kỵ Sĩ])',
               onSelect: () => {
-                setPlayer((prev) => ({
-                  ...prev,
-                  corruption: Math.min(100, prev.corruption + 8),
-                  silverCoins: prev.silverCoins + 12,
-                  inventory: {
-                    ...prev.inventory,
-                    silver_coin: (prev.inventory.silver_coin ?? prev.silverCoins) + 12,
-                    knight_ring: (prev.inventory.knight_ring || 0) + 1,
-                  },
-                  questFlags: { ...prev.questFlags, brokenKnightResolved: true },
-                }));
+                setPlayer((prev) => {
+                  const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                  next.corruption = Math.min(100, next.corruption + 8);
+                  next.silverCoins += 12;
+                  next.inventory.silver_coin = (next.inventory.silver_coin ?? next.silverCoins - 12) + 12;
+                  next.inventory.knight_ring = (next.inventory.knight_ring || 0) + 1;
+                  next.questFlags.brokenKnightResolved = true;
+                  next.npcLifecycle = {
+                    ...(next.npcLifecycle || {}),
+                    npc_broken_knight: 'dead',
+                  };
+                  banHolyMother(next);
+                  grantAffinityOnce(next, 'milestone_kill_npc', 'demonicPact', 1);
+                  return next;
+                });
                 markCoordLooted(tileCoordKey);
                 setInteractionMenu(null);
                 addLog(
@@ -1381,7 +1671,7 @@ export default function App() {
             }
           );
         }
-        if (player.questFlags?.brokenKnightResolved && !rolandInParty && !tileCoordKey?.startsWith('dead') && player.party.length < 3) {
+        if (player.questFlags?.brokenKnightResolved && !rolandInParty && player.npcLifecycle?.npc_broken_knight !== 'dead' && player.party.length < 3) {
           choices.push({
             label: '🤝 Đỡ Roland đứng dậy & Chiêu mộ vào Tổ Đội',
             onSelect: () => {
@@ -1389,6 +1679,10 @@ export default function App() {
               setPlayer((prev) => ({
                 ...prev,
                 party: prev.party.length < 3 ? [...prev.party, roland] : prev.party,
+                npcLifecycle: {
+                  ...(prev.npcLifecycle || {}),
+                  npc_broken_knight: 'recruited' as const,
+                },
               }));
               markCoordLooted(tileCoordKey);
               setInteractionMenu(null);
@@ -1516,16 +1810,16 @@ export default function App() {
             {
               label: '💥 Đập vỡ Lồng Kính cướp Đá Năng Lượng (+2 Đá NL, +15 Tha Hóa)',
               onSelect: () => {
-                setPlayer((prev) => ({
-                  ...prev,
-                  corruption: Math.min(100, prev.corruption + 15),
-                  energyStones: prev.energyStones + 2,
-                  inventory: {
-                    ...prev.inventory,
-                    energy_stone: (prev.inventory.energy_stone ?? prev.energyStones) + 2,
-                  },
-                  questFlags: { ...prev.questFlags, glassLadyResolved: true },
-                }));
+                setPlayer((prev) => {
+                  const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                  next.corruption = Math.min(100, next.corruption + 15);
+                  next.energyStones += 2;
+                  next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 2) + 2;
+                  next.questFlags.glassLadyResolved = true;
+                  banHolyMother(next);
+                  grantAffinityOnce(next, 'milestone_kill_npc', 'demonicPact', 1);
+                  return next;
+                });
                 setInteractionMenu(null);
                 addLog(
                   '💔 Bạn đập vỡ Lồng Kính đoạt lấy hai viên Đá Năng Lượng giữa tiếng khóc nghẹn tắt dần.'
@@ -1615,25 +1909,20 @@ export default function App() {
             label: '📜 Nhận [Mảnh Thần Chú Tái Thiết] & Giải mã Cổ Thư (+1 Thiện cảm Hư Vô)',
             onSelect: () => {
               const loreBooks = CONFIG.BOOKS.slice(0, 4).map((b) => b.id);
-              setPlayer((prev) => ({
-                ...prev,
-                affinities: {
-                  ...prev.affinities,
-                  primordialVoid: prev.affinities.primordialVoid + 1,
-                },
-                readBookIds: Array.from(new Set([...prev.readBookIds, ...loreBooks])),
-                inventory: {
-                  ...prev.inventory,
-                  reconstruction_scroll: (prev.inventory.reconstruction_scroll || 0) + 1,
-                },
-                questFlags: { ...prev.questFlags, chroniclerTalked: true },
-              }));
+              setPlayer((prev) => {
+                const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                grantAffinityOnce(next, 'milestone_chronicler_void', 'primordialVoid', 1);
+                next.readBookIds = Array.from(new Set([...next.readBookIds, ...loreBooks]));
+                next.inventory.reconstruction_scroll = (next.inventory.reconstruction_scroll || 0) + 1;
+                next.questFlags.chroniclerTalked = true;
+                return next;
+              });
               setInteractionMenu(null);
-                addLog(
-                  '📜 Kẻ Chép Sử Hóa Thạch trao [Mảnh Thần Chú Tái Thiết] cùng những trang cổ thư bị phong ấn (+1 Thiện cảm Hư Vô).'
-                );
-                setLogOverlayVisible(true);
-              },
+              addLog(
+                '📜 Kẻ Chép Sử Hóa Thạch trao [Mảnh Thần Chú Tái Thiết] cùng những trang cổ thư bị phong ấn (+1 Thiện cảm Hư Vô).'
+              );
+              setLogOverlayVisible(true);
+            },
             });
           }
           choices.push({ label: 'Rời đi', onSelect: closePrompt });
@@ -1660,6 +1949,7 @@ export default function App() {
             customSpeech ||
             `“Hề hề... Túi của ngươi hiện có ${player.silverCoins} Đồng Bạc. Kể từ khi sương mù khóa chặt Thung Lũng, đám giáo sĩ đều bỏ lại bạc trắng cả. Chọn món hàng ngươi cần đi!”`;
           const wares: Array<{ id: string; name: string; price: number }> = [
+            { id: 'ritual_chalk', name: 'Phấn Khắc Ấn', price: 4 },
             { id: 'brown_vial', name: 'Lọ Nâu', price: 6 },
             { id: 'red_vial', name: 'Lọ Đỏ', price: 6 },
             { id: 'bone_saw', name: 'Cưa Xương Rỉ Máu', price: 8 },
@@ -1761,6 +2051,10 @@ export default function App() {
                 ...prev,
                 npcFlags: { ...prev.npcFlags, prisonerRecruited: true },
                 party: prev.party.length < 3 ? [...prev.party, kael] : prev.party,
+                npcLifecycle: {
+                  ...(prev.npcLifecycle || {}),
+                  npc_prisoner: 'recruited',
+                },
               }));
               setInteractionMenu(null);
               addLog(
@@ -2071,6 +2365,185 @@ export default function App() {
       [TILE.VOID_RIFT]: 'void_rift',
     };
 
+    const canCastNecro = (player.skillLevels?.necromancy || 0) >= 1 && player.party.length < 3;
+    const allCorpses = [...(room.corpses || []), ...room.enemies.filter((e) => e.defeated)];
+
+    const openCorpsePrompt = (corpse: MapEnemyInstance) => {
+      const tpl = CONFIG.ENEMIES[corpse.templateId];
+      const corpseName = corpse.customName || tpl?.name || 'Quái vật';
+      const corpseChoices: InteractionChoice[] = [];
+
+      if (!corpse.corpseLooted) {
+        corpseChoices.push({
+          label: '🗡️ Lục soát xác quái (Tìm Vũ Khí / Chìa Khóa / Chiến Lợi Phẩm)',
+          onSelect: () => {
+            setInteractionMenu(null);
+            sfx.playSfx('loot');
+            const rng = new SeededRNG(`${world.seed}_corpse_loot_${corpse.uid}`);
+            const lootMessages: string[] = [];
+
+            const nextPlayer: PlayerState = JSON.parse(JSON.stringify(player));
+
+            if (tpl?.guaranteedWeaponDrop && CONFIG.WEAPONS[tpl.guaranteedWeaponDrop]) {
+              const sigWpn = tpl.guaranteedWeaponDrop;
+              if (!nextPlayer.unlockedWeapons.includes(sigWpn)) {
+                nextPlayer.unlockedWeapons.push(sigWpn);
+              }
+              lootMessages.push(`Vũ khí Đặc Trưng [${CONFIG.WEAPONS[sigWpn].name}]`);
+            }
+            if (tpl?.guaranteedDropItem && CONFIG.ITEMS[tpl.guaranteedDropItem]) {
+              const sigItem = tpl.guaranteedDropItem;
+              nextPlayer.inventory[sigItem] = (nextPlayer.inventory[sigItem] || 0) + 1;
+              lootMessages.push(`Di vật [${CONFIG.ITEMS[sigItem].name}]`);
+            }
+            if ((tpl?.tier === 'miniboss' || tpl?.tier === 'boss') && (tpl?.dropLuckyCoins || 0) > 0) {
+              const luckyCount = tpl.dropLuckyCoins || 1;
+              nextPlayer.inventory.lucky_coin = (nextPlayer.inventory.lucky_coin || 0) + luckyCount;
+              lootMessages.push(`🪙 +${luckyCount} [${CONFIG.ITEMS.lucky_coin.name}]`);
+            }
+
+            if (lootMessages.length === 0) {
+              const dropRoll = rng.next();
+              const normalWeaponPool = [
+                'broad_iron_sword',
+                'serrated_cleaver',
+                'executioner_axe',
+                'war_scythe',
+                'armor_breaker_mace',
+                'poison_curved_dagger',
+              ];
+              const gearDropPool = [
+                'ashen_hood',
+                'stalkers_cap',
+                'mail_coif',
+                'legion_helm',
+                'beak_mask',
+                'boiled_cuirass',
+                'vanguard_hauberk',
+                'legion_brigandine',
+                'eclipse_pendant',
+                'black_straw_effigy',
+              ];
+              if (dropRoll < 0.42) {
+                const wPick = rng.pick(normalWeaponPool);
+                if (!nextPlayer.unlockedWeapons.includes(wPick)) {
+                  nextPlayer.unlockedWeapons.push(wPick);
+                }
+                lootMessages.push(`Vũ khí [${CONFIG.WEAPONS[wPick]?.name || wPick}]`);
+              } else if (dropRoll < 0.75) {
+                nextPlayer.inventory.lockpick = (nextPlayer.inventory.lockpick || 0) + 1;
+                lootMessages.push(`+1 [${CONFIG.ITEMS.lockpick.name}]`);
+              } else {
+                const gPick = rng.pick(gearDropPool);
+                if (!nextPlayer.unlockedGear.includes(gPick)) {
+                  nextPlayer.unlockedGear.push(gPick);
+                }
+                lootMessages.push(`Trang bị [${GEAR_ITEMS[gPick]?.name || gPick}]`);
+              }
+            }
+
+            setPlayer(nextPlayer);
+            setWorld((prev) => {
+              const curRoom = prev.rooms[room.id];
+              if (!curRoom) return prev;
+              return {
+                ...prev,
+                rooms: {
+                  ...prev.rooms,
+                  [room.id]: {
+                    ...curRoom,
+                    enemies: curRoom.enemies.map((e) =>
+                      e.uid === corpse.uid ? { ...e, corpseLooted: true } : e
+                    ),
+                    corpses: (curRoom.corpses || []).map((c) =>
+                      c.uid === corpse.uid ? { ...c, corpseLooted: true } : c
+                    ),
+                  },
+                },
+              };
+            });
+            addLog(`🗡️ Lục soát xác [${corpseName}]: Thu được ${lootMessages.join(' & ')}!`);
+            setLogOverlayVisible(true);
+          },
+        });
+      }
+
+      if (!corpse.corpseRaised && !corpse.corpseDevoured && canCastNecro) {
+        corpseChoices.push({
+          label: '💀 Niệm [Chiêu Hồn Thuật] dựng dậy thành thuộc hạ (-15 Tâm Trí, +12 Tha Hóa)',
+          onSelect: () => {
+            setInteractionMenu(null);
+            const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+            const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(corpse));
+            const res = castNecromancyOnCorpse(pCopy, eCopy);
+            if (res.success) {
+              sfx.playSfx('ritual');
+              setPlayer(pCopy);
+              setWorld((prev) => {
+                const curRoom = prev.rooms[room.id];
+                if (!curRoom) return prev;
+                return {
+                  ...prev,
+                  rooms: {
+                    ...prev.rooms,
+                    [room.id]: {
+                      ...curRoom,
+                      enemies: curRoom.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
+                      corpses: (curRoom.corpses || []).map((c) => (c.uid === eCopy.uid ? eCopy : c)),
+                    },
+                  },
+                };
+              });
+            }
+            addLog(res.message);
+            setLogOverlayVisible(true);
+          },
+        });
+      }
+
+      if (!corpse.corpseDevoured) {
+        corpseChoices.push({
+          label: '🩸 Nuốt xác tươi (-45% Đói / +20% Tha Hóa)',
+          onSelect: () => {
+            setInteractionMenu(null);
+            const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+            const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(corpse));
+            const res = devourEnemyCorpse(pCopy, eCopy);
+            if (!res.success) return;
+            sfx.playSfx('hurt');
+            setPlayer(pCopy);
+            setWorld((prev) => {
+              const curRoom = prev.rooms[room.id];
+              if (!curRoom) return prev;
+              return {
+                ...prev,
+                rooms: {
+                  ...prev.rooms,
+                  [room.id]: {
+                    ...curRoom,
+                    enemies: curRoom.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
+                    corpses: (curRoom.corpses || []).map((c) => (c.uid === eCopy.uid ? eCopy : c)),
+                  },
+                },
+              };
+            });
+            addLog(res.message);
+            setLogOverlayVisible(true);
+          },
+        });
+      }
+
+      corpseChoices.push({ label: 'Rời đi', onSelect: closePrompt });
+
+      setInteractionMenu({
+        title: `XÁC CỦA ${corpseName.toUpperCase()}`,
+        description:
+          'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm, niệm Chiêu Hồn Thuật hoặc nuốt xác để cầm cự cơn đói.',
+        selectedIndex: 0,
+        choices: corpseChoices,
+      });
+    };
+
     for (const [dx, dy] of searchOffsets) {
       if (Math.abs(dx) + Math.abs(dy) > 1) continue;
       const cx = playerPos.x + dx;
@@ -2079,11 +2552,27 @@ export default function App() {
       const tile = room.grid[cy][cx];
       const coordKey = `${cx},${cy}`;
 
+      // Corpse has higher interaction priority than floor landmarks (e.g. RITUAL_CIRCLE)
+      const corpseOnTile = allCorpses.find(
+        (e) =>
+          e.x === cx &&
+          e.y === cy &&
+          (!e.corpseDevoured || !e.corpseLooted || (!e.corpseRaised && canCastNecro))
+      );
+      if (corpseOnTile) {
+        openCorpsePrompt(corpseOnTile);
+        return;
+      }
+
       if (npcTileToModalMap[tile]) {
-        if (tile === TILE.NPC_PRISONER && player.npcFlags.prisonerRecruited) continue;
+        const modalId = npcTileToModalMap[tile];
+        const lcState = player.npcLifecycle?.[modalId];
+        if (lcState === 'recruited' || lcState === 'dead') continue;
+        if (tile === TILE.NPC_PRISONER && (player.npcFlags.prisonerRecruited || player.party.some((a) => a.id === 'ally_kael'))) continue;
+        if (tile === TILE.NPC_BROKEN_KNIGHT && player.party.some((a) => a.id === 'broken_knight')) continue;
         if (
           tile === TILE.NPC_RECRUIT_KNIGHT &&
-          (room.lootedCoords.includes(coordKey) ||
+          ((room.lootedCoords.includes(coordKey) && lcState !== 'map') ||
             player.classId === 'fallen_knight' ||
             player.party.some((a) => a.id === 'fallen_knight'))
         ) {
@@ -2091,7 +2580,7 @@ export default function App() {
         }
         if (
           tile === TILE.NPC_RECRUIT_NUN &&
-          (room.lootedCoords.includes(coordKey) ||
+          ((room.lootedCoords.includes(coordKey) && lcState !== 'map') ||
             player.classId === 'forsaken_nun' ||
             player.party.some((a) => a.id === 'forsaken_nun'))
         ) {
@@ -2099,13 +2588,13 @@ export default function App() {
         }
         if (
           tile === TILE.NPC_RECRUIT_HUNTER &&
-          (room.lootedCoords.includes(coordKey) ||
+          ((room.lootedCoords.includes(coordKey) && lcState !== 'map') ||
             player.classId === 'night_hunter' ||
             player.party.some((a) => a.id === 'night_hunter'))
         ) {
           continue;
         }
-        openNpcRpgDialogue(npcTileToModalMap[tile], undefined, coordKey);
+        openNpcRpgDialogue(modalId, undefined, coordKey);
         return;
       }
 
@@ -2190,6 +2679,8 @@ export default function App() {
         sfx.playHealOrChime();
         const rng = new SeededRNG(`${world.seed}_${room.id}_${coordKey}`);
         const supplyTable = [
+          'ritual_chalk',
+          'ritual_chalk',
           'brown_vial',
           'red_vial',
           'blue_vial',
@@ -2248,6 +2739,7 @@ export default function App() {
             ? `📦 Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}] cùng [${CONFIG.ITEMS[bonusFood]?.name || bonusFood}].`
             : `📦 Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}].`
         );
+        sfx.playSfx('loot');
         setLogOverlayVisible(true);
         return;
       }
@@ -2378,7 +2870,7 @@ export default function App() {
             );
           }
 
-          sfx.playHealOrChime();
+          sfx.playSfx('loot');
           const foodPart =
             foodQty > 0
               ? ` & +${foodQty} [${CONFIG.ITEMS[foodId]?.name || foodId}]`
@@ -2600,7 +3092,7 @@ export default function App() {
             }));
           }
         } else {
-          const itemPick = rng.pick(['lockpick', 'bandage', 'blue_vial']);
+          const itemPick = rng.pick(['lockpick', 'bandage', 'blue_vial', 'ritual_chalk']);
           rewardLog = `+1 ${CONFIG.ITEMS[itemPick]?.name}`;
           setPlayer((prev) => ({
             ...prev,
@@ -2669,81 +3161,331 @@ export default function App() {
         return;
       }
 
-      // NEW SURVIVAL TILE 3: RITUAL_CIRCLE (Sacrificial / Order Sigil Circle)
-      if (tile === TILE.RITUAL_CIRCLE && !room.lootedCoords.includes(coordKey)) {
-        setInteractionMenu({
-          title: 'VÒNG TRÒN HIẾN TẾ CỔ ĐẠI',
-          description:
-            'Vòng tròn cổ ngữ khắc trên đá lạnh. Bạn có thể khắc Ấn Ký Thánh Mẫu (khi giữ mình thuần khiết) hoặc cắt máu Huyết Tế Ác Quỷ.',
-          selectedIndex: 0,
-          choices: [
-            {
-              label: 'Khắc ấn ký Thánh Mẫu (-10 Tâm Trí → +1 Thiện cảm Thánh Mẫu)',
-              onSelect: () => {
-                setInteractionMenu(null);
-                if (player.corruption > 0 || player.holyMagicLocked) {
-                  addLog(
-                    '❌ Thánh Mẫu khước từ lời cầu nguyện vì dòng máu của bạn đã vấy bẩn Tha Hóa!'
-                  );
+      // RITUAL_CIRCLE: 4 Strictly Separated Deity Circles (uninscribed / holy_mother / demon_lord / void_god)
+      if (tile === TILE.RITUAL_CIRCLE) {
+        const circleMeta = room.ritualCircles?.[coordKey];
+        const deityType: RitualDeityType = circleMeta?.deityType || 'uninscribed';
+        const circleActionId = `ritual_${room.id}_${coordKey}`;
+        const isCircleDone =
+          Boolean(circleMeta?.used) ||
+          (deityType !== 'uninscribed' && room.lootedCoords.includes(coordKey));
+        if (!isCircleDone) {
+          const updateCircleState = (nextDeity: RitualDeityType, markUsed: boolean) => {
+            setWorld((prev) => {
+              const curRoom = prev.rooms[room.id];
+              if (!curRoom) return prev;
+              return {
+                ...prev,
+                rooms: {
+                  ...prev.rooms,
+                  [room.id]: {
+                    ...curRoom,
+                    ritualCircles: {
+                      ...(curRoom.ritualCircles || {}),
+                      [coordKey]: { deityType: nextDeity, used: markUsed },
+                    },
+                    lootedCoords:
+                      markUsed && !curRoom.lootedCoords.includes(coordKey)
+                        ? [...curRoom.lootedCoords, coordKey]
+                        : curRoom.lootedCoords,
+                  },
+                },
+              };
+            });
+          };
+
+          if (deityType === 'uninscribed') {
+            const chalkCount = player.inventory.ritual_chalk || 0;
+            if (chalkCount <= 0) {
+              setInteractionMenu({
+                title: 'VÒNG TRÒN ĐÁ TRỐNG',
+                description:
+                  'Phiến đá xám cổ xưa chưa khắc bất kỳ ấn ký thần linh nào. Bạn cần có [Phấn Khắc Ấn] trong túi đồ để vẽ biểu tượng vị thần lên đá trước khi hành lễ (có thể tìm trong Thùng tiếp tế hoặc mua từ Kẻ Buôn Lậu).',
+                selectedIndex: 0,
+                choices: [{ label: 'Rời đi (Chưa có Phấn Khắc Ấn)', onSelect: closePrompt }],
+              });
+              return;
+            }
+            const consumeChalkAndInscribe = (targetDeity: RitualDeityType, logMsg: string) => {
+              setInteractionMenu(null);
+              sfx.playSfx('ritual');
+              setPlayer((prev) => ({
+                ...prev,
+                inventory: {
+                  ...prev.inventory,
+                  ritual_chalk: Math.max(0, (prev.inventory.ritual_chalk || 0) - 1),
+                },
+              }));
+              updateCircleState(targetDeity, false);
+              addLog(logMsg);
+              setLogOverlayVisible(true);
+            };
+
+            setInteractionMenu({
+              title: 'VÒNG TRÒN ĐÁ TRỐNG',
+              description: `Phiến đá xám cổ xưa chưa khắc ấn ký (Đang có ${chalkCount} [Phấn Khắc Ấn]). Dùng 1 Phấn Khắc Ấn để vẽ biểu tượng — sau đó vòng tròn sẽ cố định vĩnh viễn vị thần đó và sẵn sàng hành lễ.`,
+              selectedIndex: 0,
+              choices: [
+                {
+                  label: '✏️ Dùng [Phấn Khắc Ấn] vẽ biểu tượng Thánh Mẫu',
+                  onSelect: () => {
+                    if (isHolyMotherBanned(player)) {
+                      setInteractionMenu(null);
+                      addLog(HOLY_MOTHER_REFUSAL_MSG);
+                      setLogOverlayVisible(true);
+                      return;
+                    }
+                    consumeChalkAndInscribe(
+                      'holy_mother',
+                      '✝️ Bạn dùng [Phấn Khắc Ấn] vẽ biểu tượng Thánh Mẫu lên mặt đá. Hãy nhấn [F] lần nữa để tiến hành nghi lễ cầu nguyện!'
+                    );
+                  },
+                },
+                {
+                  label: '✏️ Dùng [Phấn Khắc Ấn] vẽ biểu tượng Ác Quỷ',
+                  onSelect: () => {
+                    consumeChalkAndInscribe(
+                      'demon_lord',
+                      '🩸 Bạn dùng [Phấn Khắc Ấn] vẽ ấn ký Huyết Trận Ác Quỷ lên mặt đá. Hãy nhấn [F] lần nữa để tiến hành nghi lễ!'
+                    );
+                  },
+                },
+                {
+                  label: '✏️ Dùng [Phấn Khắc Ấn] vẽ biểu tượng Hư Vô',
+                  onSelect: () => {
+                    consumeChalkAndInscribe(
+                      'void_god',
+                      '🌌 Bạn dùng [Phấn Khắc Ấn] vẽ con mắt Ấn Trận Hư Vô lên mặt đá. Hãy nhấn [F] lần nữa để tiến hành nghi lễ!'
+                    );
+                  },
+                },
+                { label: 'Rời đi', onSelect: closePrompt },
+              ],
+            });
+            return;
+          }
+
+          if (deityType === 'holy_mother') {
+            if (isHolyMotherBanned(player)) {
+              setInteractionMenu({
+                title: 'TẾ ĐÀN THÁNH MẪU',
+                description: HOLY_MOTHER_REFUSAL_MSG,
+                selectedIndex: 0,
+                choices: [{ label: 'Rời đi', onSelect: closePrompt }],
+              });
+              return;
+            }
+            setInteractionMenu({
+              title: 'TẾ ĐÀN THÁNH MẪU',
+              description:
+                'Ánh sáng trắng bạc dịu nhẹ tỏa ra từ cổ ngữ Thánh Mẫu, xua tan bóng tối và chướng khí quanh đây.',
+              selectedIndex: 0,
+              choices: [
+                {
+                  label: '✝ Cầu nguyện thanh tẩy Tâm Trí (+25 Tâm Trí, -5 Tha Hóa)',
+                  onSelect: () => {
+                    setInteractionMenu(null);
+                    sfx.playSfx('ritual');
+                    updateCircleState('holy_mother', true);
+                    setPlayer((prev) => ({
+                      ...prev,
+                      mind: Math.min(prev.maxMind, prev.mind + 25),
+                      corruption: Math.max(0, prev.corruption - 5),
+                    }));
+                    addLog('✝️ Ánh sáng trắng dịu dàng gột rửa tâm trí bạn giữa bóng tối.');
+                    setLogOverlayVisible(true);
+                  },
+                },
+                {
+                  label: '✝ Dâng lời khấn cầu ban phước (+1 Thiện cảm Thánh Mẫu)',
+                  onSelect: () => {
+                    setInteractionMenu(null);
+                    sfx.playSfx('ritual');
+                    updateCircleState('holy_mother', true);
+                    let gained = false;
+                    setPlayer((prev) => {
+                      const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                      next.mind = Math.max(5, next.mind - 10);
+                      gained = grantAffinityOnce(next, circleActionId, 'holyMother', 1);
+                      return next;
+                    });
+                    addLog(
+                      gained
+                        ? '✝️ Lời cầu nguyện thanh sạch vang vọng: Thánh Mẫu hồi đáp bằng ánh hào quang ấm áp (+1 Thiện cảm Thánh Mẫu).'
+                        : '✝️ Lời cầu nguyện vang vọng giữa ánh sáng trắng dịu dàng.'
+                    );
+                    setLogOverlayVisible(true);
+                  },
+                },
+                { label: 'Rời đi', onSelect: closePrompt },
+              ],
+            });
+            return;
+          }
+
+          if (deityType === 'demon_lord') {
+            const demonChoices: InteractionChoice[] = [
+              {
+                label: '🩸 Cắt máu hiến tế (-20 Sinh Lực, +10 Tha Hóa → +1 Ác Quỷ & +15 Tâm Trí)',
+                onSelect: () => {
+                  setInteractionMenu(null);
+                  sfx.playSfx('ritual');
+                  updateCircleState('demon_lord', true);
+                  setPlayer((prev) => {
+                    const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                    next.hp = Math.max(5, next.hp - 20);
+                    next.mind = Math.min(next.maxMind, next.mind + 15);
+                    next.corruption = Math.min(100, next.corruption + 10);
+                    banHolyMother(next);
+                    grantAffinityOnce(next, circleActionId, 'demonicPact', 1);
+                    return next;
+                  });
+                  addLog('🩸 Máu tươi thấm vào cổ ngữ đỏ thẫm, khế ước bóng tối âm thầm đáp lời.');
                   setLogOverlayVisible(true);
-                  return;
-                }
-                setPlayer((prev) => ({
-                  ...prev,
-                  mind: Math.max(5, prev.mind - 10),
-                  affinities: {
-                    ...prev.affinities,
-                    holyMother: prev.affinities.holyMother + 1,
-                  },
-                }));
-                setWorld((prev) => ({
-                  ...prev,
-                  rooms: {
-                    ...prev.rooms,
-                    [room.id]: {
-                      ...room,
-                      lootedCoords: [...room.lootedCoords, coordKey],
-                    },
-                  },
-                }));
-                addLog('✝️ Ánh sáng trắng bừng lên từ Vòng Tròn Cổ Ngữ, đáp lại lời cầu nguyện thanh sạch.');
-                setLogOverlayVisible(true);
+                },
               },
-            },
-            {
-              label: 'Huyết Tế Vòng Tròn Máu (-20 Sinh Lực, +10 Tha Hóa → +1 Ác Quỷ & +15 Tâm Trí)',
+            ];
+
+            player.party.forEach((ally, idx) => {
+              if (ally.hp <= 0) return;
+              demonChoices.push({
+                label: `🩸 Hiến tế [${ally.name}] lên Huyết Trận Ác Quỷ (+Ác Quỷ, hồi đầy Sinh Lực & Tâm Trí)`,
+                onSelect: () => {
+                  setInteractionMenu(null);
+                  sfx.playSfx('ritual');
+                  updateCircleState('demon_lord', true);
+                  setPlayer((prev) => {
+                    const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                    const targetAlly = next.party[idx];
+                    if (targetAlly) {
+                      leaveOrDismissPartyMember(next, idx, 'dead');
+                    }
+                    next.hp = next.maxHp;
+                    next.mind = next.maxMind;
+                    next.corruption = Math.min(100, next.corruption + 25);
+                    banHolyMother(next);
+                    grantAffinityOnce(next, circleActionId, 'demonicPact', 1);
+                    grantAffinityOnce(next, 'milestone_sacrifice_ally', 'demonicPact', 1);
+                    return next;
+                  });
+                  setSelectedInvMemberIdx(0);
+                  addLog(`🩸 Huyết Trận Ác Quỷ nuốt trọn sinh linh của [${ally.name}], trả lại toàn bộ hành trang vào kho đồ.`);
+                  setLogOverlayVisible(true);
+                },
+              });
+            });
+
+            demonChoices.push({ label: 'Rời đi', onSelect: closePrompt });
+            setInteractionMenu({
+              title: 'HUYẾT TRẬN ÁC QUỶ',
+              description:
+                'Mặt đá nhuốm đỏ rỉ ra hơi nóng tanh nồng. Chỉ máu thịt tự cắt hoặc hiến tế đồng đội/xác sống mới làm thỏa mãn vòng tròn này.',
+              selectedIndex: 0,
+              choices: demonChoices,
+            });
+            return;
+          }
+
+          if (deityType === 'void_god') {
+            const voidChoices: InteractionChoice[] = [];
+            if ((player.inventory.pure_soul_shard || 0) > 0) {
+              voidChoices.push({
+                label: '💎 Dâng hiến 1 [Mảnh Linh Hồn Thuần Khiết] cho Hư Vô (+Thiện cảm Hư Vô & +2 Đá NL)',
+                onSelect: () => {
+                  setInteractionMenu(null);
+                  sfx.playSfx('ritual');
+                  updateCircleState('void_god', true);
+                  setPlayer((prev) => {
+                    const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                    next.inventory.pure_soul_shard = Math.max(0, (next.inventory.pure_soul_shard || 0) - 1);
+                    next.energyStones += 2;
+                    next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 2) + 2;
+                    grantAffinityOnce(next, circleActionId, 'primordialVoid', 1);
+                    grantAffinityOnce(next, 'milestone_void_offering', 'primordialVoid', 1);
+                    return next;
+                  });
+                  addLog('🌌 Mảnh Linh Hồn tan chảy thành ánh tím sâu thẳm, ban tặng 2 Đá Năng Lượng và tri thức Hư Vô.');
+                  setLogOverlayVisible(true);
+                },
+              });
+            }
+            const relicOfferId = (['petrified_bone_shard', 'ancient_scroll', 'secret_archive_key'] as const).find(
+              (id) => (player.inventory[id] || 0) > 0
+            );
+            if (relicOfferId) {
+              const relicName = CONFIG.ITEMS[relicOfferId]?.name || 'Cổ Vật';
+              voidChoices.push({
+                label: `🏺 Dâng hiến 1 [${relicName}] vào Ấn Trận Hư Vô (+Thiện cảm Hư Vô & +1 Lọ Tím)`,
+                onSelect: () => {
+                  setInteractionMenu(null);
+                  sfx.playSfx('ritual');
+                  updateCircleState('void_god', true);
+                  setPlayer((prev) => {
+                    const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                    next.inventory[relicOfferId] = Math.max(0, (next.inventory[relicOfferId] || 0) - 1);
+                    next.inventory.purple_vial = (next.inventory.purple_vial || 0) + 1;
+                    grantAffinityOnce(next, circleActionId, 'primordialVoid', 1);
+                    grantAffinityOnce(next, 'milestone_void_offering', 'primordialVoid', 1);
+                    return next;
+                  });
+                  addLog(`🌌 [${relicName}] tan biến vào vòng xoáy tím, mở rộng cộng hưởng Hư Vô.`);
+                  setLogOverlayVisible(true);
+                },
+              });
+            }
+            if (player.readBookIds.length > 0) {
+              const offeredBookId = player.readBookIds[player.readBookIds.length - 1];
+              const offeredBookTitle = CONFIG.BOOKS.find((b) => b.id === offeredBookId)?.title || 'Sách Cổ';
+              voidChoices.push({
+                label: `📜 Dâng hiến tri thức Sách Cổ [${offeredBookTitle}] (+Thiện cảm Hư Vô & +1 Đá NL)`,
+                onSelect: () => {
+                  setInteractionMenu(null);
+                  sfx.playSfx('ritual');
+                  updateCircleState('void_god', true);
+                  setPlayer((prev) => {
+                    const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                    next.readBookIds = next.readBookIds.filter((id) => id !== offeredBookId);
+                    next.energyStones += 1;
+                    next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 1) + 1;
+                    grantAffinityOnce(next, circleActionId, 'primordialVoid', 1);
+                    grantAffinityOnce(next, 'milestone_void_offering', 'primordialVoid', 1);
+                    return next;
+                  });
+                  addLog(`🌌 Ký ức về trang Sách Cổ [${offeredBookTitle}] bị Hư Vô nuốt chửng, để lại một viên Đá Năng Lượng lạnh buốt.`);
+                  setLogOverlayVisible(true);
+                },
+              });
+            }
+            voidChoices.push({
+              label: '🌌 Dâng Tâm Trí khai mở Ấn Trận (-18 Tâm Trí → +Thiện cảm Hư Vô & +1 Đá NL)',
               onSelect: () => {
                 setInteractionMenu(null);
-                setPlayer((prev) => ({
-                  ...prev,
-                  hp: Math.max(5, prev.hp - 20),
-                  mind: Math.min(prev.maxMind, prev.mind + 15),
-                  corruption: Math.min(100, prev.corruption + 10),
-                  affinities: {
-                    ...prev.affinities,
-                    demonicPact: prev.affinities.demonicPact + 1,
-                  },
-                }));
-                setWorld((prev) => ({
-                  ...prev,
-                  rooms: {
-                    ...prev.rooms,
-                    [room.id]: {
-                      ...room,
-                      lootedCoords: [...room.lootedCoords, coordKey],
-                    },
-                  },
-                }));
-                addLog(
-                  '🩸 Máu tươi thấm vào cổ ngữ lạnh lẽo, khế ước bóng tối âm thầm đáp lời.'
-                );
+                sfx.playSfx('ritual');
+                updateCircleState('void_god', true);
+                setPlayer((prev) => {
+                  const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                  next.mind = Math.max(2, next.mind - 18);
+                  next.energyStones += 1;
+                  next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 1) + 1;
+                  grantAffinityOnce(next, circleActionId, 'primordialVoid', 1);
+                  grantAffinityOnce(next, 'milestone_void_offering', 'primordialVoid', 1);
+                  return next;
+                });
+                addLog('🌌 Tiếng thì thầm từ Vực Sao vang lên trong đầu bạn, kết tinh thành một viên Đá Năng Lượng.');
                 setLogOverlayVisible(true);
               },
-            },
-            { label: 'Rời đi', onSelect: closePrompt },
-          ],
-        });
-        return;
+            });
+            voidChoices.push({ label: 'Rời đi', onSelect: closePrompt });
+            setInteractionMenu({
+              title: 'ẤN TRẬN HƯ VÔ',
+              description:
+                'Cổ ngữ tím thẫm uốn lượn như con mắt không mí nhìn xuyên qua không gian, đòi hỏi Sách Cổ, Cổ Vật, Mảnh Linh Hồn hoặc tâm lực làm vật dẫn.',
+              selectedIndex: 0,
+              choices: voidChoices,
+            });
+            return;
+          }
+        }
       }
 
       if (tile === TILE.SHORTCUT_GATE && !room.shortcutOpened) {
@@ -2808,192 +3550,6 @@ export default function App() {
           return;
         }
       }
-    }
-
-    // Check adjacent slain enemy corpse (Supports Looting, Necromancy Raise, AND Devouring Corpse)
-    const canCastNecro = (player.skillLevels?.necromancy || 0) >= 1 && player.party.length < 3;
-    const allCorpses = [...(room.corpses || []), ...room.enemies.filter((e) => e.defeated)];
-    const corpse = allCorpses.find(
-      (e) =>
-        (!e.corpseDevoured || !e.corpseLooted || (!e.corpseRaised && canCastNecro)) &&
-        Math.abs(e.x - playerPos.x) + Math.abs(e.y - playerPos.y) <= 1
-    );
-    if (corpse) {
-      const tpl = CONFIG.ENEMIES[corpse.templateId];
-      const corpseName = corpse.customName || tpl?.name || 'Quái vật';
-      const corpseChoices: InteractionChoice[] = [];
-
-      if (!corpse.corpseLooted) {
-        corpseChoices.push({
-          label: '🗡️ Lục soát xác quái (Tìm Vũ Khí / Chìa Khóa / Chiến Lợi Phẩm)',
-          onSelect: () => {
-            setInteractionMenu(null);
-            sfx.playHealOrChime();
-            const rng = new SeededRNG(`${world.seed}_corpse_loot_${corpse.uid}`);
-            const lootMessages: string[] = [];
-
-            const nextPlayer: PlayerState = JSON.parse(JSON.stringify(player));
-
-            // 1. Boss / Mini-Boss guaranteed signature weapon, key relic & rare Lucky Coins (1-2)
-            if (tpl?.guaranteedWeaponDrop && CONFIG.WEAPONS[tpl.guaranteedWeaponDrop]) {
-              const sigWpn = tpl.guaranteedWeaponDrop;
-              if (!nextPlayer.unlockedWeapons.includes(sigWpn)) {
-                nextPlayer.unlockedWeapons.push(sigWpn);
-              }
-              lootMessages.push(`Vũ khí Đặc Trưng [${CONFIG.WEAPONS[sigWpn].name}]`);
-            }
-            if (tpl?.guaranteedDropItem && CONFIG.ITEMS[tpl.guaranteedDropItem]) {
-              const sigItem = tpl.guaranteedDropItem;
-              nextPlayer.inventory[sigItem] = (nextPlayer.inventory[sigItem] || 0) + 1;
-              lootMessages.push(`Di vật [${CONFIG.ITEMS[sigItem].name}]`);
-            }
-            if ((tpl?.tier === 'miniboss' || tpl?.tier === 'boss') && (tpl?.dropLuckyCoins || 0) > 0) {
-              const luckyCount = tpl.dropLuckyCoins || 1;
-              nextPlayer.inventory.lucky_coin = (nextPlayer.inventory.lucky_coin || 0) + luckyCount;
-              lootMessages.push(`🪙 +${luckyCount} [${CONFIG.ITEMS.lucky_coin.name}]`);
-            }
-
-            // 2. Normal enemy drop (never drops Lucky Coins — only weapons, lockpicks, gear)
-            if (lootMessages.length === 0) {
-              const dropRoll = rng.next();
-              const normalWeaponPool = [
-                'broad_iron_sword',
-                'serrated_cleaver',
-                'executioner_axe',
-                'war_scythe',
-                'armor_breaker_mace',
-                'poison_curved_dagger',
-              ];
-              const gearDropPool = [
-                'ashen_hood',
-                'stalkers_cap',
-                'mail_coif',
-                'legion_helm',
-                'beak_mask',
-                'boiled_cuirass',
-                'vanguard_hauberk',
-                'legion_brigandine',
-                'eclipse_pendant',
-                'black_straw_effigy',
-              ];
-              if (dropRoll < 0.42) {
-                const wPick = rng.pick(normalWeaponPool);
-                if (!nextPlayer.unlockedWeapons.includes(wPick)) {
-                  nextPlayer.unlockedWeapons.push(wPick);
-                }
-                lootMessages.push(`Vũ khí [${CONFIG.WEAPONS[wPick]?.name || wPick}]`);
-              } else if (dropRoll < 0.75) {
-                nextPlayer.inventory.lockpick = (nextPlayer.inventory.lockpick || 0) + 1;
-                lootMessages.push(`+1 [${CONFIG.ITEMS.lockpick.name}]`);
-              } else {
-                const gPick = rng.pick(gearDropPool);
-                if (!nextPlayer.unlockedGear.includes(gPick)) {
-                  nextPlayer.unlockedGear.push(gPick);
-                }
-                lootMessages.push(`Trang bị [${GEAR_ITEMS[gPick]?.name || gPick}]`);
-              }
-            }
-
-            setPlayer(nextPlayer);
-            setWorld((prev) => {
-              const curRoom = prev.rooms[room.id];
-              if (!curRoom) return prev;
-              return {
-                ...prev,
-                rooms: {
-                  ...prev.rooms,
-                  [room.id]: {
-                    ...curRoom,
-                    enemies: curRoom.enemies.map((e) =>
-                      e.uid === corpse.uid ? { ...e, corpseLooted: true } : e
-                    ),
-                    corpses: (curRoom.corpses || []).map((c) =>
-                      c.uid === corpse.uid ? { ...c, corpseLooted: true } : c
-                    ),
-                  },
-                },
-              };
-            });
-            addLog(`🗡️ Lục soát xác [${corpseName}]: Thu được ${lootMessages.join(' & ')}!`);
-            setLogOverlayVisible(true);
-          },
-        });
-      }
-
-      if (!corpse.corpseRaised && !corpse.corpseDevoured && canCastNecro) {
-        corpseChoices.push({
-          label: '💀 Niệm [Chiêu Hồn Thuật] dựng dậy thành thuộc hạ (-15 Tâm Trí, +12 Tha Hóa)',
-          onSelect: () => {
-            setInteractionMenu(null);
-            const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
-            const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(corpse));
-            const res = castNecromancyOnCorpse(pCopy, eCopy);
-            if (res.success) {
-              sfx.playHealOrChime();
-              setPlayer(pCopy);
-              setWorld((prev) => {
-                const curRoom = prev.rooms[room.id];
-                if (!curRoom) return prev;
-                return {
-                  ...prev,
-                  rooms: {
-                    ...prev.rooms,
-                    [room.id]: {
-                      ...curRoom,
-                      enemies: curRoom.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
-                      corpses: (curRoom.corpses || []).map((c) => (c.uid === eCopy.uid ? eCopy : c)),
-                    },
-                  },
-                };
-              });
-            }
-            addLog(res.message);
-            setLogOverlayVisible(true);
-          },
-        });
-      }
-
-      if (!corpse.corpseDevoured) {
-        corpseChoices.push({
-          label: '🩸 Nuốt xác tươi (-45% Đói / +20% Tha Hóa)',
-          onSelect: () => {
-            setInteractionMenu(null);
-            const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
-            const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(corpse));
-            const res = devourEnemyCorpse(pCopy, eCopy);
-            if (!res.success) return;
-            setPlayer(pCopy);
-            setWorld((prev) => {
-              const curRoom = prev.rooms[room.id];
-              if (!curRoom) return prev;
-              return {
-                ...prev,
-                rooms: {
-                  ...prev.rooms,
-                  [room.id]: {
-                    ...curRoom,
-                    enemies: curRoom.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
-                    corpses: (curRoom.corpses || []).map((c) => (c.uid === eCopy.uid ? eCopy : c)),
-                  },
-                },
-              };
-            });
-            addLog(res.message);
-            setLogOverlayVisible(true);
-          },
-        });
-      }
-
-      corpseChoices.push({ label: 'Rời đi', onSelect: closePrompt });
-
-      setInteractionMenu({
-        title: `XÁC CỦA ${corpseName.toUpperCase()}`,
-        description:
-          'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm, niệm Chiêu Hồn Thuật hoặc nuốt xác để cầm cự cơn đói.',
-        selectedIndex: 0,
-        choices: corpseChoices,
-      });
-      return;
     }
 
     // Check Escape Iron Gate in F2_EXTERIOR (strictly enforces child_13 alive in party for Forsaken Nun)
@@ -3381,19 +3937,43 @@ export default function App() {
     ]
   );
 
-  // Execute sequential per-member combat action (Actor 0 -> Living Allies 1..3 -> Enemy Round)
+  // Execute sequential per-member combat action with dark-fantasy pacing (Hitstop + VFX + Sequential Ally/Enemy Beats)
   const runCombatTurn = useCallback(
-    (
+    async (
       action: CombatActionType,
       opts?: { limbId?: string; skillId?: string; itemId?: string }
     ) => {
-      if (!activeCombatEnemy) return;
-      try {
-        if (action === 'ATTACK' || action === 'SKILL') {
-          sfx.playSlash(false);
-        }
+      if (!activeCombatEnemy || isResolvingTurnRef.current) return;
+      isResolvingTurnRef.current = true;
+      setIsResolvingTurn(true);
+      const turnRunId = combatAbortRef.current;
 
-        const collectedLogs: string[] = [];
+      const syncCombatState = (
+        pState: PlayerState,
+        eState: MapEnemyInstance,
+        newLogs: string[]
+      ) => {
+        setPlayer(pState);
+        setWorld((prev) => {
+          const curRoom = prev.rooms[currentRoom.id];
+          if (!curRoom) return prev;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [currentRoom.id]: {
+                ...curRoom,
+                enemies: curRoom.enemies.map((e) => (e.uid === eState.uid ? eState : e)),
+              },
+            },
+          };
+        });
+        if (newLogs.length > 0) {
+          setCombatLogs((prev) => [...newLogs.slice().reverse(), ...prev.slice(0, 18)]);
+        }
+      };
+
+      try {
         let pCur = player;
         let eCur = activeCombatEnemy;
         let lastTargetLimb = opts?.limbId || selectedLimbId;
@@ -3412,15 +3992,76 @@ export default function App() {
         );
         pCur = outcome.updatedPlayer;
         eCur = outcome.updatedEnemy;
-        collectedLogs.push(...outcome.result.logs);
-        if (outcome.result.severedAnyLimb) sfx.playSever();
         if (outcome.result.targetLimbId) lastTargetLimb = outcome.result.targetLimbId;
         if (outcome.result.fledSuccess) fledBattle = true;
         if (outcome.endingTrigger) finalEndingTrigger = outcome.endingTrigger;
 
-        // 2. If still in battle, auto-resolve any panicking / stunned living allies following activeActorIdx
+        const isOffensiveAction =
+          action === 'ATTACK' ||
+          action === 'SKILL' ||
+          (action === 'ITEM' && (outcome.result.lastDealtDmg || 0) > 0);
+        if (isOffensiveAction) {
+          sfx.playSfx(outcome.result.weaponCategory || 'unarmed');
+          if (outcome.result.severedAnyLimb) sfx.playSfx('sever_limb');
+          const isHeavyStrike =
+            Boolean(outcome.result.wasCrit) ||
+            (outcome.result.lastDealtDmg || 0) > 500 ||
+            outcome.result.weaponCategory === 'heavy_axe';
+          triggerCombatVfx(
+            outcome.result.weaponCategory || 'sword',
+            outcome.result.vfxColor || '#e2e8f0',
+            isHeavyStrike
+          );
+        } else if (action === 'ITEM' || action === 'GUARD') {
+          sfx.playSfx('ui_confirm');
+        }
+
+        const persistedInitEnemy: MapEnemyInstance = fledBattle
+          ? {
+              ...eCur,
+              aiState: 'deagro',
+              questionTimerMs: 4000,
+              alertTimerMs: 0,
+              loseSightTimerMs: 0,
+              moveCooldownMs: 1800,
+            }
+          : eCur;
+
+        syncCombatState(pCur, persistedInitEnemy, outcome.result.logs);
+        setFocusedLimbId(null);
+        setCombatMenuMode('main');
+        setCombatFocusPhase('action');
+        setPendingSkillId(null);
+
+        // Advance reticle early if limb severed during actor strike
+        const initTargetAfter = eCur.limbs.find((l) => l.id === lastTargetLimb);
+        if (!initTargetAfter || initTargetAfter.hp <= 0) {
+          const nextIntact =
+            eCur.limbs.find((l) => l.id === 'torso' && l.hp > 0) ||
+            eCur.limbs.find((l) => l.hp > 0);
+          if (nextIntact) setSelectedLimbId(nextIntact.id);
+        } else if (lastTargetLimb && lastTargetLimb !== selectedLimbId) {
+          setSelectedLimbId(lastTargetLimb);
+        }
+
+        if (fledBattle) {
+          await sleepCombatStep(350);
+          if (combatAbortRef.current !== turnRunId) return;
+          handleCombatEnd({ fled: true });
+          addLog('🏃 Cả đội đã thoát khỏi cuộc giao tranh trong gang tấc.');
+          return;
+        }
+
+        if (isOffensiveAction) {
+          await sleepCombatStep(660);
+        } else {
+          await sleepCombatStep(340);
+        }
+        if (combatAbortRef.current !== turnRunId) return;
+
+        // 2. If still in battle, sequentially resolve any panicking / stunned living allies following activeActorIdx
         let nextControllableActor: number | null = null;
-        if (!fledBattle && !finalEndingTrigger && !eCur.defeated) {
+        if (!finalEndingTrigger && !eCur.defeated) {
           let probeIdx = activeActorIdx + 1;
           while (probeIdx <= pCur.party.length) {
             const ally = pCur.party[probeIdx - 1];
@@ -3433,6 +4074,7 @@ export default function App() {
               nextControllableActor = probeIdx;
               break;
             }
+            setActiveActorIdx(probeIdx);
             const autoOut = combatEngineRef.current.executeActorTurn(
               pCur,
               eCur,
@@ -3443,69 +4085,55 @@ export default function App() {
             );
             pCur = autoOut.updatedPlayer;
             eCur = autoOut.updatedEnemy;
-            collectedLogs.push(...autoOut.result.logs);
-            if (autoOut.result.severedAnyLimb) sfx.playSever();
+            if ((autoOut.result.lastDealtDmg || 0) > 0) {
+              sfx.playSfx(autoOut.result.weaponCategory || 'unarmed');
+              if (autoOut.result.severedAnyLimb) sfx.playSfx('sever_limb');
+              triggerCombatVfx(
+                autoOut.result.weaponCategory || 'sword',
+                autoOut.result.vfxColor || '#e2e8f0',
+                Boolean(autoOut.result.wasCrit) || (autoOut.result.lastDealtDmg || 0) > 500
+              );
+            }
+            syncCombatState(pCur, eCur, autoOut.result.logs);
             if (autoOut.endingTrigger) {
               finalEndingTrigger = autoOut.endingTrigger;
               break;
             }
             if (eCur.defeated) break;
+            await sleepCombatStep(660);
+            if (combatAbortRef.current !== turnRunId) return;
             probeIdx++;
           }
 
-          // 3. If no more sane allies remain in this round, resolve Enemy Round and wrap back to Actor 0
+          // 3. If no more sane allies remain in this round, resolve Enemy Round after rhythmic beat and wrap back to Actor 0
           if (nextControllableActor === null && !eCur.defeated && !finalEndingTrigger) {
             const enemyRound = combatEngineRef.current.resolveEnemyRound(pCur, eCur, world.seed);
             pCur = enemyRound.updatedPlayer;
             eCur = enemyRound.updatedEnemy;
-            collectedLogs.push(...enemyRound.result.logs);
             if (enemyRound.endingTrigger) finalEndingTrigger = enemyRound.endingTrigger;
+            if ((enemyRound.result.lastTakenDmg || 0) > 0) {
+              sfx.playSfx('hurt');
+              triggerCombatVfx(
+                enemyRound.result.weaponCategory || 'unarmed',
+                enemyRound.result.vfxColor || '#dc2626',
+                Boolean(enemyRound.result.wasCrit) || (enemyRound.result.lastTakenDmg || 0) > 35
+              );
+            }
+            syncCombatState(pCur, eCur, enemyRound.result.logs);
+            await sleepCombatStep(700);
+            if (combatAbortRef.current !== turnRunId) return;
             nextControllableActor = 0;
           }
         }
 
-        const persistedEnemy: MapEnemyInstance = fledBattle
-          ? {
-              ...eCur,
-              aiState: 'deagro',
-              questionTimerMs: 4000,
-              alertTimerMs: 0,
-              loseSightTimerMs: 0,
-              moveCooldownMs: 1800,
-            }
-          : eCur;
-
-        setPlayer(pCur);
-        setWorld((prev) => {
-          const curRoom = prev.rooms[currentRoom.id];
-          if (!curRoom) return prev;
-          return {
-            ...prev,
-            rooms: {
-              ...prev.rooms,
-              [currentRoom.id]: {
-                ...curRoom,
-                enemies: curRoom.enemies.map((e) => (e.uid === persistedEnemy.uid ? persistedEnemy : e)),
-              },
-            },
-          };
-        });
-        if (collectedLogs.length > 0) {
-          setCombatLogs((prev) => [...collectedLogs.slice().reverse(), ...prev.slice(0, 18)]);
-        }
-        setFocusedLimbId(null);
-        setCombatMenuMode('main');
         if (nextControllableActor !== null) {
           setActiveActorIdx(nextControllableActor);
+          const nextAlly = nextControllableActor > 0 ? pCur.party[nextControllableActor - 1] || null : null;
+          setCombatActionCursor(nextAlly && isPureTankSummon(nextAlly) ? 2 : 0);
+          setCombatFocusPhase('action');
+          setPendingSkillId(null);
         }
 
-        if (fledBattle) {
-          handleCombatEnd({ fled: true });
-          addLog('🏃 Cả đội đã thoát khỏi cuộc giao tranh trong gang tấc.');
-          return;
-        }
-
-        // Advance selectedLimbId if targeted limb was severed
         const activeTargetAfter = eCur.limbs.find((l) => l.id === lastTargetLimb);
         if (!activeTargetAfter || activeTargetAfter.hp <= 0) {
           const nextIntact =
@@ -3537,6 +4165,9 @@ export default function App() {
       } catch (err) {
         console.error('Combat turn execution error:', err);
         setCombatLogs((prev) => ['⚡ Đòn kỹ năng va chạm dữ dội trong bóng tối!', ...prev]);
+      } finally {
+        isResolvingTurnRef.current = false;
+        setIsResolvingTurn(false);
       }
     },
     [
@@ -3550,11 +4181,22 @@ export default function App() {
       handleCombatEnd,
       generateRandomSeed,
       openNpcRpgDialogue,
+      triggerCombatVfx,
+      sleepCombatStep,
     ]
   );
 
-  // Keyboard Controls (Exploration + 2-Step Combat Limb Selection + 1-5 Quick Action Hotkeys)
+  // Keyboard Controls (Exploration + 100% Keyboard-Driven 2-Step Combat + Settings [ESC])
   useEffect(() => {
+    const SELF_UTILITY_SKILLS = new Set([
+      'blessed_heal',
+      'divine_aegis',
+      'purification',
+      'blood_pact',
+      'veil_of_blindness',
+      'necromancy',
+    ]);
+
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (
@@ -3597,76 +4239,340 @@ export default function App() {
         return;
       }
 
-      // Combat 2-Step WASD Limb Reticle Navigation + Enter/Space + Number Hotkeys 1..5
-      if (screen === 'combat' && activeCombatEnemy && !activeCombatEnemy.defeated && !activeModal) {
+      // Victory screen keyboard confirmation in Combat
+      if (screen === 'combat' && activeCombatEnemy?.defeated && !activeModal) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          sfx.playSfx('ui_confirm');
+          handleCombatEnd({ defeatedEnemyUid: activeCombatEnemy.uid });
+        }
+        return;
+      }
+
+      // 100% Keyboard-Driven 2-Step Combat Controls
+      if (
+        screen === 'combat' &&
+        activeCombatEnemy &&
+        !activeCombatEnemy.defeated &&
+        !activeModal &&
+        !isResolvingTurnRef.current
+      ) {
+        const key = e.key.toLowerCase();
+        const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+        const reticleMap = getLimbReticlePositions(tpl.spriteKey);
         const aliveLimbs = activeCombatEnemy.limbs.filter((l) => l.hp > 0);
         if (aliveLimbs.length === 0) return;
+
         const activeAllyForKeys = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
         const isPureTankKeyTurn = Boolean(activeAllyForKeys && isPureTankSummon(activeAllyForKeys));
+        const activeSkillIds = activeAllyForKeys
+          ? getAllyAvailableSkills(activeAllyForKeys)
+          : Object.entries(player.skillLevels)
+              .filter(([, lv]) => lv > 0)
+              .map(([id]) => id);
+        const usableItems = Object.entries(player.inventory).filter(
+          ([itemId, count]) => count > 0 && CONFIG.ITEMS[itemId]?.combatUsable
+        );
+        const maxActionIdx = activeActorIdx === 0 ? 5 : 3;
 
-        // Number Hotkeys 1-5 for fast tactical combat input
-        if (e.key === '1') {
+        // ESC / Backspace cancels Step 2 or Sub-Menus cleanly back to Action Dock
+        if (key === 'escape' || e.key === 'Backspace') {
           e.preventDefault();
-          if (isPureTankKeyTurn) return;
-          setCombatMenuMode('main');
-          runCombatTurn('ATTACK', { limbId: selectedLimbId });
+          sfx.playSfx('ui_move');
+          if (combatFocusPhase === 'limb') {
+            if (pendingSkillId) {
+              setPendingSkillId(null);
+              setCombatMenuMode('skills');
+              setCombatFocusPhase('skills_menu');
+            } else {
+              setCombatFocusPhase('action');
+            }
+          } else if (combatFocusPhase === 'skills_menu' || combatFocusPhase === 'items_menu') {
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+          }
           return;
         }
-        if (e.key === '2') {
+
+        // Number Hotkeys 1..6 for fast action selection
+        if (e.key === '1' && !isPureTankKeyTurn) {
           e.preventDefault();
-          setCombatMenuMode((m) => (m === 'skills' ? 'main' : 'skills'));
+          sfx.playSfx('ui_confirm');
+          setCombatActionCursor(0);
+          setPendingSkillId(null);
+          setCombatMenuMode('main');
+          setCombatFocusPhase('limb');
+          return;
+        }
+        if (e.key === '2' && activeSkillIds.length > 0) {
+          e.preventDefault();
+          sfx.playSfx('ui_confirm');
+          setCombatActionCursor(1);
+          setCombatSubCursor(0);
+          setCombatMenuMode('skills');
+          setCombatFocusPhase('skills_menu');
           return;
         }
         if (e.key === '3') {
           e.preventDefault();
+          setCombatActionCursor(2);
           setCombatMenuMode('main');
           runCombatTurn('GUARD');
           return;
         }
-        if (e.key === '4') {
+        if (e.key === '4' && usableItems.length > 0) {
           e.preventDefault();
-          setCombatMenuMode((m) => (m === 'items' ? 'main' : 'items'));
+          sfx.playSfx('ui_confirm');
+          setCombatActionCursor(3);
+          setCombatSubCursor(0);
+          setCombatMenuMode('items');
+          setCombatFocusPhase('items_menu');
           return;
         }
         if (e.key === '5' && activeActorIdx === 0) {
           e.preventDefault();
+          setCombatActionCursor(4);
           setCombatMenuMode('main');
           runCombatTurn('TALK');
           return;
         }
-
-        const key = e.key.toLowerCase();
-        if (
-          key === 'w' ||
-          key === 's' ||
-          key === 'a' ||
-          key === 'd' ||
-          e.key === 'ArrowUp' ||
-          e.key === 'ArrowDown' ||
-          e.key === 'ArrowLeft' ||
-          e.key === 'ArrowRight' ||
-          e.key === 'Tab'
-        ) {
+        if (e.key === '6' && activeActorIdx === 0) {
           e.preventDefault();
-          const curIdx = aliveLimbs.findIndex((l) => l.id === selectedLimbId);
-          const step = key === 'w' || key === 'a' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
-          const nextLimb = aliveLimbs[(curIdx + step + aliveLimbs.length) % aliveLimbs.length];
-          if (nextLimb) {
-            setSelectedLimbId(nextLimb.id);
-            setFocusedLimbId(nextLimb.id);
+          setCombatActionCursor(5);
+          setCombatMenuMode('main');
+          runCombatTurn('FLEE');
+          return;
+        }
+
+        // PHASE 1: Left Action Dock Navigation
+        if (combatFocusPhase === 'action') {
+          if (key === 'w' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCombatActionCursor((c) => {
+              let next = (c - 1 + maxActionIdx + 1) % (maxActionIdx + 1);
+              if (isPureTankKeyTurn && next === 0) next = maxActionIdx;
+              return next;
+            });
+            return;
+          }
+          if (key === 's' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCombatActionCursor((c) => {
+              let next = (c + 1) % (maxActionIdx + 1);
+              if (isPureTankKeyTurn && next === 0) next = 1;
+              return next;
+            });
+            return;
+          }
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (combatActionCursor === 0 && !isPureTankKeyTurn) {
+              sfx.playSfx('ui_confirm');
+              setPendingSkillId(null);
+              setCombatMenuMode('main');
+              setCombatFocusPhase('limb');
+            } else if (combatActionCursor === 1) {
+              if (activeSkillIds.length === 0) return;
+              sfx.playSfx('ui_confirm');
+              setCombatSubCursor(0);
+              setCombatMenuMode('skills');
+              setCombatFocusPhase('skills_menu');
+            } else if (combatActionCursor === 2) {
+              setCombatMenuMode('main');
+              runCombatTurn('GUARD');
+            } else if (combatActionCursor === 3) {
+              if (usableItems.length === 0) return;
+              sfx.playSfx('ui_confirm');
+              setCombatSubCursor(0);
+              setCombatMenuMode('items');
+              setCombatFocusPhase('items_menu');
+            } else if (combatActionCursor === 4 && activeActorIdx === 0) {
+              runCombatTurn('TALK');
+            } else if (combatActionCursor === 5 && activeActorIdx === 0) {
+              runCombatTurn('FLEE');
+            }
+            return;
           }
           return;
         }
 
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          if (isPureTankKeyTurn) {
-            runCombatTurn('GUARD');
-          } else {
-            runCombatTurn('ATTACK', { limbId: selectedLimbId });
+        // PHASE 1B: Skills Sub-Menu Navigation
+        if (combatFocusPhase === 'skills_menu') {
+          if (activeSkillIds.length === 0) {
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+            return;
+          }
+          if (
+            key === 'w' ||
+            key === 'a' ||
+            e.key === 'ArrowUp' ||
+            e.key === 'ArrowLeft'
+          ) {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCombatSubCursor((c) => (c - 1 + activeSkillIds.length) % activeSkillIds.length);
+            return;
+          }
+          if (
+            key === 's' ||
+            key === 'd' ||
+            e.key === 'ArrowDown' ||
+            e.key === 'ArrowRight' ||
+            e.key === 'Tab'
+          ) {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCombatSubCursor((c) => (c + 1) % activeSkillIds.length);
+            return;
+          }
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const skId = activeSkillIds[combatSubCursor % activeSkillIds.length];
+            const sk = CONFIG.SKILLS.find((s) => s.id === skId);
+            if (!sk) return;
+            const curMind = activeAllyForKeys ? activeAllyForKeys.mind : player.mind;
+            const lockedByHoly =
+              !activeAllyForKeys && sk.branch === 'Thánh Mẫu' && isHolyMotherBanned(player);
+            if (curMind < sk.mindCost || lockedByHoly) {
+              setCombatLogs((prev) => [
+                lockedByHoly ? HOLY_MOTHER_REFUSAL_MSG : '⚠️ Không đủ Tâm Trí để thi triển kỹ năng này!',
+                ...prev.slice(0, 18),
+              ]);
+              return;
+            }
+            if (SELF_UTILITY_SKILLS.has(sk.id)) {
+              setCombatMenuMode('main');
+              setCombatFocusPhase('action');
+              runCombatTurn('SKILL', { limbId: selectedLimbId, skillId: sk.id });
+            } else {
+              sfx.playSfx('ui_confirm');
+              setPendingSkillId(sk.id);
+              setCombatMenuMode('main');
+              setCombatFocusPhase('limb');
+            }
+            return;
           }
           return;
         }
+
+        // PHASE 1C: Items Sub-Menu Navigation
+        if (combatFocusPhase === 'items_menu') {
+          if (usableItems.length === 0) {
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+            return;
+          }
+          if (
+            key === 'w' ||
+            key === 'a' ||
+            e.key === 'ArrowUp' ||
+            e.key === 'ArrowLeft'
+          ) {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCombatSubCursor((c) => (c - 1 + usableItems.length) % usableItems.length);
+            return;
+          }
+          if (
+            key === 's' ||
+            key === 'd' ||
+            e.key === 'ArrowDown' ||
+            e.key === 'ArrowRight' ||
+            e.key === 'Tab'
+          ) {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCombatSubCursor((c) => (c + 1) % usableItems.length);
+            return;
+          }
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const picked = usableItems[combatSubCursor % usableItems.length];
+            if (!picked) return;
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+            runCombatTurn('ITEM', { limbId: selectedLimbId, itemId: picked[0] });
+            return;
+          }
+          return;
+        }
+
+        // PHASE 2: Spatial Limb Reticle Navigation on Enemy Anatomy
+        if (combatFocusPhase === 'limb') {
+          if (
+            key === 'w' ||
+            key === 's' ||
+            key === 'a' ||
+            key === 'd' ||
+            e.key === 'ArrowUp' ||
+            e.key === 'ArrowDown' ||
+            e.key === 'ArrowLeft' ||
+            e.key === 'ArrowRight' ||
+            e.key === 'Tab'
+          ) {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            if (e.key === 'Tab') {
+              const curIdx = aliveLimbs.findIndex((l) => l.id === selectedLimbId);
+              const nextLimb = aliveLimbs[(curIdx + 1) % aliveLimbs.length];
+              if (nextLimb) {
+                setSelectedLimbId(nextLimb.id);
+                setFocusedLimbId(nextLimb.id);
+              }
+              return;
+            }
+            const getCoords = (id: string, i: number) =>
+              reticleMap[id] || { nx: 0.25 + (i % 2) * 0.5, ny: 0.25 + Math.floor(i / 2) * 0.22 };
+            const curIdx = Math.max(0, aliveLimbs.findIndex((l) => l.id === selectedLimbId));
+            const curPos = getCoords(aliveLimbs[curIdx].id, curIdx);
+            const dirY = key === 'w' || e.key === 'ArrowUp' ? -1 : key === 's' || e.key === 'ArrowDown' ? 1 : 0;
+            const dirX = key === 'a' || e.key === 'ArrowLeft' ? -1 : key === 'd' || e.key === 'ArrowRight' ? 1 : 0;
+
+            let bestLimb = aliveLimbs[curIdx];
+            let bestScore = Infinity;
+            aliveLimbs.forEach((cand, idx) => {
+              if (cand.id === aliveLimbs[curIdx].id) return;
+              const p = getCoords(cand.id, idx);
+              const dx = p.nx - curPos.nx;
+              const dy = p.ny - curPos.ny;
+              const primaryProj = dx * dirX + dy * dirY;
+              const ortho = Math.abs(dx * dirY - dy * dirX);
+              if (primaryProj > 0.02) {
+                const score = primaryProj + ortho * 1.6;
+                if (score < bestScore) {
+                  bestScore = score;
+                  bestLimb = cand;
+                }
+              }
+            });
+
+            if (bestLimb.id === aliveLimbs[curIdx].id && aliveLimbs.length > 1) {
+              // Wrap around in the chosen direction
+              const step = dirY < 0 || dirX < 0 ? -1 : 1;
+              bestLimb = aliveLimbs[(curIdx + step + aliveLimbs.length) % aliveLimbs.length];
+            }
+
+            setSelectedLimbId(bestLimb.id);
+            setFocusedLimbId(bestLimb.id);
+            return;
+          }
+
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (pendingSkillId) {
+              const skId = pendingSkillId;
+              setPendingSkillId(null);
+              runCombatTurn('SKILL', { limbId: selectedLimbId, skillId: skId });
+            } else {
+              runCombatTurn('ATTACK', { limbId: selectedLimbId });
+            }
+            return;
+          }
+        }
+        return;
       }
 
       if (e.key.toLowerCase() === 'escape' && titleSaveModalOpen) {
@@ -3688,13 +4594,20 @@ export default function App() {
           setLogOverlayVisible(false);
           return;
         }
-        setActiveModal(null);
+        if (activeModal) {
+          setConfirmReturnTitle(false);
+          setActiveModal(null);
+          return;
+        }
+        setConfirmReturnTitle(false);
+        setActiveModal('settings');
         return;
       }
 
       if (interactionMenu && !activeModal) {
         if (key === 'w' || e.key === 'ArrowUp') {
           e.preventDefault();
+          sfx.playSfx('ui_move');
           setInteractionMenu((prev) =>
             prev
               ? {
@@ -3708,6 +4621,7 @@ export default function App() {
         }
         if (key === 's' || e.key === 'ArrowDown') {
           e.preventDefault();
+          sfx.playSfx('ui_move');
           setInteractionMenu((prev) =>
             prev
               ? {
@@ -3720,6 +4634,7 @@ export default function App() {
         }
         if (key === 'f' || key === 'e' || e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          sfx.playSfx('ui_confirm');
           const chosen = interactionMenu.choices[interactionMenu.selectedIndex];
           if (chosen) chosen.onSelect();
           return;
@@ -3769,6 +4684,12 @@ export default function App() {
     screen,
     activeCombatEnemy,
     activeModal,
+    activeActorIdx,
+    player,
+    combatFocusPhase,
+    combatActionCursor,
+    combatSubCursor,
+    pendingSkillId,
     titleSaveModalOpen,
     titleStep,
     interactionMenu,
@@ -3780,6 +4701,7 @@ export default function App() {
     selectedLimbId,
     attemptMove,
     handleTileInteraction,
+    handleCombatEnd,
     promptCrackedWallExplosion,
     runCombatTurn,
   ]);
@@ -3809,84 +4731,92 @@ export default function App() {
           // Apply Damage-Proportional Screen Shake (Crit = 25px, >500 Dmg = 15px)
           ctx.translate(engine.currentShakeX, engine.currentShakeY);
 
-          // 1. Atmospheric Dungeon / Void / Blood Backdrop
-          const bgGrad = ctx.createRadialGradient(w * 0.5, h * 0.42, 24, w * 0.5, h * 0.45, w * 0.68);
-          if (currentRoom.floor === 3) {
-            bgGrad.addColorStop(0, '#2a1642');
-            bgGrad.addColorStop(0.55, '#12081e');
-            bgGrad.addColorStop(1, '#050308');
-          } else if (currentRoom.floor === 1) {
-            bgGrad.addColorStop(0, '#3e1214');
-            bgGrad.addColorStop(0.55, '#19080a');
-            bgGrad.addColorStop(1, '#060304');
-          } else {
-            bgGrad.addColorStop(0, '#29221d');
-            bgGrad.addColorStop(0.55, '#120e10');
-            bgGrad.addColorStop(1, '#060508');
-          }
-          ctx.fillStyle = bgGrad;
-          ctx.fillRect(-30, -30, w + 60, h + 60);
-
-          // Gothic stone pillars in background
-          ctx.fillStyle = 'rgba(20, 16, 22, 0.75)';
-          ctx.fillRect(28, 0, 52, h * 0.65);
-          ctx.fillRect(w - 80, 0, 52, h * 0.65);
-
-          // Stone floor perspective lines
-          ctx.strokeStyle = 'rgba(130, 110, 90, 0.16)';
-          ctx.lineWidth = 2;
-          for (let i = 1; i < 6; i++) {
-            const yLine = h * 0.58 + i * 32;
-            ctx.beginPath();
-            ctx.moveTo(0, yLine);
-            ctx.lineTo(w, yLine);
-            ctx.stroke();
-          }
-
-          // Shadow / Blood pool under enemy
-          ctx.fillStyle = 'rgba(75, 10, 14, 0.64)';
-          ctx.beginPath();
-          ctx.ellipse(w * 0.5, h * 0.72, 185, 36, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          // 2. Central Anatomical Vector Monster with Per-Limb Sinusoidal Breathing
           const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+          const showCombatPortrait = Boolean(
+            tpl.combatPortraitUrl && !portraitErrorRef.current[tpl.combatPortraitUrl]
+          );
+
+          if (!showCombatPortrait) {
+            // 1. Atmospheric Dungeon / Void / Blood Backdrop
+            const bgGrad = ctx.createRadialGradient(w * 0.5, h * 0.42, 24, w * 0.5, h * 0.45, w * 0.68);
+            if (currentRoom.floor === 3) {
+              bgGrad.addColorStop(0, '#2a1642');
+              bgGrad.addColorStop(0.55, '#12081e');
+              bgGrad.addColorStop(1, '#050308');
+            } else if (currentRoom.floor === 1) {
+              bgGrad.addColorStop(0, '#3e1214');
+              bgGrad.addColorStop(0.55, '#19080a');
+              bgGrad.addColorStop(1, '#060304');
+            } else {
+              bgGrad.addColorStop(0, '#29221d');
+              bgGrad.addColorStop(0.55, '#120e10');
+              bgGrad.addColorStop(1, '#060508');
+            }
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(-30, -30, w + 60, h + 60);
+
+            // Gothic stone pillars in background
+            ctx.fillStyle = 'rgba(20, 16, 22, 0.75)';
+            ctx.fillRect(28, 0, 52, h * 0.65);
+            ctx.fillRect(w - 80, 0, 52, h * 0.65);
+
+            // Stone floor perspective lines
+            ctx.strokeStyle = 'rgba(130, 110, 90, 0.16)';
+            ctx.lineWidth = 2;
+            for (let i = 1; i < 6; i++) {
+              const yLine = h * 0.58 + i * 32;
+              ctx.beginPath();
+              ctx.moveTo(0, yLine);
+              ctx.lineTo(w, yLine);
+              ctx.stroke();
+            }
+
+            // Shadow / Blood pool under enemy
+            ctx.fillStyle = 'rgba(75, 10, 14, 0.64)';
+            ctx.beginPath();
+            ctx.ellipse(w * 0.5, h * 0.72, 185, 36, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // 2. Central Anatomical Vector Monster with Per-Limb Sinusoidal Breathing (skipped when portrait image is rendered beneath)
           const severedSet = new Set<string>(activeCombatEnemy.severedLimbs);
           const animState = engine.getStageAnimState();
 
-          const enemyW =
-            tpl.spriteScale === '3x3'
-              ? 465
-              : tpl.spriteScale === '2x3'
-              ? 430
-              : tpl.spriteScale === '2x2'
-              ? 375
-              : 310;
-          const enemyH =
-            tpl.spriteScale === '3x3'
-              ? 420
-              : tpl.spriteScale === '2x3'
-              ? 395
-              : tpl.spriteScale === '2x2'
-              ? 365
-              : 345;
-          const enemyX = w * 0.5 - enemyW * 0.5;
-          const enemyY = h * 0.04;
+          if (!showCombatPortrait) {
+            const enemyW =
+              tpl.spriteScale === '3x3'
+                ? 465
+                : tpl.spriteScale === '2x3'
+                ? 430
+                : tpl.spriteScale === '2x2'
+                ? 375
+                : 310;
+            const enemyH =
+              tpl.spriteScale === '3x3'
+                ? 420
+                : tpl.spriteScale === '2x3'
+                ? 395
+                : tpl.spriteScale === '2x2'
+                ? 365
+                : 345;
+            const enemyX = w * 0.5 - enemyW * 0.5;
+            const enemyY = h * 0.04;
 
-          drawPixelSprite(
-            ctx,
-            tpl.spriteKey,
-            enemyX,
-            enemyY,
-            enemyW,
-            enemyH,
-            severedSet,
-            animState === 'enemyHit',
-            activeCombatEnemy.oilCovered,
-            activeCombatEnemy.blindTurns > 0,
-            activeCombatEnemy.telegraphing,
-            engine.breathPhase
-          );
+            drawPixelSprite(
+              ctx,
+              tpl.spriteKey,
+              enemyX,
+              enemyY,
+              enemyW,
+              enemyH,
+              severedSet,
+              animState === 'enemyHit',
+              activeCombatEnemy.oilCovered,
+              activeCombatEnemy.blindTurns > 0,
+              activeCombatEnemy.telegraphing,
+              engine.breathPhase
+            );
+          }
 
           // Render Eased Blade Slash Arcs & Physics Particles (gravity = 0.5)
           engine.renderCanvasEffects(ctx);
@@ -4121,21 +5051,33 @@ export default function App() {
                         }`}
                       >
                         <div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-xs sm:text-sm text-[#c5a059]">{cls.name}</span>
-                            {active && (
-                              <span className="text-[9px] uppercase tracking-widest text-[#d46a6a] font-bold">
-                                ✦ Đã Chọn
-                              </span>
-                            )}
+                          <div className="flex items-start gap-2.5 mb-1.5">
+                            <CharacterPortraitBox
+                              spriteKey={cls.id}
+                              portraitUrl={cls.combatPortraitUrl}
+                              size={54}
+                              alt={cls.name}
+                              isError={Boolean(cls.combatPortraitUrl && portraitErrorMap[cls.combatPortraitUrl])}
+                              onPortraitError={markPortraitError}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-1.5">
+                                <span className="font-bold text-xs sm:text-sm text-[#c5a059] truncate">{cls.name}</span>
+                                {active && (
+                                  <span className="text-[9px] uppercase tracking-widest text-[#d46a6a] font-bold shrink-0">
+                                    ✦ Đã Chọn
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-[#b54848] font-semibold">{cls.title}</div>
+                            </div>
                           </div>
-                          <div className="text-[10px] text-[#b54848] font-semibold mb-1">{cls.title}</div>
                           <p className="text-[11px] leading-snug text-[#d3d3d3]">{cls.lore}</p>
                         </div>
 
                         <div className="mt-2.5 pt-2 border-t border-[#3a3a3a]/70 space-y-0.5 text-[10px] font-mono">
                           <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#9e968c]">ATK / CRIT:</span>
+                            <span className="text-[#9e968c]">Công / Chí mạng:</span>
                             <span>
                               <b className="text-[#c96b6b]">{startWpn ? `${startWpn.dmg[0]}–${startWpn.dmg[1]}` : '150–200'}</b>
                               <span className="text-[#5e564e]"> • </span>
@@ -4143,7 +5085,7 @@ export default function App() {
                             </span>
                           </div>
                           <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#9e968c]">DEF / Né / Chạy:</span>
+                            <span className="text-[#9e968c]">Thủ / Né / Chạy:</span>
                             <span>
                               <b className="text-[#94a3b8]">{Math.round(cls.naturalArmor * 100)}%</b>
                               <span className="text-[#5e564e]"> • </span>
@@ -4518,31 +5460,60 @@ export default function App() {
           .filter(([, lv]) => lv > 0)
           .map(([id]) => id);
 
-    // Reticle Click Handler: clicking the currently selected limb attacks immediately (unless Pure Tank); clicking a different limb selects and focuses it
-    const handleReticleClick = (limbId: string) => {
-      if (activeCombatEnemy.defeated) return;
-      if (isPureTankTurn || (selectedLimbId !== limbId && focusedLimbId !== limbId)) {
-        setSelectedLimbId(limbId);
-        setFocusedLimbId(limbId);
-      } else {
-        setSelectedLimbId(limbId);
-        runCombatTurn('ATTACK', { limbId });
-      }
-    };
+    const usableCombatItems = Object.entries(player.inventory).filter(
+      ([itemId, count]) => count > 0 && CONFIG.ITEMS[itemId]?.combatUsable
+    );
 
     const currentTargetLimb =
       activeCombatEnemy.limbs.find((l) => l.id === selectedLimbId) || activeCombatEnemy.limbs[0];
+    const showBossPortrait = Boolean(
+      tpl.combatPortraitUrl && !portraitErrorMap[tpl.combatPortraitUrl]
+    );
+    const enemyWeaponLost = isEnemyWeaponLimbSevered(activeCombatEnemy, tpl);
 
     return (
       <div className="h-screen w-screen overflow-hidden bg-[#060508] text-[#d3d3d3] flex flex-col select-none">
         {/* UPPER 68% COMBAT STAGE */}
-        <div className="relative h-[68%] w-full bg-[#09070c] border-b border-[#c5a059]/45 flex flex-col items-center justify-between overflow-hidden">
+        <div
+          className={`relative h-[68%] w-full bg-[#09070c] border-b border-[#c5a059]/45 flex flex-col items-center justify-between overflow-hidden ${
+            screenShakeMode === 'heavy'
+              ? 'animate-heavy-shake'
+              : screenShakeMode === 'normal'
+              ? 'animate-screen-shake'
+              : ''
+          }`}
+        >
+          {/* Atmospheric Dark Dungeon / Void / Blood Backdrop for Portrait Mode */}
+          {showBossPortrait && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background:
+                  currentRoom.floor === 3
+                    ? 'radial-gradient(circle at 50% 42%, rgba(42, 22, 66, 0.92), rgba(14, 7, 24, 0.98) 58%, #050308 100%)'
+                    : currentRoom.floor === 1
+                    ? 'radial-gradient(circle at 50% 42%, rgba(62, 18, 20, 0.92), rgba(20, 7, 10, 0.98) 58%, #060304 100%)'
+                    : 'radial-gradient(circle at 50% 42%, rgba(41, 34, 29, 0.92), rgba(16, 12, 14, 0.98) 58%, #060508 100%)',
+              }}
+            />
+          )}
+
           {/* Top Chamfered Telegraph & Enemy Header Banner */}
           <div className="z-20 w-full max-w-4xl mt-1.5 px-3 shrink-0">
             <div className="df-well px-3.5 py-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-widest text-[#c96b6b] font-bold">
-                  Hiệp #{activeCombatEnemy.turnCount + 1} • {activeCombatEnemy.customName || tpl.name}
+                <div className="text-[10px] uppercase tracking-widest text-[#c96b6b] font-bold flex items-center gap-2 flex-wrap">
+                  <span>Hiệp #{activeCombatEnemy.turnCount + 1} • {activeCombatEnemy.customName || tpl.name}</span>
+                  {enemyWeaponLost && (
+                    <span className="px-1.5 py-0.2 bg-[#2a0c10] border border-[#8b0000] text-[9px] text-[#e5cfa0]">
+                      Mất Tay Vũ Khí — Đòn Tay Không
+                    </span>
+                  )}
+                  {isResolvingTurn && (
+                    <span className="text-[9px] text-[#c5a059] animate-pulse">
+                      ✦ Đang giao phong...
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-[#d3d3d3] italic truncate">
                   {activeCombatEnemy.telegraphing
@@ -4557,15 +5528,67 @@ export default function App() {
             </div>
           </div>
 
-          {/* Center Responsive 16:11 Stage Wrapper with On-Body Anatomical Reticles */}
-          <div className="flex-1 min-h-0 w-full flex items-center justify-center py-1">
+          {/* Center Responsive 16:11 Stage Wrapper with Portrait Backdrop, Weapon VFX & On-Body Anatomical Reticles */}
+          <div className="flex-1 min-h-0 w-full flex items-center justify-center py-1 relative z-10">
             <div className="relative h-full max-h-[440px] aspect-[16/11] max-w-full flex items-center justify-center">
+              {showBossPortrait && tpl.combatPortraitUrl && (
+                <div className="absolute inset-0 flex items-start justify-center pt-1.5 pointer-events-none">
+                  <div className="relative w-[56%] h-[70%] overflow-hidden border border-[#c5a059]/30 bg-[#07050a] shadow-[0_0_32px_rgba(0,0,0,0.92)]">
+                    <img
+                      src={tpl.combatPortraitUrl}
+                      alt={activeCombatEnemy.customName || tpl.name}
+                      onError={() => markPortraitError(tpl.combatPortraitUrl!)}
+                      className={`w-full h-full object-cover object-top animate-monster-breathe ${
+                        activeCombatEnemy.telegraphing ? 'brightness-110 saturate-125' : ''
+                      }`}
+                      style={{
+                        filter: activeCombatEnemy.blindTurns > 0
+                          ? 'brightness(0.68) contrast(1.05) saturate(0.45)'
+                          : 'brightness(0.88) contrast(1.08) saturate(0.85)',
+                      }}
+                    />
+                    {/* Dark atmospheric vignette blending portrait smoothly into combat backdrop */}
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        background:
+                          'radial-gradient(circle at 50% 42%, transparent 38%, rgba(9, 7, 12, 0.72) 78%, rgba(9, 7, 12, 0.96) 100%)',
+                      }}
+                    />
+                    {/* Crimson arterial slash overlays on severed limbs */}
+                    {activeCombatEnemy.severedLimbs.map((sevId) => {
+                      const pos = reticleMap[sevId];
+                      if (!pos) return null;
+                      return (
+                        <div
+                          key={`gash_${sevId}`}
+                          style={{
+                            left: `${Math.max(12, Math.min(88, pos.nx * 100))}%`,
+                            top: `${Math.max(14, Math.min(86, pos.ny * 100))}%`,
+                            transform: 'translate(-50%, -50%) rotate(-24deg)',
+                          }}
+                          className="absolute w-14 h-3 bg-[#450a0a]/90 border-y border-[#dc2626] shadow-[0_0_10px_rgba(185,28,28,0.85)]"
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <canvas
                 ref={combatStageCanvasRef}
                 width={640}
                 height={440}
-                className="w-full h-full pointer-events-none"
+                className="w-full h-full pointer-events-none relative z-10"
               />
+
+              {activeVfx && activeVfx.category !== 'unarmed' && (
+                <div
+                  key={activeVfx.key}
+                  className={`vfx-overlay vfx-${activeVfx.category} z-20`}
+                  style={{ '--vfx-color': activeVfx.color } as React.CSSProperties}
+                />
+              )}
 
             {/* Compact On-Body Anatomical Target Reticles with Damage Preview Tooltip & Pixel-Art Debuff Badges */}
             {!activeCombatEnemy.defeated &&
@@ -4576,9 +5599,8 @@ export default function App() {
                 };
                 const isSevered = limb.hp <= 0;
                 const isSelected = selectedLimbId === limb.id;
-                const isFocused = focusedLimbId === limb.id;
-                const isHovered = hoveredLimbId === limb.id;
-                const showExpanded = isSelected || isFocused || isHovered;
+                const isFocused = combatFocusPhase === 'limb' && isSelected;
+                const showExpanded = isSelected || isFocused;
                 const targetable = canTargetEnemyLimb(activeCombatEnemy, tpl, limb.id).allowed;
                 const preview = combatEngineRef.current.getDamagePreview(
                   player,
@@ -4597,7 +5619,7 @@ export default function App() {
                       top: `${pos.ny * 100}%`,
                       transform: 'translate(-50%, -50%)',
                     }}
-                    className={`absolute ${showExpanded ? 'z-30' : 'z-20'}`}
+                    className={`pointer-events-none absolute ${showExpanded ? 'z-30' : 'z-20'}`}
                   >
                     {/* Pixel-Art Debuff Status Badges with Remaining Turn Count right above the Reticle */}
                     {!isSevered && badges.length > 0 && (
@@ -4627,14 +5649,12 @@ export default function App() {
                       </div>
                     )}
 
-                    <button
-                      disabled={isSevered}
-                      onMouseEnter={() => setHoveredLimbId(limb.id)}
-                      onMouseLeave={() => setHoveredLimbId(null)}
-                      onClick={() => handleReticleClick(limb.id)}
-                      className={`cursor-pointer ${
+                    <div
+                      className={`pointer-events-none select-none ${
                         isSevered
-                          ? 'px-1.5 py-0.5 df-well opacity-45 text-[#6b635b] cursor-not-allowed'
+                          ? 'px-1.5 py-0.5 df-well opacity-45 text-[#6b635b]'
+                          : isFocused
+                          ? 'px-2.5 py-1 df-card-active text-[#c5a059] scale-110 ring-1 ring-[#fbbf24]'
                           : showExpanded
                           ? 'px-2.5 py-1 df-card-active text-[#c5a059] scale-105'
                           : 'px-1.5 py-0.5 df-card text-[#d3d3d3]'
@@ -4650,8 +5670,8 @@ export default function App() {
                             </span>
                           </div>
                           {isFocused && !isSevered && (
-                            <div className="text-[9px] text-[#c5a059] font-bold uppercase tracking-tighter mt-0.5">
-                              [Nhấn lần 2 / Enter: CHÉM!]
+                            <div className="text-[9px] text-[#fbbf24] font-bold uppercase tracking-tighter mt-0.5">
+                              {pendingSkillId ? '[Enter: TUNG KỸ NĂNG]' : '[Enter: TẤN CÔNG] • [ESC: Hủy]'}
                             </div>
                           )}
                         </>
@@ -4661,7 +5681,7 @@ export default function App() {
                           <span>{isSevered ? 'ĐỨT' : !targetable ? '🔒' : `${preview.hitPct}%`}</span>
                         </div>
                       )}
-                    </button>
+                    </div>
 
                     {/* Damage Preview Side Tooltip (Min-Max Dmg, Hit %, Crit %, Armor) on Hover / WASD Focus */}
                     {showExpanded && !isSevered && (
@@ -4684,7 +5704,7 @@ export default function App() {
                           <span className="font-mono font-bold text-[#9ab08e]">{preview.hitPct}%</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-[#a3998f]">Tỷ lệ Crit:</span>
+                          <span className="text-[#a3998f]">Tỷ lệ Chí mạng:</span>
                           <span className="font-mono font-bold text-[#c5a059]">{preview.critPct}%</span>
                         </div>
                         <div className="flex justify-between">
@@ -4710,117 +5730,120 @@ export default function App() {
             <div className="text-[#a3998f] shrink-0 hidden md:block">
               Lượt: <span className="text-[#c5a059] font-semibold">{actingName}</span> • Vũ khí:{' '}
               <span className="text-[#d3d3d3] font-semibold">{activeWeapon.name}</span> • Mục tiêu:{' '}
-              <span className="text-[#c96b6b] font-semibold">{currentTargetLimb?.name}</span> • Phím tắt:{' '}
-              <span className="font-mono text-[#c5a059]">{activeActorIdx === 0 ? '[1..5]' : '[1..4]'}</span>
+              <span className="text-[#c96b6b] font-semibold">{currentTargetLimb?.name}</span> •{' '}
+              <span className="font-mono text-[#c5a059]">
+                {combatFocusPhase === 'limb'
+                  ? '[WASD] Chọn Bộ Phận • [Enter] Chém • [ESC] Hủy'
+                  : `[W/S] Chọn • [Enter] Xác nhận • Phím tắt ${activeActorIdx === 0 ? '[1..6]' : '[1..4]'}`}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* LOWER 32% DARK FANTASY CONTROL DOCK */}
+        {/* LOWER 32% DARK FANTASY CONTROL DOCK (100% Keyboard-Driven) */}
         <div className="h-[32%] w-full bg-[#08070b] p-2.5 flex gap-2.5">
           {/* LEFT BOX (220px): Vertical Serif Command Buttons with Number Hotkeys */}
-          <div className="w-[220px] shrink-0 df-panel p-2 flex flex-col justify-between gap-1">
+          <div className="w-[220px] shrink-0 df-panel p-2 flex flex-col justify-between gap-1 pointer-events-none">
             {!activeCombatEnemy.defeated ? (
               <>
                 <div className="text-[10px] font-bold uppercase tracking-wider text-[#c5a059] px-1 truncate border-b border-[#3a3a3a] pb-0.5">
                   Lượt: {actingName}
                 </div>
-                <button
-                  disabled={isPureTankTurn}
-                  onClick={() => {
-                    if (isPureTankTurn) return;
-                    setCombatMenuMode('main');
-                    runCombatTurn('ATTACK', { limbId: selectedLimbId });
-                  }}
+                <div
                   className={`w-full py-1 px-2.5 text-left text-xs font-bold truncate ${
-                    isPureTankTurn
-                      ? 'df-btn opacity-45 cursor-not-allowed'
-                      : combatMenuMode === 'main'
-                      ? 'df-btn-active cursor-pointer'
-                      : 'df-btn cursor-pointer'
+                    isPureTankTurn || isResolvingTurn
+                      ? 'df-btn opacity-45'
+                      : combatFocusPhase === 'action' && combatActionCursor === 0
+                      ? 'df-btn-active ring-1 ring-[#fbbf24]'
+                      : 'df-btn'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
                   {isPureTankTurn
                     ? '[1] 🔒 Khóa Công (Thuần Thủ)'
                     : `[1] ⚔ Đ.Thường (${currentTargetLimb?.name})`}
-                </button>
-                <button
-                  onClick={() => setCombatMenuMode((m) => (m === 'skills' ? 'main' : 'skills'))}
-                  className={`w-full py-1 px-2.5 text-left text-xs font-bold cursor-pointer ${
-                    combatMenuMode === 'skills' ? 'df-btn-active' : 'df-btn'
-                  }`}
+                </div>
+                <div
+                  className={`w-full py-1 px-2.5 text-left text-xs font-bold ${
+                    combatMenuMode === 'skills' ||
+                    (combatFocusPhase === 'action' && combatActionCursor === 1)
+                      ? 'df-btn-active ring-1 ring-[#fbbf24]'
+                      : 'df-btn'
+                  } ${activeSkillIds.length === 0 ? 'opacity-45' : ''}`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
                   [2] ✦ K.Năng ({activeSkillIds.length})
-                </button>
-                <button
-                  onClick={() => runCombatTurn('GUARD')}
-                  className={`w-full py-1 px-2.5 text-left text-xs font-bold cursor-pointer ${
-                    isPureTankTurn ? 'df-btn-active' : 'df-btn'
+                </div>
+                <div
+                  className={`w-full py-1 px-2.5 text-left text-xs font-bold ${
+                    (combatFocusPhase === 'action' && combatActionCursor === 2) || isPureTankTurn
+                      ? 'df-btn-active ring-1 ring-[#fbbf24]'
+                      : 'df-btn'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  {isPureTankTurn ? '[3] 🛡 Khiên Linh Hồn (+Đội)' : '[3] 🛡 P.Thủ (+DEF)'}
-                </button>
-                <button
-                  onClick={() => setCombatMenuMode((m) => (m === 'items' ? 'main' : 'items'))}
-                  className={`w-full py-1 px-2.5 text-left text-xs font-bold cursor-pointer ${
-                    combatMenuMode === 'items' ? 'df-btn-active' : 'df-btn'
-                  }`}
+                  {isPureTankTurn ? '[3] 🛡 Khiên Linh Hồn (+Đội)' : '[3] 🛡 Phòng Thủ'}
+                </div>
+                <div
+                  className={`w-full py-1 px-2.5 text-left text-xs font-bold ${
+                    combatMenuMode === 'items' ||
+                    (combatFocusPhase === 'action' && combatActionCursor === 3)
+                      ? 'df-btn-active ring-1 ring-[#fbbf24]'
+                      : 'df-btn'
+                  } ${usableCombatItems.length === 0 ? 'opacity-45' : ''}`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  [4] 🧪 Vật Phẩm
-                </button>
+                  [4] 🧪 Vật Phẩm ({usableCombatItems.length})
+                </div>
                 {activeActorIdx === 0 && (
                   <>
-                    <button
-                      onClick={() => runCombatTurn('TALK')}
-                      className="w-full py-1 px-2.5 text-left text-xs font-bold df-btn text-[#9ab08e] cursor-pointer"
+                    <div
+                      className={`w-full py-1 px-2.5 text-left text-xs font-bold text-[#9ab08e] ${
+                        combatFocusPhase === 'action' && combatActionCursor === 4
+                          ? 'df-btn-active ring-1 ring-[#fbbf24]'
+                          : 'df-btn'
+                      }`}
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     >
                       [5] 💬 Trò Chuyện
-                    </button>
-                    <button
-                      onClick={() => runCombatTurn('FLEE')}
-                      className="w-full py-1 px-2.5 text-left text-xs font-bold df-btn text-[#a3998f] cursor-pointer"
+                    </div>
+                    <div
+                      className={`w-full py-1 px-2.5 text-left text-xs font-bold text-[#a3998f] ${
+                        combatFocusPhase === 'action' && combatActionCursor === 5
+                          ? 'df-btn-active ring-1 ring-[#fbbf24]'
+                          : 'df-btn'
+                      }`}
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     >
-                      🏃 Bỏ Chạy
-                    </button>
+                      [6] 🏃 Bỏ Chạy
+                    </div>
                   </>
                 )}
               </>
             ) : (
               <div className="my-auto text-center space-y-2 p-2">
                 <div className="text-xs font-bold uppercase text-[#c5a059]">Chiến Thắng!</div>
-                <button
-                  onClick={() => handleCombatEnd({ defeatedEnemyUid: activeCombatEnemy.uid })}
-                  className="w-full py-2 df-btn-bronze font-bold text-xs uppercase cursor-pointer"
-                >
-                  Thu Chiến Lợi Phẩm
-                </button>
+                <div className="w-full py-2 df-btn-bronze font-bold text-xs uppercase">
+                  [Enter] Thu Chiến Lợi Phẩm
+                </div>
               </div>
             )}
           </div>
 
           {/* RIGHT BOX: Dynamic Sub-Menu OR Horizontal Party Status Table */}
-          <div className="flex-1 df-panel p-2.5 overflow-y-auto flex flex-col justify-between">
+          <div className="flex-1 df-panel p-2.5 overflow-y-auto flex flex-col justify-between pointer-events-none">
             {combatMenuMode === 'skills' && !activeCombatEnemy.defeated ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
                   <span className="text-xs font-bold uppercase text-[#c5a059]">
-                    Chọn Kỹ Năng — {actingName} (Nhắm vào: {currentTargetLimb?.name})
+                    Chọn Kỹ Năng — {actingName}
                   </span>
-                  <button
-                    onClick={() => setCombatMenuMode('main')}
-                    className="text-xs text-[#a3998f] hover:text-[#d3d3d3] cursor-pointer"
-                  >
-                    [Đóng]
-                  </button>
+                  <span className="text-[11px] text-[#a3998f] font-mono">
+                    [WASD] Chọn • [Enter] Dùng • [ESC] Quay lại
+                  </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {activeSkillIds.map((skId) => {
+                  {activeSkillIds.map((skId, sIdx) => {
                     const sk = CONFIG.SKILLS.find((s) => s.id === skId);
                     if (!sk) return null;
                     const lv = activeAlly
@@ -4829,25 +5852,26 @@ export default function App() {
                         : 1
                       : player.skillLevels[skId] || 1;
                     const curMind = activeAlly ? activeAlly.mind : player.mind;
-                    const lockedByHoly = !activeAlly && sk.branch === 'Thánh Mẫu' && player.holyMagicLocked;
+                    const lockedByHoly =
+                      !activeAlly && sk.branch === 'Thánh Mẫu' && isHolyMotherBanned(player);
+                    const isCursor =
+                      combatFocusPhase === 'skills_menu' &&
+                      sIdx === combatSubCursor % Math.max(1, activeSkillIds.length);
                     return (
-                      <button
+                      <div
                         key={sk.id}
-                        disabled={curMind < sk.mindCost || lockedByHoly}
-                        onClick={() => {
-                          runCombatTurn('SKILL', { limbId: selectedLimbId, skillId: sk.id });
-                          setCombatMenuMode('main');
-                        }}
-                        className="p-2 df-card text-left text-xs disabled:opacity-40 cursor-pointer"
+                        className={`p-2 text-left text-xs ${
+                          curMind < sk.mindCost || lockedByHoly ? 'opacity-40' : ''
+                        } ${isCursor ? 'df-card-active ring-1 ring-[#fbbf24]' : 'df-card'}`}
                       >
                         <div className="flex justify-between font-bold text-[#c5a059]">
                           <span>
-                            {sk.name} (Lv.{lv})
+                            {sk.name} (Cấp {lv})
                           </span>
                           <span>-{sk.mindCost} Tâm Trí</span>
                         </div>
                         <div className="text-[11px] text-[#d3d3d3]">{sk.descLv1}</div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -4858,38 +5882,34 @@ export default function App() {
                   <span className="text-xs font-bold uppercase text-[#c5a059]">
                     Chọn Vật Phẩm Thực Dụng ({actingName})
                   </span>
-                  <button
-                    onClick={() => setCombatMenuMode('main')}
-                    className="text-xs text-[#a3998f] hover:text-[#d3d3d3] cursor-pointer"
-                  >
-                    [Đóng]
-                  </button>
+                  <span className="text-[11px] text-[#a3998f] font-mono">
+                    [WASD] Chọn • [Enter] Dùng • [ESC] Quay lại
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {Object.entries(player.inventory)
-                    .filter(([itemId, count]) => count > 0 && CONFIG.ITEMS[itemId]?.combatUsable)
-                    .map(([itemId, count]) => {
-                      const item = CONFIG.ITEMS[itemId];
-                      if (!item) return null;
-                      return (
-                        <button
-                          key={itemId}
-                          onClick={() => {
-                            runCombatTurn('ITEM', { limbId: selectedLimbId, itemId });
-                            setCombatMenuMode('main');
-                          }}
-                          className="p-1.5 df-card flex items-center gap-2 text-left text-xs cursor-pointer"
-                        >
-                          <ItemArtworkCanvas itemOrWeaponId={itemId} size={32} />
-                          <div className="min-w-0">
-                            <div className="font-bold text-[#c5a059] truncate">
-                              {item.name} (x{count})
-                            </div>
-                            <div className="text-[10px] text-[#d3d3d3] truncate">{item.desc}</div>
+                  {usableCombatItems.map(([itemId, count], iIdx) => {
+                    const item = CONFIG.ITEMS[itemId];
+                    if (!item) return null;
+                    const isCursor =
+                      combatFocusPhase === 'items_menu' &&
+                      iIdx === combatSubCursor % Math.max(1, usableCombatItems.length);
+                    return (
+                      <div
+                        key={itemId}
+                        className={`p-1.5 flex items-center gap-2 text-left text-xs ${
+                          isCursor ? 'df-card-active ring-1 ring-[#fbbf24]' : 'df-card'
+                        }`}
+                      >
+                        <ItemArtworkCanvas itemOrWeaponId={itemId} size={32} />
+                        <div className="min-w-0">
+                          <div className="font-bold text-[#c5a059] truncate">
+                            {item.name} (x{count})
                           </div>
-                        </button>
-                      );
-                    })}
+                          <div className="text-[10px] text-[#d3d3d3] truncate">{item.desc}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
@@ -4897,7 +5917,7 @@ export default function App() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-wider text-[#a3998f] border-b border-[#3a3a3a] pb-1">
                   <span>Đội Hình & Trạng Thái Tứ Chi</span>
-                  <span>WASD chọn chi • Enter/Click 2 lần để Chém</span>
+                  <span>W/S/A/D Chọn • Enter/Space Xác nhận • ESC Quay lại</span>
                 </div>
 
                 {/* Row 1: Main Character */}
@@ -4908,29 +5928,55 @@ export default function App() {
                       : 'df-card'
                   }`}
                 >
-                  <div className="col-span-3 flex flex-wrap items-center gap-1">
-                    <span className="font-bold text-[#c5a059] truncate">{player.name}</span>
-                    {activeActorIdx === 0 && !activeCombatEnemy.defeated && (
-                      <span className="text-[9px] text-[#c5a059] font-bold">
-                        [ĐANG CHỌN]
-                      </span>
-                    )}
-                    {player.statuses.guarding && (
-                      <span className="text-[9px] text-[#94a3b8] font-bold">[THỦ]</span>
-                    )}
-                    {player.statuses.bleeding && (
-                      <span className="text-[9px] text-[#c96b6b] font-bold">
-                        🩸 CHẢY MÁU
-                      </span>
-                    )}
-                    {!player.statuses.bleeding && (player.statuses.bleedImmunityTurns || 0) > 0 && (
-                      <span className="text-[9px] text-[#9ab08e] font-bold">
-                        🩹 ĐÃ CẦM MÁU
-                      </span>
-                    )}
-                    {player.hunger < 50 && !player.statuses.bleeding && (
-                      <span className="text-[9px] text-[#9ab08e] font-bold">[NHANH]</span>
-                    )}
+                  <div className="col-span-3 flex items-center gap-2 min-w-0">
+                    {(() => {
+                      const clsPortrait = CONFIG.CLASSES.find(
+                        (c) => c.id === player.classId
+                      )?.combatPortraitUrl;
+                      const isDangerWarn =
+                        player.statuses.bleeding ||
+                        Object.values(player.limbs.infected).some(Boolean) ||
+                        player.corruption >= 60;
+                      return (
+                        <CharacterPortraitBox
+                          spriteKey={player.classId}
+                          portraitUrl={clsPortrait}
+                          size={40}
+                          alt={player.name}
+                          isError={Boolean(clsPortrait && portraitErrorMap[clsPortrait])}
+                          onPortraitError={markPortraitError}
+                          className={
+                            isDangerWarn
+                              ? 'border-[#b91c1c] shadow-[0_0_8px_rgba(220,38,38,0.65)]'
+                              : ''
+                          }
+                        />
+                      );
+                    })()}
+                    <div className="min-w-0 flex flex-wrap items-center gap-1">
+                      <span className="font-bold text-[#c5a059] truncate">{player.name}</span>
+                      {activeActorIdx === 0 && !activeCombatEnemy.defeated && (
+                        <span className="text-[9px] text-[#c5a059] font-bold">
+                          [ĐANG CHỌN]
+                        </span>
+                      )}
+                      {player.statuses.guarding && (
+                        <span className="text-[9px] text-[#94a3b8] font-bold">[THỦ]</span>
+                      )}
+                      {player.statuses.bleeding && (
+                        <span className="text-[9px] text-[#c96b6b] font-bold">
+                          🩸 CHẢY MÁU
+                        </span>
+                      )}
+                      {!player.statuses.bleeding && (player.statuses.bleedImmunityTurns || 0) > 0 && (
+                        <span className="text-[9px] text-[#9ab08e] font-bold">
+                          🩹 ĐÃ CẦM MÁU
+                        </span>
+                      )}
+                      {player.hunger < 50 && !player.statuses.bleeding && (
+                        <span className="text-[9px] text-[#9ab08e] font-bold">[NHANH]</span>
+                      )}
+                    </div>
                   </div>
                   <div className="col-span-3">
                     <div className="flex justify-between text-[10px] mb-0.5">
@@ -5005,34 +6051,59 @@ export default function App() {
                           : 'df-card'
                       }`}
                     >
-                      <div className="col-span-3 flex flex-wrap items-center gap-1">
-                        <span className="font-bold text-[#d3d3d3] truncate">{ally.name}</span>
-                        {isTurn && (
-                          <span className="text-[9px] text-[#c5a059] font-bold">
-                            [ĐANG CHỌN]
+                      <div className="col-span-3 flex items-center gap-2 min-w-0">
+                        {(() => {
+                          const allyPortrait = CONFIG.CLASSES.find(
+                            (c) => c.id === (ally.spriteKey || ally.classId)
+                          )?.combatPortraitUrl;
+                          const allyWarn =
+                            Boolean(ally.statuses?.bleeding) ||
+                            Object.values(ally.limbs?.infected || {}).some(Boolean);
+                          return (
+                            <CharacterPortraitBox
+                              spriteKey={ally.spriteKey || ally.classId}
+                              portraitUrl={allyPortrait}
+                              size={40}
+                              alt={ally.name}
+                              isError={Boolean(allyPortrait && portraitErrorMap[allyPortrait])}
+                              onPortraitError={markPortraitError}
+                              className={
+                                allyWarn
+                                  ? 'border-[#b91c1c] shadow-[0_0_8px_rgba(220,38,38,0.65)]'
+                                  : ''
+                              }
+                            />
+                          );
+                        })()}
+                        <div className="min-w-0 flex flex-wrap items-center gap-1">
+                          <span className="font-bold text-[#d3d3d3] truncate">{ally.name}</span>
+                          {isTurn && (
+                            <span className="text-[9px] text-[#c5a059] font-bold">
+                              [ĐANG CHỌN]
+                            </span>
+                          )}
+                          <span className="text-[9px] font-bold text-[#a889b8]">
+                            {ally.isUndeadSummon ? '[CHIÊU HỒN]' : '[ĐỒNG ĐỘI]'}
                           </span>
-                        )}
-                        <span className="text-[9px] font-bold text-[#a889b8]">
-                          {ally.isUndeadSummon ? '[CHIÊU HỒN]' : '[ĐỒNG ĐỘI]'}
-                        </span>
-                        {isPureTankSummon(ally) && (
-                          <span className="px-1 py-0.5 bg-[#191620] border border-[#3a3a3a] text-[9px] text-[#d3d3d3] font-bold">
-                            [THUẦN THỦ]
-                          </span>
-                        )}
-                        {ally.guarding && (
-                          <span className="px-1 py-0.5 bg-[#1b1714] border border-[#c5a059] text-[9px] text-[#c5a059] font-bold">[THỦ]</span>
-                        )}
-                        {(ally.stunnedTurns || 0) > 0 && (
-                          <span className="px-1 py-0.5 bg-[#291e0e] border border-[#c5a059] text-[9px] text-[#e5cfa0] font-bold">
-                            [CHOÁNG]
-                          </span>
-                        )}
-                        {isFrenzied && (
-                          <span className="px-1 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[9px] text-[#d3d3d3] font-bold">
-                            {ally.isUndeadSummon ? '[CUỒNG LOẠN]' : '[HOẢNG LOẠN]'}
-                          </span>
-                        )}
+                          {isPureTankSummon(ally) && (
+                            <span className="px-1 py-0.5 bg-[#191620] border border-[#3a3a3a] text-[9px] text-[#d3d3d3] font-bold">
+                              [THUẦN THỦ]
+                            </span>
+                          )}
+                          {ally.guarding && (
+                            <span className="px-1 py-0.5 bg-[#1b1714] border border-[#c5a059] text-[9px] text-[#c5a059] font-bold">[THỦ]</span>
+                          )}
+                          {(ally.stunnedTurns || 0) > 0 && (
+                            <span className="px-1 py-0.5 bg-[#291e0e] border border-[#c5a059] text-[9px] text-[#e5cfa0] font-bold">
+                              [CHOÁNG]
+                            </span>
+                          )}
+                          {isFrenzied && (
+                            <span className="px-1 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[9px] text-[#d3d3d3] font-bold">
+                              {ally.isUndeadSummon ? '[CUỒNG LOẠN]' : '[HOẢNG LOẠN]'}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="col-span-3">
                         <div className="flex justify-between text-[10px] mb-0.5">
@@ -5221,8 +6292,20 @@ export default function App() {
           </button>
           <button
             onClick={() => {
-              sfx.muted = !muted;
-              setMuted(!muted);
+              setConfirmReturnTitle(false);
+              setActiveModal('settings');
+            }}
+            className="df-btn px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+            title="Cài Đặt Hệ Thống [ESC]"
+          >
+            <Settings className="w-3.5 h-3.5 text-[#c5a059]" /> Cài Đặt [ESC]
+          </button>
+          <button
+            onClick={() => {
+              const nextMuted = !muted;
+              const updated = sfx.updateSettings({ muted: nextMuted });
+              setAudioSettings(updated);
+              setMuted(nextMuted);
             }}
             className="df-btn p-1.5 text-xs cursor-pointer"
             title="Bật/Tắt Âm Thanh"
@@ -5300,6 +6383,7 @@ export default function App() {
                 animTick={animTick}
                 isInteractivePaused={Boolean(activeModal || coinToss || interactionMenu)}
                 riftElixirCollected={riftElixirCollected}
+                filmGrainEnabled={audioSettings.filmGrainEnabled}
                 onTileClick={(tx, ty) => {
                   const dx = tx - playerPos.x;
                   const dy = ty - playerPos.y;
@@ -5510,7 +6594,7 @@ export default function App() {
                   </span>
                 ) : !isSelectedUndead && memberHunger >= 50 ? (
                   <span className="px-1.5 py-0.5 bg-[#261d0e] border border-[#c5a059] text-[10px] font-bold text-[#c5a059]">
-                    Đói ≥ 50 (Cồn Cào -25% ATK)
+                    Đói ≥ 50 (Cồn Cào -25% Sát Thương)
                   </span>
                 ) : null}
               </div>
@@ -5855,12 +6939,90 @@ export default function App() {
                 </div>
               </div>
 
-              {invTab === 'equip' && (
+              {invTab === 'equip' && (() => {
+                const rightArmSevered = !(memberLimbs?.rightArm ?? true);
+                const leftArmSevered = !(memberLimbs?.leftArm ?? true);
+                const activeWpnDef = curWpnId ? CONFIG.WEAPONS[curWpnId] : undefined;
+                const paperdollSpec: PaperdollSpec = {
+                  spriteKey: selectedAlly ? selectedAlly.spriteKey || selectedAlly.classId : player.classId,
+                  equippedWeapon: curWpnId || null,
+                  weaponCategory: activeWpnDef?.weaponCategory || 'unarmed',
+                  weaponHands: activeWpnDef?.hands || 1,
+                  vfxColor: activeWpnDef?.vfxColor,
+                  equippedShield: curShieldId || null,
+                  equippedHead: curHeadId || null,
+                  equippedBody: curBodyId || null,
+                  limbs: {
+                    leftArm: memberLimbs?.leftArm ?? true,
+                    rightArm: memberLimbs?.rightArm ?? true,
+                    leftLeg: memberLimbs?.leftLeg ?? true,
+                    rightLeg: memberLimbs?.rightLeg ?? true,
+                    infected: memberLimbs?.infected,
+                  },
+                };
+
+                return (
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-                  {/* Left Column: 6 Character Stats + Integrated 6-Part Anatomy & Statuses */}
+                  {/* Left Column: Paperdoll Preview + 6 Character Stats + Integrated 6-Part Anatomy & Statuses */}
                   <div className="md:col-span-5 df-well p-4 space-y-4">
                     <div className="space-y-3">
                       {renderMemberSurvivalPanel(false)}
+
+                      <div className="flex items-center gap-3 p-2 bg-[#0d0a10] border border-[#3a3a3a]">
+                        <PaperdollPreviewCanvas spec={paperdollSpec} width={112} height={150} />
+                        <div className="min-w-0 flex-1 space-y-1 text-[11px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-[#c5a059] truncate">
+                              {selectedMemberName}
+                            </span>
+                            {selectedAlly && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  sfx.playSfx('ui_confirm');
+                                  const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+                                  const res = leaveOrDismissPartyMember(pCopy, safeInvIdx - 1, 'leave');
+                                  if (res.success) {
+                                    setPlayer(pCopy);
+                                    setSelectedInvMemberIdx(0);
+                                    setPreviewItemId(pCopy.equippedWeapon);
+                                    setInvFeedback(res.message);
+                                    addLog(res.message);
+                                  }
+                                }}
+                                className="df-btn-blood px-2 py-0.5 text-[10px] font-bold shrink-0 cursor-pointer"
+                              >
+                                {selectedAlly.isUndeadSummon ? '💀 Giải Tán' : '🚪 Rời Nhóm'}
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-[#9b8f82]">
+                            Vũ khí:{' '}
+                            <span className="text-[#dfd2b4]">
+                              {rightArmSevered
+                                ? 'Đứt Tay Phải'
+                                : activeWpnDef?.name || (isSelectedPureTank ? 'Hộ Thể Linh Hồn' : 'Tay Không')}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-[#9b8f82]">
+                            Khiên:{' '}
+                            <span className="text-[#dfd2b4]">
+                              {leftArmSevered
+                                ? 'Đứt Tay Trái'
+                                : curShieldId
+                                ? CONFIG.SHIELDS[curShieldId]?.name
+                                : 'Không'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-[#9b8f82]">
+                            Giáp thân:{' '}
+                            <span className="text-[#dfd2b4]">
+                              {curBodyId ? GEAR_ITEMS[curBodyId]?.name : 'Thường phục'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="flex items-center justify-between border-b border-[#3a3a3a]/60 pb-2">
                         <span className="text-xs font-bold uppercase tracking-wider text-[#c5a059]">
                           6 Chỉ Số — {selectedMemberName}
@@ -5868,12 +7030,12 @@ export default function App() {
                       </div>
                       {(
                         [
-                          ['Đ.Thường (ATK)', `${memberStats.physAtk}`],
-                          ['Kháng Vật Lý (DEF)', `${memberStats.physDefPct}%`],
-                          ['ST Phép (M.ATK)', `${memberStats.magAtk}`],
-                          ['Kháng Phép (M.DEF)', `${memberStats.magDefPct}%`],
-                          ['Nhanh Nhẹn (AGI)', `${memberStats.agility}`],
-                          ['May Mắn (LUK)', `${memberStats.luck}`],
+                          ['Sát Thương Vật Lý', `${memberStats.physAtk}`],
+                          ['Kháng Vật Lý', `${memberStats.physDefPct}%`],
+                          ['Sát Thương Phép', `${memberStats.magAtk}`],
+                          ['Kháng Phép', `${memberStats.magDefPct}%`],
+                          ['Nhanh Nhẹn', `${memberStats.agility}`],
+                          ['May Mắn', `${memberStats.luck}`],
                         ] as Array<[string, string]>
                       ).map(([label, val]) => (
                         <div
@@ -6170,32 +7332,55 @@ export default function App() {
                             curAccId || 'bone_rosary_ring',
                           ],
                         ] as Array<[EquipSlotKey, string, string, string]>
-                      ).map(([slotKey, slotLabel, equippedName, iconId]) => (
-                        <div
-                          key={slotKey}
-                          onClick={() => {
-                            setSelectedEquipSlot(slotKey);
-                            setPreviewItemId(iconId);
-                          }}
-                          className={`p-2.5 flex items-center justify-between cursor-pointer ${
-                            selectedEquipSlot === slotKey ? 'df-card-active' : 'df-card'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="w-16 text-xs font-bold uppercase text-[#9b8f82]">
-                              {slotLabel}
+                      ).map(([slotKey, slotLabel, equippedName, iconId]) => {
+                        const isLimbSlotBroken =
+                          (slotKey === 'weapon' && rightArmSevered) ||
+                          (slotKey === 'shield' && leftArmSevered);
+                        return (
+                          <div
+                            key={slotKey}
+                            onClick={() => {
+                              setSelectedEquipSlot(slotKey);
+                              setPreviewItemId(iconId);
+                            }}
+                            className={`p-2.5 flex items-center justify-between cursor-pointer ${
+                              selectedEquipSlot === slotKey ? 'df-card-active' : 'df-card'
+                            } ${isLimbSlotBroken ? 'border-[#8b0000]/80' : ''}`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="w-16 text-xs font-bold uppercase text-[#9b8f82] shrink-0">
+                                {slotLabel}
+                              </span>
+                              <span
+                                className={`text-xs font-bold truncate ${
+                                  isLimbSlotBroken ? 'line-through text-[#c96b6b]' : 'text-[#d3d3d3]'
+                                }`}
+                              >
+                                {equippedName}
+                              </span>
+                              {slotKey === 'weapon' && rightArmSevered && (
+                                <span className="px-1.5 py-0.2 bg-[#2a0c10] border border-[#8b0000] text-[9px] text-[#c96b6b] font-bold shrink-0">
+                                  [ĐỨT TAY PHẢI]
+                                </span>
+                              )}
+                              {slotKey === 'shield' && leftArmSevered && (
+                                <span className="px-1.5 py-0.2 bg-[#2a0c10] border border-[#8b0000] text-[9px] text-[#c96b6b] font-bold shrink-0">
+                                  [ĐỨT TAY TRÁI]
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-[#c5a059] shrink-0">
+                              {isLimbSlotBroken ? '[Khóa chi]' : '[Chọn đổi]'}
                             </span>
-                            <span className="text-xs font-bold text-[#d3d3d3]">{equippedName}</span>
                           </div>
-                          <span className="text-[10px] text-[#c5a059]">[Chọn đổi]</span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* Available items for the selected slot */}
                     <div className="p-3 df-well space-y-2">
                       <div className="text-[11px] uppercase text-[#c5a059]">
-                        Kho chung khả dụng cho ô [{selectedEquipSlot === 'body' ? 'THÂN' : selectedEquipSlot.toUpperCase()}]:
+                        Kho chung khả dụng cho ô [{selectedEquipSlot === 'body' ? 'THÂN' : selectedEquipSlot === 'weapon' ? 'VŨ KHÍ' : selectedEquipSlot === 'shield' ? 'KHIÊN' : selectedEquipSlot === 'head' ? 'ĐẦU' : 'PHỤ KIỆN'}]:
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {selectedEquipSlot === 'weapon' &&
@@ -6204,18 +7389,23 @@ export default function App() {
                             if (!w) return null;
                             const isForged = !selectedAlly && player.bloodForgedWeapons?.includes(wId);
                             const isEquippedHere = curWpnId === wId;
+                            const weaponLimbCheck = canMemberEquipWeapon(memberLimbs, wId);
                             return (
                               <button
                                 key={wId}
-                                disabled={isAllyLocked}
+                                disabled={isAllyLocked || !weaponLimbCheck.allowed}
                                 onClick={() => {
                                   setPreviewItemId(wId);
+                                  if (!weaponLimbCheck.allowed) {
+                                    setInvFeedback(weaponLimbCheck.reason || 'Không đủ chi để cầm vũ khí này!');
+                                    return;
+                                  }
                                   if (selectedAlly) {
                                     setPlayer((p) => {
                                       const nextParty = [...p.party];
                                       const ally = nextParty[safeInvIdx - 1];
                                       if (!ally || isAllyGearLocked(ally)) return p;
-                                      const needsDropShield = w.hands === 2;
+                                      const needsDropShield = Boolean(w.isTwoHanded || w.hands === 2);
                                       nextParty[safeInvIdx - 1] = {
                                         ...ally,
                                         weaponId: wId,
@@ -6232,21 +7422,27 @@ export default function App() {
                                     addLog(`🔒 ${unequipCheck.reason}`);
                                     return;
                                   }
+                                  const needsDropShield = Boolean(w.isTwoHanded || w.hands === 2);
                                   setPlayer((p) => ({
                                     ...p,
                                     equippedWeapon: wId,
+                                    equippedShield: needsDropShield ? null : p.equippedShield,
                                     cursedLockedWeapon: w.isCursed ? wId : p.cursedLockedWeapon,
                                   }));
+                                  setInvFeedback(null);
                                 }}
                                 className={`p-2 disabled:opacity-40 text-left text-xs cursor-pointer ${
                                   isEquippedHere ? 'df-card-active' : 'df-card'
                                 }`}
                               >
                                 <div className="font-bold text-[#dfd2b4]">
-                                  {w.name} {isForged ? '🩸' : ''} {w.isCursed ? '☠️' : ''}
+                                  {w.name} {w.isTwoHanded || w.hands === 2 ? '[2 Tay]' : ''}{' '}
+                                  {isForged ? '🩸' : ''} {w.isCursed ? '☠️' : ''}
                                 </div>
                                 <div className="text-[10px] text-[#9ab08e]">
-                                  ST: {w.dmg[0]}–{w.dmg[1]} {isForged ? '(+35% Huyết Rèn)' : ''}
+                                  {!weaponLimbCheck.allowed
+                                    ? `🔒 ${weaponLimbCheck.reason}`
+                                    : `ST: ${w.dmg[0]}–${w.dmg[1]} ${isForged ? '(+35% Huyết Rèn)' : ''}`}
                                 </div>
                               </button>
                             );
@@ -6263,7 +7459,7 @@ export default function App() {
                             return (
                               <button
                                 key={sId}
-                                disabled={isAllyLocked}
+                                disabled={isAllyLocked || leftArmSevered}
                                 onClick={() => {
                                   setPreviewItemId(sId);
                                   if (!check.allowed) {
@@ -6367,7 +7563,7 @@ export default function App() {
                                 >
                                   <div className="font-bold text-[#dfd2b4]">{g.name}</div>
                                   <div className="text-[10px] text-[#9ab08e]">
-                                    DEF +{Math.round(g.physDef * 100)}% • M.DEF +{Math.round(g.magDef * 100)}%
+                                    Kháng Vật Lý +{Math.round(g.physDef * 100)}% • Kháng Phép +{Math.round(g.magDef * 100)}%
                                   </div>
                                   {!check.allowed && (
                                     <div className="text-[9px] text-[#c96b6b] mt-0.5">🔒 {check.reason}</div>
@@ -6379,7 +7575,8 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {invTab === 'items' && (
                 <div className="space-y-3">
@@ -6430,7 +7627,7 @@ export default function App() {
                                 const alreadyUnlocked = (player.skillLevels[skId] || 0) >= 1;
                                 return alreadyUnlocked ? (
                                   <span className="px-2.5 py-1 bg-[#121914] border border-[#3a3a3a] text-[10px] font-bold text-[#9ab08e] shrink-0">
-                                    Đã Mở Lv.{player.skillLevels[skId]}
+                                    Đã Mở Cấp {player.skillLevels[skId]}
                                   </span>
                                 ) : selectedAlly ? (
                                   <span className="px-2 py-1 bg-[#141118] border border-[#3a3a3a] text-[10px] text-[#9b8f82] shrink-0">
@@ -6457,7 +7654,7 @@ export default function App() {
                                     }}
                                     className="df-btn-bronze px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
                                   >
-                                    📜 Lĩnh Hội (Mở Lv.1)
+                                    📜 Lĩnh Hội (Mở Cấp 1)
                                   </button>
                                 );
                               })()
@@ -7085,7 +8282,7 @@ export default function App() {
                     [
                       ['agility_1', '⚡ Nhanh Nhẹn +1 (+5% Né)'],
                       ['atk_1', '⚔️ Cường Lực (+15% ST)'],
-                      ['def_1', '🛡️ Da Thép (+10% DEF)'],
+                      ['def_1', '🛡️ Da Thép (+10% Kháng Vật Lý)'],
                       ['san_1', '🧠 Ý Chí (+25 Tâm Trí Tối Đa)'],
                     ] as const
                   ).map(([nodeId, label]) => {
@@ -7220,7 +8417,7 @@ export default function App() {
                       </div>
                       <div className="text-[10px] text-[#9b8f82] mt-0.5">
                         {branchName === 'Chiến Kỹ'
-                          ? 'Mở Lv.1 qua Cuộn Bí Kíp (Kệ Sách)'
+                          ? 'Mở Cấp 1 qua Cuộn Bí Kíp (Kệ Sách)'
                           : 'Học & nâng bằng Thiện cảm + Đá NL'}
                       </div>
                     </div>
@@ -7267,7 +8464,7 @@ export default function App() {
                                       : 'bg-[#141116] border-[#3a3a3a] text-[#9b8f82]'
                                   }`}
                                 >
-                                  Lv.{curLv}/3
+                                  Cấp {curLv}/3
                                 </span>
                               </div>
 
@@ -7322,7 +8519,7 @@ export default function App() {
                                 ) : curLv === 0 && !reqAff ? (
                                   <span
                                     className="text-[10px] text-[#9b8f82] italic text-right"
-                                    title="Tìm Cuộn Bí Kíp trên Kệ Sách và đọc trong Túi [I] để mở khóa Lv.1"
+                                    title="Tìm Cuộn Bí Kíp trên Kệ Sách và đọc trong Túi [I] để mở khóa Cấp 1"
                                   >
                                     🔒 Đọc Cuộn Bí Kíp (Túi [I])
                                   </span>
@@ -7347,8 +8544,8 @@ export default function App() {
                                     className="df-btn-blood px-2.5 py-1 disabled:opacity-35 font-bold text-[10px] cursor-pointer"
                                   >
                                     {curLv === 0
-                                      ? 'Học Lv.1 (-1 Đá NL)'
-                                      : `Nâng Lv.${curLv + 1} (-1 Đá NL)`}
+                                      ? 'Học Cấp 1 (-1 Đá NL)'
+                                      : `Nâng Cấp ${curLv + 1} (-1 Đá NL)`}
                                   </button>
                                 )}
                               </div>
@@ -7580,7 +8777,7 @@ export default function App() {
 
                 <div className="p-2.5 df-card">
                   <div className="font-bold text-[#c5a059] uppercase mb-0.5">3. Thủ &amp; Vũ Khí Nguyền</div>
-                  <p>Dùng <b>[P.Thủ] / Thế Thủ</b> khi Boss tụ lực đỏ. <b>Vũ khí Nguyền</b> khóa tay &amp; phản chủ khi <b>Tâm Trí &lt; 40</b>.</p>
+                  <p>Dùng <b>[Phòng Thủ] / Thế Thủ</b> khi Boss tụ lực đỏ. <b>Vũ khí Nguyền</b> khóa tay &amp; phản chủ khi <b>Tâm Trí &lt; 40</b>.</p>
                 </div>
               </div>
             )}
@@ -7632,6 +8829,228 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ========================================================================
+          MODAL 5C: SETTINGS MODAL (⚙ CÀI ĐẶT HỆ THỐNG [ESC])
+      ======================================================================== */}
+      {activeModal === 'settings' && (() => {
+        const curRoom = world.rooms[world.currentRoomId];
+        const rW = curRoom?.width || curRoom?.grid[0]?.length || CONFIG.GRID_W;
+        const rH = curRoom?.height || curRoom?.grid.length || CONFIG.GRID_H;
+        let nearBed = false;
+        if (curRoom) {
+          for (let ry = 0; ry < rH && !nearBed; ry++) {
+            for (let rx = 0; rx < rW; rx++) {
+              if (
+                curRoom.grid[ry]?.[rx] === TILE.BED_SAVE &&
+                Math.abs(playerPos.x - rx) + Math.abs(playerPos.y - ry) <= 1
+              ) {
+                nearBed = true;
+                break;
+              }
+            }
+          }
+        }
+        return (
+          <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+            <div className="max-w-xl w-full df-panel p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-[#c5a059]" />
+                  <h2
+                    className="text-lg font-bold uppercase tracking-wider text-[#dfd2b4]"
+                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  >
+                    Cài Đặt Hệ Thống
+                  </h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setConfirmReturnTitle(false);
+                    setActiveModal(null);
+                  }}
+                  className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
+                >
+                  Đóng [ESC]
+                </button>
+              </div>
+
+              {/* Audio Controls */}
+              <div className="df-well p-3.5 space-y-3 text-xs">
+                <div className="font-bold uppercase tracking-wider text-[#c5a059]">
+                  Âm Thanh &amp; Nhạc Nền
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[#d3d3d3]">
+                    <span>Âm Lượng Nhạc Nền (BGM)</span>
+                    <span className="font-mono text-[#c5a059]">
+                      {Math.round(audioSettings.bgmVolume * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(audioSettings.bgmVolume * 100)}
+                    onChange={(e) => {
+                      const next = sfx.updateSettings({
+                        bgmVolume: Number(e.target.value) / 100,
+                      });
+                      setAudioSettings(next);
+                    }}
+                    className="w-full accent-[#c5a059] cursor-pointer"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[#d3d3d3]">
+                    <span>Âm Lượng Hiệu Ứng (SFX)</span>
+                    <span className="font-mono text-[#c5a059]">
+                      {Math.round(audioSettings.sfxVolume * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(audioSettings.sfxVolume * 100)}
+                    onChange={(e) => {
+                      const next = sfx.updateSettings({
+                        sfxVolume: Number(e.target.value) / 100,
+                      });
+                      setAudioSettings(next);
+                    }}
+                    className="w-full accent-[#c5a059] cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[#d3d3d3]">Tắt Toàn Bộ Âm Thanh</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMuted = !audioSettings.muted;
+                      const next = sfx.updateSettings({ muted: nextMuted });
+                      setAudioSettings(next);
+                      setMuted(nextMuted);
+                    }}
+                    className={`px-3 py-1 font-bold cursor-pointer ${
+                      audioSettings.muted ? 'df-btn-blood' : 'df-btn-bronze'
+                    }`}
+                  >
+                    {audioSettings.muted ? 'Đang Tắt' : 'Đang Bật'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Visual & Tactile Options */}
+              <div className="df-well p-3.5 space-y-2.5 text-xs">
+                <div className="font-bold uppercase tracking-wider text-[#c5a059]">
+                  Hiển Thị &amp; Hiệu Ứng
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#d3d3d3]">Rung Màn Hình Khi Giao Tranh</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = sfx.updateSettings({
+                        screenShakeEnabled: !audioSettings.screenShakeEnabled,
+                      });
+                      setAudioSettings(next);
+                    }}
+                    className={`px-3 py-1 font-bold cursor-pointer ${
+                      audioSettings.screenShakeEnabled ? 'df-btn-active' : 'df-btn'
+                    }`}
+                  >
+                    {audioSettings.screenShakeEnabled ? 'Bật' : 'Tắt'}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#d3d3d3]">Hạt Nhiễu Điện Ảnh (Film Grain)</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = sfx.updateSettings({
+                        filmGrainEnabled: !audioSettings.filmGrainEnabled,
+                      });
+                      setAudioSettings(next);
+                    }}
+                    className={`px-3 py-1 font-bold cursor-pointer ${
+                      audioSettings.filmGrainEnabled ? 'df-btn-active' : 'df-btn'
+                    }`}
+                  >
+                    {audioSettings.filmGrainEnabled ? 'Bật' : 'Tắt'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Keyboard Controls Summary */}
+              <div className="df-well p-3.5 space-y-1.5 text-[11px] text-[#d3d3d3]">
+                <div className="font-bold uppercase tracking-wider text-[#c5a059] text-xs mb-1">
+                  Phím Tắt Điều Khiển
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  <div>• <b className="text-[#dfd2b4]">WASD / Mũi tên:</b> Di chuyển / Chọn chi</div>
+                  <div>• <b className="text-[#dfd2b4]">F / Space:</b> Tương tác bản đồ</div>
+                  <div>• <b className="text-[#dfd2b4]">1..6 + Enter:</b> Điều khiển Chiến Đấu</div>
+                  <div>• <b className="text-[#dfd2b4]">I / L / ? / ESC:</b> Túi / Sách / Cẩm Nang / Cài Đặt</div>
+                </div>
+              </div>
+
+              {/* Quick Save & Return to Title */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={!nearBed}
+                  onClick={() => {
+                    if (!nearBed) return;
+                    setActiveModal('saves');
+                  }}
+                  title={
+                    nearBed
+                      ? 'Mở bảng 5 ô Lưu Tiến Trình'
+                      : 'Hãy đứng cạnh Giường Đá Cổ để lưu tiến trình'
+                  }
+                  className="df-btn-bronze px-3.5 py-2 text-xs font-bold disabled:opacity-40 cursor-pointer"
+                >
+                  {nearBed ? '💾 Lưu Nhanh (Tại Giường Đá)' : '💾 Lưu Nhanh (Cần đứng cạnh Giường Đá)'}
+                </button>
+
+                {!confirmReturnTitle ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReturnTitle(true)}
+                    className="df-btn-blood px-3.5 py-2 text-xs font-bold cursor-pointer"
+                  >
+                    🚪 Về Màn Hình Chính
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 df-card p-1.5 px-2.5">
+                    <span className="text-[11px] text-[#dfd2b4]">Thoát về Màn Hình Chính?</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmReturnTitle(false);
+                        setActiveModal(null);
+                        setInteractionMenu(null);
+                        setScreen('title');
+                      }}
+                      className="df-btn-blood px-2.5 py-1 text-[11px] font-bold cursor-pointer"
+                    >
+                      Xác Nhận
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReturnTitle(false)}
+                      className="df-btn px-2.5 py-1 text-[11px] cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ========================================================================
           MODAL 6: 160x160 3D EMBOSSED GOLD COIN TOSS MODAL (HEADS / TAILS + HOLD SHIFT FOR 2 COINS)

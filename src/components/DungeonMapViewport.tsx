@@ -26,31 +26,44 @@ interface DungeonMapViewportProps {
   animTick: number;
   isInteractivePaused: boolean;
   riftElixirCollected?: boolean;
+  filmGrainEnabled?: boolean;
   onTileClick: (worldTileX: number, worldTileY: number) => void;
   onEnemyCollidePlayer?: (enemy: MapEnemyInstance) => void;
 }
 
-function isRecruitNpcActive(tile: TILE, player: PlayerState, looted: boolean): boolean {
+function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): boolean {
+  const lifecycle = player.npcLifecycle || {};
   if (tile === TILE.NPC_RECRUIT_KNIGHT) {
+    if (lifecycle.npc_recruit_knight === 'recruited' || lifecycle.npc_recruit_knight === 'dead') return false;
     return (
-      !looted &&
+      (lifecycle.npc_recruit_knight === 'map' || !looted) &&
       player.classId !== 'fallen_knight' &&
       !player.party.some((a) => a.id === 'fallen_knight')
     );
   }
   if (tile === TILE.NPC_RECRUIT_NUN) {
+    if (lifecycle.npc_recruit_nun === 'recruited' || lifecycle.npc_recruit_nun === 'dead') return false;
     return (
-      !looted &&
+      (lifecycle.npc_recruit_nun === 'map' || !looted) &&
       player.classId !== 'forsaken_nun' &&
       !player.party.some((a) => a.id === 'forsaken_nun')
     );
   }
   if (tile === TILE.NPC_RECRUIT_HUNTER) {
+    if (lifecycle.npc_recruit_hunter === 'recruited' || lifecycle.npc_recruit_hunter === 'dead') return false;
     return (
-      !looted &&
+      (lifecycle.npc_recruit_hunter === 'map' || !looted) &&
       player.classId !== 'night_hunter' &&
       !player.party.some((a) => a.id === 'night_hunter')
     );
+  }
+  if (tile === TILE.NPC_PRISONER) {
+    if (lifecycle.npc_prisoner === 'recruited' || lifecycle.npc_prisoner === 'dead') return false;
+    return !player.npcFlags.prisonerRecruited && !player.party.some((a) => a.id === 'ally_kael');
+  }
+  if (tile === TILE.NPC_BROKEN_KNIGHT) {
+    if (lifecycle.npc_broken_knight === 'recruited' || lifecycle.npc_broken_knight === 'dead') return false;
+    return !player.party.some((a) => a.id === 'broken_knight');
   }
   return true;
 }
@@ -63,6 +76,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   animTick,
   isInteractivePaused,
   riftElixirCollected = false,
+  filmGrainEnabled = true,
   onTileClick,
   onEnemyCollidePlayer,
 }) => {
@@ -71,6 +85,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
     cacheKey: string;
     canvas: HTMLCanvasElement;
   } | null>(null);
+  const grainCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Smoothly interpolated visual coordinates for player & camera
   const visualPosRef = useRef<{ x: number; y: number }>({
@@ -186,24 +201,29 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 );
                 offCtx.drawImage(floorTex, px, py, tileW, tileH);
 
-                // Wall Contact Drop Shadows (Soft gradient shadow cast downward onto adjacent floor tiles)
+                // Hard 2.5D Wall Cast Shadows onto adjacent walkable floor tiles
                 const isWallTile = tile === TILE.WALL || tile === TILE.CRACKED_WALL || tile === TILE.VOID;
                 if (!isWallTile) {
                   const aboveTile = y > 0 ? room.grid[y - 1][x] : null;
                   const leftTile = x > 0 ? room.grid[y][x - 1] : null;
                   if (aboveTile === TILE.WALL || aboveTile === TILE.CRACKED_WALL) {
-                    const bGrad = offCtx.createLinearGradient(px, py, px, py + 15);
-                    bGrad.addColorStop(0, 'rgba(0, 0, 0, 0.45)');
+                    // Crisp hard cast shadow ledge + subtle penumbra
+                    offCtx.fillStyle = 'rgba(3, 2, 5, 0.68)';
+                    offCtx.fillRect(px, py, tileW, 8);
+                    const bGrad = offCtx.createLinearGradient(px, py + 8, px, py + 20);
+                    bGrad.addColorStop(0, 'rgba(3, 2, 5, 0.36)');
                     bGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
                     offCtx.fillStyle = bGrad;
-                    offCtx.fillRect(px, py, tileW, 15);
+                    offCtx.fillRect(px, py + 8, tileW, 12);
                   }
                   if (leftTile === TILE.WALL || leftTile === TILE.CRACKED_WALL) {
-                    const lGrad = offCtx.createLinearGradient(px, py, px + 10, py);
-                    lGrad.addColorStop(0, 'rgba(0, 0, 0, 0.38)');
+                    offCtx.fillStyle = 'rgba(3, 2, 5, 0.52)';
+                    offCtx.fillRect(px, py, 5, tileH);
+                    const lGrad = offCtx.createLinearGradient(px + 5, py, px + 14, py);
+                    lGrad.addColorStop(0, 'rgba(3, 2, 5, 0.28)');
                     lGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
                     offCtx.fillStyle = lGrad;
-                    offCtx.fillRect(px, py, 10, tileH);
+                    offCtx.fillRect(px + 5, py, 9, tileH);
                   }
                 }
 
@@ -258,29 +278,61 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             ? 9
             : 7;
 
+          const secretHiddenSet = new Set<string>(
+            !room.secretWallBlown ? room.secretChamberCoords || [] : []
+          );
           const visibleCoords = new Set<string>();
-          const staticPointLights: Array<{ x: number; y: number; color: string; radius: number }> = [];
+          const staticPointLights: Array<{
+            x: number;
+            y: number;
+            color: string;
+            coreColor?: string;
+            radius: number;
+            isWallCandle?: boolean;
+          }> = [];
 
           for (let y = 0; y < roomH; y++) {
             for (let x = 0; x < roomW; x++) {
+              const coordStr = `${x},${y}`;
               const dist = Math.hypot(x - playerPos.x, y - playerPos.y);
               if (dist <= sightRadius + 0.6 && hasLineOfSight(room.grid, playerPos.x, playerPos.y, x, y)) {
-                visibleCoords.add(`${x},${y}`);
+                visibleCoords.add(coordStr);
               }
               const t = room.grid[y][x];
               if (t === TILE.HEXEN_ALTAR) {
                 staticPointLights.push({
                   x,
                   y,
-                  color: 'rgba(192, 132, 252, 0.30)',
-                  radius: tileW * 2.8,
+                  color: 'rgba(168, 85, 247, 0.36)',
+                  coreColor: 'rgba(185, 28, 28, 0.28)',
+                  radius: tileW * 3.1,
                 });
               } else if (t === TILE.VOID_RIFT) {
                 staticPointLights.push({
                   x,
                   y,
-                  color: 'rgba(168, 85, 247, 0.36)',
-                  radius: tileW * 3.2,
+                  color: 'rgba(168, 85, 247, 0.42)',
+                  coreColor: 'rgba(232, 121, 249, 0.22)',
+                  radius: tileW * 3.4,
+                });
+              } else if (
+                !room.isExterior &&
+                t === TILE.WALL &&
+                !secretHiddenSet.has(coordStr) &&
+                y + 1 < roomH &&
+                !secretHiddenSet.has(`${x},${y + 1}`) &&
+                room.grid[y + 1][x] !== TILE.WALL &&
+                room.grid[y + 1][x] !== TILE.CRACKED_WALL &&
+                room.grid[y + 1][x] !== TILE.VOID &&
+                (x * 31 + y * 17) % 11 === 0
+              ) {
+                staticPointLights.push({
+                  x,
+                  y,
+                  color: 'rgba(245, 158, 11, 0.24)',
+                  coreColor: 'rgba(254, 240, 138, 0.48)',
+                  radius: tileW * 2.15,
+                  isWallCandle: true,
                 });
               }
             }
@@ -292,7 +344,12 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               if (room.grid[y][x] === TILE.RITUAL_CIRCLE && visibleCoords.has(`${x},${y}`)) {
                 const isInside =
                   Math.abs(playerPos.x - x) <= 1 && Math.abs(playerPos.y - y) <= 1;
-                const isLooted = room.lootedCoords.includes(`${x},${y}`);
+                const cKey = `${x},${y}`;
+                const circleMeta = room.ritualCircles?.[cKey];
+                const deityType = circleMeta?.deityType || 'uninscribed';
+                const isLooted =
+                  Boolean(circleMeta?.used) ||
+                  (deityType !== 'uninscribed' && room.lootedCoords.includes(cKey));
                 drawMultiTileLandmark(
                   ctx,
                   TILE.RITUAL_CIRCLE,
@@ -302,7 +359,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   tileH,
                   animTick,
                   isLooted,
-                  isInside
+                  isInside,
+                  deityType
                 );
               }
             }
@@ -348,7 +406,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           // Dedicated NPC Sprite Keys matching each NPC's unique anatomy in pixelArt.ts
           const npcSpriteMeta: Record<string, { sprite: string; label: string }> = {
             [TILE.NPC_PRIEST]: { sprite: 'npc_priest', label: 'Giáo Sĩ Mù' },
-            [TILE.NPC_SMUGGLER]: { sprite: 'night_hunter', label: 'Buôn Lậu' },
+            [TILE.NPC_SMUGGLER]: { sprite: 'npc_smuggler', label: 'Buôn Lậu' },
             [TILE.NPC_PRISONER]: { sprite: 'ally_kael', label: 'Kael (Tù Nhân)' },
             [TILE.NPC_CHILD_12]: { sprite: 'npc_child_12', label: 'Thánh Tử 12' },
             [TILE.NPC_BROKEN_KNIGHT]: { sprite: 'npc_broken_knight', label: 'Kỵ Sĩ Gãy Chân' },
@@ -387,24 +445,36 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               const meta = npcSpriteMeta[t];
               if (meta) {
                 const cKey = `${x},${y}`;
-                if (
-                  t === TILE.NPC_PRISONER &&
-                  (player.npcFlags.prisonerRecruited || player.party.some((a) => a.id === 'ally_kael'))
-                ) {
-                  continue;
-                }
-                if (!isRecruitNpcActive(t, player, room.lootedCoords.includes(cKey))) {
+                if (!isNpcTileActive(t, player, room.lootedCoords.includes(cKey))) {
                   continue;
                 }
                 const px = x * tileW;
-                const py = (y - 1) * tileH;
+                const npcBob = Math.sin(now * 0.0018 + x * 0.9 + y * 0.5) * 1.4;
+                const py = (y - 1) * tileH + npcBob;
 
                 entities.push({
                   footY: y,
                   draw: () => {
                     // Draw Canonical Set-Dressing Props behind/around NPC
                     drawNpcSetDressing(ctx, t, x, y, tileW, tileH, animTick);
-                    drawPixelSprite(ctx, meta.sprite, px, py, tileW, tileH * 2);
+                    ctx.fillStyle = 'rgba(0,0,0,0.44)';
+                    ctx.beginPath();
+                    ctx.ellipse(px + tileW / 2, y * tileH + tileH - 6, tileW * 0.34, 5.5, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    drawPixelSprite(
+                      ctx,
+                      meta.sprite,
+                      px,
+                      py,
+                      tileW,
+                      tileH * 2,
+                      new Set(),
+                      false,
+                      false,
+                      false,
+                      false,
+                      now * 0.0024 + x
+                    );
                     ctx.fillStyle = 'rgba(0,0,0,0.82)';
                     ctx.fillRect(px - 10, py - 10, tileW + 20, 13);
                     ctx.fillStyle = '#fbbf24';
@@ -425,18 +495,37 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               footY: coord.y,
               draw: () => {
                 const px = coord.x * tileW;
-                const py = (coord.y - 1) * tileH;
-                drawPixelSprite(ctx, ally.spriteKey || ally.classId, px, py, tileW, tileH * 2);
+                const allyBob = Math.sin(now * 0.0018 + (idx + 1) * 1.4) * 1.6;
+                const py = (coord.y - 1) * tileH + allyBob;
+                ctx.fillStyle = 'rgba(0,0,0,0.42)';
+                ctx.beginPath();
+                ctx.ellipse(px + tileW / 2, coord.y * tileH + tileH - 6, tileW * 0.31, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                drawPixelSprite(
+                  ctx,
+                  ally.spriteKey || ally.classId,
+                  px,
+                  py,
+                  tileW,
+                  tileH * 2,
+                  new Set(),
+                  false,
+                  false,
+                  false,
+                  false,
+                  now * 0.0024 + idx
+                );
               },
             });
           });
 
-          // Player Entity (Smoothly interpolated visualPosRef)
+          // Player Entity (Smoothly interpolated visualPosRef + smooth ~3.5s idle sine breathing)
           entities.push({
             footY: visualPosRef.current.y,
             draw: () => {
               const px = visualPosRef.current.x * tileW;
-              const py = (visualPosRef.current.y - 1) * tileH + (animTick % 2 === 0 ? 0 : -2);
+              const playerBob = Math.sin(now * 0.0018) * 1.8;
+              const py = (visualPosRef.current.y - 1) * tileH + playerBob;
               ctx.fillStyle = 'rgba(0,0,0,0.48)';
               ctx.beginPath();
               ctx.ellipse(
@@ -456,7 +545,20 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               if (!player.limbs.leftLeg) severed.add('left_leg');
               if (!player.limbs.rightLeg) severed.add('legs');
 
-              drawPixelSprite(ctx, player.classId, px, py, tileW, tileH * 2, severed);
+              drawPixelSprite(
+                ctx,
+                player.classId,
+                px,
+                py,
+                tileW,
+                tileH * 2,
+                severed,
+                false,
+                false,
+                false,
+                false,
+                now * 0.0024
+              );
             },
           });
 
@@ -478,19 +580,17 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 ctx.beginPath();
                 ctx.ellipse(px + tileW / 2, py + tileH / 2, 19, 11, 0, 0, Math.PI * 2);
                 ctx.fill();
+                const isNearPlayer =
+                  Math.abs(corpseInst.x - playerPos.x) + Math.abs(corpseInst.y - playerPos.y) <= 1;
                 const canRaise =
                   (player.skillLevels?.necromancy || 0) >= 1 &&
                   !corpseInst.corpseRaised &&
                   player.party.length < 3;
-                if (!corpseInst.corpseDevoured || !corpseInst.corpseLooted || canRaise) {
+                if (!isNearPlayer && (!corpseInst.corpseDevoured || !corpseInst.corpseLooted || canRaise)) {
                   ctx.fillStyle = !corpseInst.corpseLooted || canRaise ? '#fde047' : '#fca5a5';
                   ctx.font = 'bold 9px "Noto Serif", serif';
                   ctx.textAlign = 'center';
-                  ctx.fillText(
-                    !corpseInst.corpseLooted || canRaise ? 'Xác Quái [F]' : 'Xác Quái',
-                    px + tileW / 2,
-                    py + tileH / 2 + 3
-                  );
+                  ctx.fillText('Xác Quái', px + tileW / 2, py + tileH / 2 + 3);
                 }
               },
             });
@@ -530,8 +630,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 const px =
                   enemyInst.x * tileW -
                   (isBoss3x ? tileW * 1.0 : isMiniBoss2x ? tileW * 0.5 : 0);
-                const py =
-                  (enemyInst.y + 1) * tileH - drawH + (animTick % 3 === 0 ? -2 : 0);
+                const enemyBob = Math.sin(now * 0.0018 + enemyInst.x * 0.7 + enemyInst.y) * 1.7;
+                const py = (enemyInst.y + 1) * tileH - drawH + enemyBob;
 
                 // Subtle 3-Tile Vision Cone indicator on floor for active patrolling/chasing enemies
                 if (!enemyInst.isTutorialGatekeeper && !isBoss3x && enemyInst.facing) {
@@ -644,40 +744,67 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
           }
 
-          // Static Point-Light Glows for Hexen Altar & Void Rift
+          // Static Point-Light Glows for Hexen Altar, Void Rift & Flickering Wall Candles
           for (const pl of staticPointLights) {
+            const flicker = pl.isWallCandle
+              ? 0.86 + Math.sin(now * 0.011 + pl.x * 3.1 + pl.y * 1.7) * 0.14
+              : 0.90 + Math.sin(now * 0.0032 + pl.x) * 0.10;
             const lx = (pl.x + 0.5) * tileW;
-            const ly = (pl.y + 0.5) * tileH;
-            const pGrad = ctx.createRadialGradient(lx, ly, 6, lx, ly, pl.radius);
-            pGrad.addColorStop(0, pl.color);
+            const ly = (pl.isWallCandle ? pl.y + 0.85 : pl.y + 0.5) * tileH;
+            const rad = pl.radius * flicker;
+
+            if (pl.isWallCandle) {
+              // Render wall sconce & flickering flame on front masonry face
+              if (visibleCoords.has(`${pl.x},${pl.y + 1}`) || visibleCoords.has(`${pl.x},${pl.y}`)) {
+                ctx.fillStyle = '#475569';
+                ctx.fillRect(lx - 3, pl.y * tileH + 34, 6, 6);
+                ctx.fillStyle = '#e5dccb';
+                ctx.fillRect(lx - 1.5, pl.y * tileH + 29, 3, 6);
+                ctx.fillStyle = flicker > 0.9 ? '#fef08a' : '#f59e0b';
+                ctx.beginPath();
+                ctx.arc(lx, pl.y * tileH + 27, 2.6 * flicker, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+
+            const pGrad = ctx.createRadialGradient(lx, ly, 4, lx, ly, rad);
+            if (pl.coreColor) {
+              pGrad.addColorStop(0, pl.coreColor);
+              pGrad.addColorStop(0.38, pl.color);
+            } else {
+              pGrad.addColorStop(0, pl.color);
+            }
             pGrad.addColorStop(1, 'rgba(0,0,0,0)');
             ctx.fillStyle = pGrad;
             ctx.beginPath();
-            ctx.arc(lx, ly, pl.radius, 0, Math.PI * 2);
+            ctx.arc(lx, ly, rad, 0, Math.PI * 2);
             ctx.fill();
           }
 
-          // Radial Torchlight / Floor 3 Miasma Mist Vignette centered on interpolated player
+          // Flickering Storm-Lantern / Torchlight & Deep Darkness Vignette centered on interpolated player
           const playerCenterX = (visualPosRef.current.x + 0.5) * tileW;
           const playerCenterY = (visualPosRef.current.y + 0.3) * tileH;
           if (!room.isExterior) {
-            const lightRadiusPx = sightRadius * tileW;
+            const lanternFlicker = 1 + Math.sin(now * 0.0085) * 0.03 + Math.sin(now * 0.021) * 0.015;
+            const lightRadiusPx = sightRadius * tileW * lanternFlicker;
             const torchGrad = ctx.createRadialGradient(
               playerCenterX,
               playerCenterY,
-              tileW * 1.4,
+              tileW * 1.15,
               playerCenterX,
               playerCenterY,
               lightRadiusPx
             );
             if (room.floor === 3) {
-              torchGrad.addColorStop(0, 'rgba(192, 132, 252, 0.08)');
-              torchGrad.addColorStop(0.55, 'rgba(18, 9, 32, 0.50)');
-              torchGrad.addColorStop(1, 'rgba(4, 2, 8, 0.90)');
+              torchGrad.addColorStop(0, 'rgba(192, 132, 252, 0.10)');
+              torchGrad.addColorStop(0.45, 'rgba(18, 9, 32, 0.44)');
+              torchGrad.addColorStop(0.82, 'rgba(7, 4, 14, 0.86)');
+              torchGrad.addColorStop(1, 'rgba(3, 2, 6, 0.96)');
             } else {
-              torchGrad.addColorStop(0, 'rgba(255, 190, 110, 0.07)');
-              torchGrad.addColorStop(0.55, 'rgba(10, 8, 12, 0.46)');
-              torchGrad.addColorStop(1, 'rgba(3, 2, 5, 0.88)');
+              torchGrad.addColorStop(0, hasTorchOrLamp ? 'rgba(255, 198, 120, 0.11)' : 'rgba(245, 175, 105, 0.07)');
+              torchGrad.addColorStop(0.42, 'rgba(12, 9, 14, 0.38)');
+              torchGrad.addColorStop(0.8, 'rgba(5, 4, 8, 0.84)');
+              torchGrad.addColorStop(1, 'rgba(3, 2, 5, 0.95)');
             }
             ctx.fillStyle = torchGrad;
             ctx.fillRect(0, 0, worldPxW, worldPxH);
@@ -784,10 +911,21 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             const cKey = `${ix},${iy}`;
             if (secretMaskSet.has(cKey)) continue;
             const t = room.grid[iy][ix];
+            const interactableCorpse = corpseList.find(
+              (c) =>
+                c.x === ix &&
+                c.y === iy &&
+                (!c.corpseLooted ||
+                  !c.corpseDevoured ||
+                  ((player.skillLevels?.necromancy || 0) >= 1 && !c.corpseRaised && player.party.length < 3))
+            );
 
             let promptLabel: string | null = null;
 
-            if (t === TILE.CRATE && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Lục Thùng';
+            if (interactableCorpse) {
+              promptLabel = !interactableCorpse.corpseLooted ? '[F] Lục Xác Quái' : '[F] Xác Quái';
+            }
+            else if (t === TILE.CRATE && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Lục Thùng';
             else if (t === TILE.HERB && !room.lootedCoords.includes(cKey)) {
               const ht = getHerbTypeAtCoord(room, ix, iy);
               promptLabel =
@@ -806,24 +944,36 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             else if (t === TILE.SHORTCUT_GATE && !room.shortcutOpened) promptLabel = '[F] Mở Cổng Tắt';
             else if (t === TILE.NPC_PRIEST) promptLabel = '[F] Giáo Sĩ Mù';
             else if (t === TILE.NPC_SMUGGLER && !player.npcFlags.smugglerClosed) promptLabel = '[F] Mặc Cả';
-            else if (t === TILE.NPC_PRISONER && !player.npcFlags.prisonerRecruited) promptLabel = '[F] Cứu Tù Nhân';
+            else if (t === TILE.NPC_PRISONER && isNpcTileActive(t, player, false)) promptLabel = '[F] Cứu Tù Nhân';
             else if (t === TILE.NPC_CHILD_12) promptLabel = '[F] Thánh Tử 12';
-            else if (t === TILE.NPC_BROKEN_KNIGHT) promptLabel = '[F] Kỵ Sĩ Gãy Chân';
+            else if (t === TILE.NPC_BROKEN_KNIGHT && isNpcTileActive(t, player, false)) promptLabel = '[F] Kỵ Sĩ Gãy Chân';
             else if (t === TILE.NPC_SMITH) promptLabel = '[F] Huyết Rèn';
             else if (t === TILE.NPC_GLASS_LADY) promptLabel = '[F] Lồng Kính';
             else if (t === TILE.NPC_PHYSICIAN) promptLabel = '[F] Lão Thần Y';
             else if (t === TILE.NPC_CHRONICLER) promptLabel = '[F] Kẻ Chép Sử';
-            else if (t === TILE.NPC_RECRUIT_KNIGHT && isRecruitNpcActive(t, player, room.lootedCoords.includes(cKey)))
+            else if (t === TILE.NPC_RECRUIT_KNIGHT && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
               promptLabel = '[F] Hiệp Sĩ Marcus';
-            else if (t === TILE.NPC_RECRUIT_NUN && isRecruitNpcActive(t, player, room.lootedCoords.includes(cKey)))
+            else if (t === TILE.NPC_RECRUIT_NUN && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
               promptLabel = '[F] Nữ Tu Elena';
-            else if (t === TILE.NPC_RECRUIT_HUNTER && isRecruitNpcActive(t, player, room.lootedCoords.includes(cKey)))
+            else if (t === TILE.NPC_RECRUIT_HUNTER && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
               promptLabel = '[F] Thợ Săn Lyra';
             else if (t === TILE.VOID_RIFT) promptLabel = '[F] Vết Rách & Thánh Tử 13';
             else if (t === TILE.MIASMA_VENT && !room.lootedCoords.includes(cKey))
               promptLabel = '[F] Hấp Thụ Khí';
-            else if (t === TILE.RITUAL_CIRCLE && !room.lootedCoords.includes(cKey))
-              promptLabel = '[F] Vòng Tròn Tế';
+            else if (t === TILE.RITUAL_CIRCLE) {
+              const cMeta = room.ritualCircles?.[cKey];
+              const dType = cMeta?.deityType || 'uninscribed';
+              if (!cMeta?.used && (dType === 'uninscribed' || !room.lootedCoords.includes(cKey))) {
+                promptLabel =
+                  dType === 'holy_mother'
+                    ? '[F] Đàn Thánh Mẫu'
+                    : dType === 'demon_lord'
+                    ? '[F] Đàn Huyết Tế'
+                    : dType === 'void_god'
+                    ? '[F] Đàn Hư Vô'
+                    : '[F] Vòng Tròn Cổ';
+              }
+            }
             else if (t === TILE.CORPSE_LOOT && !room.lootedCoords.includes(cKey))
               promptLabel = '[F] Lục Xác Kỵ Sĩ';
             else if (t === TILE.CRACKED_WALL) promptLabel = '[F] Nổ Tường';
@@ -857,6 +1007,36 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           }
 
           ctx.restore();
+
+          // 5. Subtle Cached Film-Grain Texture Overlay matching Dark Fantasy UI
+          if (filmGrainEnabled) {
+            if (!grainCanvasRef.current) {
+              const gCanvas = document.createElement('canvas');
+              gCanvas.width = 128;
+              gCanvas.height = 128;
+              const gCtx = gCanvas.getContext('2d')!;
+              const imgData = gCtx.createImageData(128, 128);
+              const data = imgData.data;
+              let seedVal = 1337;
+              for (let i = 0; i < data.length; i += 4) {
+                seedVal = (seedVal * 1664525 + 1013904223) >>> 0;
+                const shade = (seedVal >>> 24) & 255;
+                data[i] = shade;
+                data[i + 1] = shade;
+                data[i + 2] = shade;
+                data[i + 3] = 10; // Ultra-thin film grain (~3.9% alpha)
+              }
+              gCtx.putImageData(imgData, 0, 0);
+              grainCanvasRef.current = gCanvas;
+            }
+            const gPat = ctx.createPattern(grainCanvasRef.current, 'repeat');
+            if (gPat) {
+              ctx.save();
+              ctx.fillStyle = gPat;
+              ctx.fillRect(0, 0, viewW, viewH);
+              ctx.restore();
+            }
+          }
         }
       }
 
@@ -865,7 +1045,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
 
     rafId = requestAnimationFrame(renderFrame);
     return () => cancelAnimationFrame(rafId);
-  }, [room, player, playerPos, trailCoords, animTick, riftElixirCollected]);
+  }, [room, player, playerPos, trailCoords, animTick, riftElixirCollected, filmGrainEnabled]);
 
   return (
     <canvas

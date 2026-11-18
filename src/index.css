@@ -307,11 +307,221 @@
   will-change: transform;
 }
 
+/* ==========================================================================
+   COMBAT STAGE ANIMATIONS: MONSTER BREATHING, SCREEN SHAKE & WEAPON VFX
+   ========================================================================== */
+@keyframes monsterBreathe {
+  0%, 100% {
+    transform: translateY(0px) scale(1, 1);
+  }
+  50% {
+    transform: translateY(-1.5px) scale(1.015, 1.015);
+  }
+}
+
+.animate-monster-breathe {
+  animation: monsterBreathe 4.5s ease-in-out infinite;
+  transform-origin: center bottom;
+  will-change: transform;
+}
+
+@keyframes screenShake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  15% { transform: translate3d(-6px, 3px, 0); }
+  30% { transform: translate3d(6px, -4px, 0); }
+  45% { transform: translate3d(-5px, -2px, 0); }
+  60% { transform: translate3d(4px, 3px, 0); }
+  75% { transform: translate3d(-2px, -1px, 0); }
+}
+
+@keyframes heavyShake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  10% { transform: translate3d(-12px, 6px, 0); }
+  22% { transform: translate3d(13px, -7px, 0); }
+  34% { transform: translate3d(-10px, -5px, 0); }
+  46% { transform: translate3d(9px, 6px, 0); }
+  58% { transform: translate3d(-7px, 3px, 0); }
+  72% { transform: translate3d(5px, -3px, 0); }
+  86% { transform: translate3d(-3px, 2px, 0); }
+}
+
+.animate-screen-shake {
+  animation: screenShake 320ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.animate-heavy-shake {
+  animation: heavyShake 440ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.vfx-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  --vfx-color: #e2e8f0;
+}
+
+/* Sword: diagonal sweeping luminous slash */
+@keyframes vfxSwordSlash {
+  0% {
+    opacity: 0;
+    transform: rotate(-32deg) scaleX(0.15) scaleY(0.45);
+  }
+  25% {
+    opacity: 1;
+    transform: rotate(-32deg) scaleX(1.08) scaleY(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-32deg) scaleX(1.32) scaleY(0.12);
+  }
+}
+
+.vfx-sword::before {
+  content: '';
+  position: absolute;
+  width: 78%;
+  height: 16px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, var(--vfx-color) 32%, #ffffff 55%, var(--vfx-color) 78%, transparent 100%);
+  box-shadow: 0 0 22px var(--vfx-color), 0 0 42px var(--vfx-color);
+  animation: vfxSwordSlash 380ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Heavy Axe / Mace: heavy vertical cleave + staggered outward screen shockwave */
+@keyframes vfxHeavyCleave {
+  0% {
+    opacity: 0;
+    transform: rotate(74deg) scaleX(0.25) scaleY(0.7);
+  }
+  24% {
+    opacity: 1;
+    transform: rotate(74deg) scaleX(1.15) scaleY(1.4);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(74deg) scaleX(1.35) scaleY(0.2);
+  }
+}
+
+@keyframes vfxHeavyShockwave {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  22% {
+    opacity: 0.92;
+    transform: scale(0.55);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.35);
+  }
+}
+
+.vfx-heavy-axe::before {
+  content: '';
+  position: absolute;
+  width: 68%;
+  height: 22px;
+  z-index: 2;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, var(--vfx-color) 28%, #fef3c7 52%, var(--vfx-color) 78%, transparent 100%);
+  box-shadow: 0 0 28px var(--vfx-color), 0 0 54px rgba(217, 119, 6, 0.85);
+  animation: vfxHeavyCleave 440ms cubic-bezier(0.12, 0.92, 0.25, 1) forwards;
+}
+
+.vfx-heavy-axe::after {
+  content: '';
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  z-index: 1;
+  border-radius: 999px;
+  border: 6px solid var(--vfx-color);
+  background: radial-gradient(circle, rgba(254, 243, 199, 0.22) 0%, rgba(217, 119, 6, 0.14) 45%, transparent 72%);
+  box-shadow: 0 0 34px var(--vfx-color), inset 0 0 24px var(--vfx-color);
+  animation: vfxHeavyShockwave 520ms cubic-bezier(0.16, 1, 0.3, 1) 80ms both;
+}
+
+/* Dagger: rapid twin criss-cross stabs */
+@keyframes vfxDaggerCrossA {
+  0% { opacity: 0; transform: rotate(36deg) scaleX(0.2); }
+  25% { opacity: 1; transform: rotate(36deg) scaleX(1.1); }
+  100% { opacity: 0; transform: rotate(36deg) scaleX(1.25) scaleY(0.15); }
+}
+
+@keyframes vfxDaggerCrossB {
+  0% { opacity: 0; transform: rotate(-38deg) scaleX(0.2); }
+  25% { opacity: 1; transform: rotate(-38deg) scaleX(1.1); }
+  100% { opacity: 0; transform: rotate(-38deg) scaleX(1.25) scaleY(0.15); }
+}
+
+.vfx-dagger::before,
+.vfx-dagger::after {
+  content: '';
+  position: absolute;
+  width: 58%;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, var(--vfx-color) 30%, #ffffff 55%, var(--vfx-color) 80%, transparent 100%);
+  box-shadow: 0 0 18px var(--vfx-color);
+}
+
+.vfx-dagger::before {
+  animation: vfxDaggerCrossA 300ms ease-out forwards;
+}
+
+.vfx-dagger::after {
+  animation: vfxDaggerCrossB 320ms ease-out 65ms both;
+}
+
+/* Staff / Magic: arcane sigil pulse burst */
+@keyframes vfxStaffBurst {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(0deg);
+  }
+  30% {
+    opacity: 0.95;
+    transform: scale(1.05) rotate(45deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.65) rotate(95deg);
+  }
+}
+
+.vfx-staff::before {
+  content: '';
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  border: 3px dashed var(--vfx-color);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.25) 0%, var(--vfx-color) 28%, transparent 70%);
+  box-shadow: 0 0 36px var(--vfx-color), inset 0 0 26px var(--vfx-color);
+  animation: vfxStaffBurst 480ms ease-out forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .df-card-active,
   .df-btn-active,
   .df-explore-mist-a,
-  .df-explore-mist-b {
+  .df-explore-mist-b,
+  .animate-monster-breathe,
+  .animate-screen-shake,
+  .animate-heavy-shake,
+  .vfx-sword::before,
+  .vfx-heavy-axe::before,
+  .vfx-heavy-axe::after,
+  .vfx-dagger::before,
+  .vfx-dagger::after,
+  .vfx-staff::before {
     animation: none;
   }
 }

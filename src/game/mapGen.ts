@@ -102,6 +102,8 @@ export function herbTypeToVariant(herbType: HerbType): number {
   return 3;
 }
 
+export type RitualDeityType = 'uninscribed' | 'holy_mother' | 'demon_lord' | 'void_god';
+
 export interface RoomData {
   id: string;
   floor: 1 | 2 | 3;
@@ -122,6 +124,7 @@ export interface RoomData {
   corpses?: MapEnemyInstance[];
   decoys?: MapDecoy[];
   herbTypes?: Record<string, HerbType>;
+  ritualCircles?: Record<string, { deityType: RitualDeityType; used?: boolean }>;
   lootedCoords: string[];
   shortcutOpened: boolean;
   secretWallBlown: boolean;
@@ -738,9 +741,19 @@ export function generateWorld(seed: string): WorldMapState {
       }
 
       const extraRng = new SeededRNG(`${seed}_${roomId}_extra_props`);
+      const ritualCircles: Record<string, { deityType: RitualDeityType; used?: boolean }> = {};
 
       // Place Ritual Circle (3x3 footprint) in odd non-boss rooms before smaller props
       if (!isBossRoom && idx % 2 === 1) {
+        const fixedDeityByRoom: Record<string, RitualDeityType> = {
+          F2_R1: 'uninscribed',
+          F2_R3: 'holy_mother',
+          F3_R1: 'void_god',
+          F1_R1: 'demon_lord',
+        };
+        const fallbackDeities: RitualDeityType[] = ['uninscribed', 'holy_mother', 'demon_lord', 'void_god'];
+        const assignedDeity: RitualDeityType =
+          fixedDeityByRoom[roomId] || fallbackDeities[(fc.floor + idx) % fallbackDeities.length];
         for (let i = 0; i < openTiles.length; i++) {
           const [rx, ry] = openTiles[i];
           let clear3x3 = true;
@@ -756,6 +769,7 @@ export function generateWorld(seed: string): WorldMapState {
           }
           if (clear3x3) {
             placeLandmark(rx, ry, TILE.RITUAL_CIRCLE, 1, 2);
+            ritualCircles[`${rx},${ry}`] = { deityType: assignedDeity, used: false };
             break;
           }
         }
@@ -918,6 +932,7 @@ export function generateWorld(seed: string): WorldMapState {
         secretChamberCoords,
         enemies,
         herbTypes,
+        ritualCircles,
         lootedCoords: [],
         shortcutOpened: false,
         secretWallBlown: false,

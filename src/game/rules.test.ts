@@ -58,6 +58,15 @@ import {
   regrowLimbAtHexen,
   resolveEnemyCombatRound,
   unlockHexenStatNode,
+  isWeaponTwoHanded,
+  canMemberEquipWeapon,
+  handlePlayerArmLoss,
+  leaveOrDismissPartyMember,
+  banHolyMother,
+  isHolyMotherBanned,
+  grantAffinityOnce,
+  HOLY_MOTHER_REFUSAL_MSG,
+  getFleeChancePct,
 } from './combat';
 import { CombatEngine } from './combatEngine';
 import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './narrative';
@@ -793,6 +802,112 @@ test('Only Chien Ky skills have Scroll items; God spells require Affinity at Hex
   assert.equal(learnOrUpgradeHexenSkill(p, 'obliterate').success, true); // Upgrade to Lv.2
   assert.equal(p.skillLevels.obliterate, 2);
 });
+
+test('Two-handed weapon checks, arm-loss auto-unequip fallback, 1-leg/2-leg evasion & flee penalties, and leaveOrDismissPartyMember work accurately', () => {
+  const p = createInitialPlayer('fallen_knight');
+  p.unlockedWeapons.push('claymore_greatsword');
+
+  // 2H weapon check & both-arms requirement
+  assert.equal(isWeaponTwoHanded('claymore_greatsword'), true);
+  assert.equal(isWeaponTwoHanded('broad_iron_sword'), false);
+  assert.equal(canMemberEquipWeapon(p.limbs, 'claymore_greatsword').allowed, true);
+
+  // Losing left arm blocks 2H weapon and auto-unequips it back to bite_headbutt, while 1H remains usable with remaining arm
+  p.equippedWeapon = 'claymore_greatsword';
+  p.equippedShield = null;
+  p.limbs.leftArm = false;
+  const armLogs: string[] = [];
+  handlePlayerArmLoss(p, 'leftArm', armLogs);
+  assert.equal(p.equippedWeapon, 'bite_headbutt');
+  assert.equal(canMemberEquipWeapon(p.limbs, 'claymore_greatsword').allowed, false);
+  assert.equal(canMemberEquipWeapon(p.limbs, 'broad_iron_sword').allowed, true);
+
+  // Losing BOTH arms auto-unequips 1H weapon back to bite_headbutt and locks weapon slot
+  p.equippedWeapon = 'broad_iron_sword';
+  p.limbs.rightArm = false;
+  handlePlayerArmLoss(p, 'rightArm', armLogs);
+  assert.equal(p.equippedWeapon, 'bite_headbutt');
+  assert.equal(canMemberEquipWeapon(p.limbs, 'broad_iron_sword').allowed, false);
+
+  // Leg-loss evasion & flee checks: 1 leg lost halves evasion & flee; 2 legs lost zeroes evasion & flee
+  const runner = createInitialPlayer('night_hunter');
+  runner.evasionBonus = 0.2;
+  const fullStats = getComputedPlayerStats(runner);
+  const fullFlee = getFleeChancePct(runner, CONFIG.ENEMIES.fanatic_zealot);
+  runner.limbs.leftLeg = false;
+  const oneLegStats = getComputedPlayerStats(runner);
+  const oneLegFlee = getFleeChancePct(runner, CONFIG.ENEMIES.fanatic_zealot);
+  assert.equal(oneLegStats.evasionPct, Math.round(fullStats.evasionPct * 0.5));
+  assert.equal(oneLegFlee < fullFlee && oneLegFlee > 0, true);
+  runner.limbs.rightLeg = false;
+  const twoLegStats = getComputedPlayerStats(runner);
+  assert.equal(twoLegStats.evasionPct, 0);
+  assert.equal(getFleeChancePct(runner, CONFIG.ENEMIES.fanatic_zealot), 0);
+  assert.equal(canPlayerFlee(runner), false);
+
+  // Leaving party returns gear to shared inventory and restores NPC lifecycle to 'map'
+  const kael = createRecruitedAlly('ally_kael');
+  kael.equippedBody = 'legion_brigandine';
+  kael.equippedHead = 'legion_helm';
+  p.party = [kael];
+  p.npcLifecycle = { npc_prisoner: 'recruited' };
+  const leaveRes = leaveOrDismissPartyMember(p, 0, 'leave');
+  assert.equal(leaveRes.success, true);
+  assert.equal(p.party.length, 0);
+  assert.equal(p.npcLifecycle.npc_prisoner, 'map');
+  assert.equal(p.unlockedGear.includes('legion_brigandine'), true);
+  assert.equal(p.unlockedGear.includes('legion_helm'), true);
+});
+
+test('Holy Mother Ban, one-time completedAffinityActions anti-farm, 4 distinct ritualCircles, and ritual_chalk exist and work accurately', () => {
+  assert.equal(Boolean(CONFIG.ITEMS.ritual_chalk), true);
+
+  const world = generateWorld('RITUAL-SEPARATION-TEST');
+  assert.equal(Object.values(world.rooms.F2_R1.ritualCircles || {}).some((c) => c.deityType === 'uninscribed'), true);
+  assert.equal(Object.values(world.rooms.F2_R3.ritualCircles || {}).some((c) => c.deityType === 'holy_mother'), true);
+  assert.equal(Object.values(world.rooms.F3_R1.ritualCircles || {}).some((c) => c.deityType === 'void_god'), true);
+  assert.equal(Object.values(world.rooms.F1_R1.ritualCircles || {}).some((c) => c.deityType === 'demon_lord'), true);
+
+  const p = createInitialPlayer('forsaken_nun');
+  p.energyStones = 10;
+  p.mind = 100;
+  p.affinities.primordialVoid = 1;
+  p.affinities.demonicPact = 1;
+
+  // Anti-farm: devourEnemyCorpse only awards milestone_cannibalism +1 demonicPact once per run
+  const c1 = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  c1.defeated = true;
+  const c2 = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  c2.defeated = true;
+  assert.equal(devourEnemyCorpse(p, c1).success, true);
+  assert.equal(p.affinities.demonicPact, 2);
+  assert.equal(p.completedAffinityActions.includes('milestone_cannibalism'), true);
+  assert.equal(devourEnemyCorpse(p, c2).success, true);
+  assert.equal(p.affinities.demonicPact, 2); // No duplicate farming!
+
+  // Holy Mother is now banned; Void and Demon spells remain usable/learnable
+  assert.equal(isHolyMotherBanned(p), true);
+  const prayRes = prayAffinityAtHexen(p, 'holyMother');
+  assert.equal(prayRes.success, false);
+  assert.equal(prayRes.message.includes(HOLY_MOTHER_REFUSAL_MSG), true);
+  const regrowRes = regrowLimbAtHexen(p, 'leftArm');
+  assert.equal(regrowRes.success, false);
+  const learnHoly = learnOrUpgradeHexenSkill(p, 'blessed_heal');
+  assert.equal(learnHoly.success, false);
+  assert.equal(learnHoly.message.includes(HOLY_MOTHER_REFUSAL_MSG), true);
+  assert.equal(learnOrUpgradeHexenSkill(p, 'void_bite').success, true);
+  assert.equal(learnOrUpgradeHexenSkill(p, 'blood_pact').success, true);
+
+  // Direct grantAffinityOnce checks
+  const p2 = createInitialPlayer('fallen_knight');
+  assert.equal(grantAffinityOnce(p2, 'ritual_F2_R3_5,5', 'holyMother', 1), true);
+  assert.equal(grantAffinityOnce(p2, 'ritual_F2_R3_5,5', 'holyMother', 1), false);
+  assert.equal(p2.affinities.holyMother, 1);
+  banHolyMother(p2);
+  assert.equal(grantAffinityOnce(p2, 'milestone_free_child_12', 'holyMother', 1), false);
+  assert.equal(p2.affinities.holyMother, 1);
+});
+
 
 
 

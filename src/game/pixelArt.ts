@@ -1,5 +1,6 @@
 // Detailed Multi-Tone Anatomical Vector & Procedural Grimy Stone Renderer
 // (Multi-Layered Garments, Rusted Armor, Horror Facial Anatomy, Distinctive Weapons & 3D Top-Down Map Textures)
+import type { RitualDeityType } from './mapGen';
 
 export type LimbZone =
   | 'head'
@@ -823,8 +824,8 @@ export function drawPixelSprite(
     garbDark = '#09040f';
   }
 
-  ctx.strokeStyle = '#070509';
-  ctx.lineWidth = Math.max(1.4, 2.1 * scale);
+  ctx.strokeStyle = '#050505';
+  ctx.lineWidth = Math.max(1.8, 2.3 * scale);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
@@ -1238,6 +1239,109 @@ export function drawPixelSprite(
     ctx.beginPath();
     ctx.arc(cx, destH * 0.54, 4.5 * scale, 0, Math.PI * 2);
     ctx.stroke();
+
+    ctx.restore();
+    return;
+  }
+
+  if (spriteKey === 'npc_smuggler') {
+    // 9. Tên Buôn Lậu (Tầng 2): Hooded greatcoat, iron half-mask, brass coin pouch, glowing amber storm lantern
+    // Back dark greatcoat hem
+    ctx.fillStyle = '#1e1b24';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 21 * scale, destH * 0.31);
+    ctx.lineTo(cx - 26 * scale, destH * 0.85);
+    ctx.lineTo(cx + 26 * scale, destH * 0.85);
+    ctx.lineTo(cx + 21 * scale, destH * 0.31);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Boots
+    ctx.fillStyle = '#291a12';
+    ctx.fillRect(cx - 14 * scale, destH * 0.80, 9 * scale, destH * 0.10);
+    ctx.fillRect(cx + 5 * scale, destH * 0.80, 9 * scale, destH * 0.10);
+    ctx.strokeRect(cx - 14 * scale, destH * 0.80, 9 * scale, destH * 0.10);
+    ctx.strokeRect(cx + 5 * scale, destH * 0.80, 9 * scale, destH * 0.10);
+
+    // Coat Torso & Leather Cross-Belt
+    ctx.fillStyle = '#332d3b';
+    ctx.fillRect(cx - 16 * scale, destH * 0.32 + torsoBreathY, 32 * scale, 36 * scale);
+    ctx.strokeRect(cx - 16 * scale, destH * 0.32 + torsoBreathY, 32 * scale, 36 * scale);
+    ctx.fillStyle = '#452815';
+    ctx.fillRect(cx - 16 * scale, destH * 0.54 + torsoBreathY, 32 * scale, 5 * scale);
+
+    // Brass Coin Pouch hanging on hip
+    ctx.fillStyle = '#b45309';
+    ctx.beginPath();
+    ctx.arc(cx + 13 * scale, destH * 0.61 + torsoBreathY, 5.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(cx + 11 * scale, destH * 0.57 + torsoBreathY, 4 * scale, 2 * scale);
+
+    // Left Arm holding Glowing Storm Lantern
+    const lanX = cx - 26 * scale + leftArmSwayX;
+    const lanY = destH * 0.56 + leftArmBobY;
+    ctx.strokeStyle = '#2b2530';
+    ctx.lineWidth = 6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 15 * scale, destH * 0.36 + torsoBreathY);
+    ctx.lineTo(lanX, lanY - 4 * scale);
+    ctx.stroke();
+    const lanGlow = ctx.createRadialGradient(lanX, lanY + 4 * scale, 1 * scale, lanX, lanY + 4 * scale, 16 * scale);
+    lanGlow.addColorStop(0, 'rgba(251, 191, 36, 0.72)');
+    lanGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = lanGlow;
+    ctx.beginPath();
+    ctx.arc(lanX, lanY + 4 * scale, 16 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 1.6 * scale;
+    ctx.fillRect(lanX - 4 * scale, lanY, 8 * scale, 10 * scale);
+    ctx.strokeRect(lanX - 4 * scale, lanY, 8 * scale, 10 * scale);
+
+    // Hood & Iron Half-Mask Head
+    ctx.save();
+    ctx.translate(headSwayX, headBobY * 0.7);
+    ctx.fillStyle = '#27232d';
+    ctx.beginPath();
+    ctx.moveTo(cx, destH * 0.06);
+    ctx.bezierCurveTo(cx + 19 * scale, destH * 0.10, cx + 20 * scale, destH * 0.28, cx + 15 * scale, destH * 0.34);
+    ctx.lineTo(cx - 15 * scale, destH * 0.34);
+    ctx.bezierCurveTo(cx - 20 * scale, destH * 0.28, cx - 19 * scale, destH * 0.10, cx, destH * 0.06);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Pale upper face & sharp eyes
+    ctx.fillStyle = '#cbb9a6';
+    ctx.beginPath();
+    ctx.ellipse(cx, destH * 0.21, 9.5 * scale, 10.5 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#070509';
+    ctx.fillRect(cx - 6 * scale, destH * 0.175, 4 * scale, 2.5 * scale);
+    ctx.fillRect(cx + 2 * scale, destH * 0.175, 4 * scale, 2.5 * scale);
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(cx - 4.8 * scale, destH * 0.18, 1.8 * scale, 1.8 * scale);
+    ctx.fillRect(cx + 3.2 * scale, destH * 0.18, 1.8 * scale, 1.8 * scale);
+
+    // Iron Half-Mask covering lower face
+    ctx.fillStyle = '#64748b';
+    ctx.beginPath();
+    ctx.moveTo(cx - 9.5 * scale, destH * 0.22);
+    ctx.lineTo(cx + 9.5 * scale, destH * 0.22);
+    ctx.lineTo(cx + 6.5 * scale, destH * 0.31);
+    ctx.lineTo(cx, destH * 0.33);
+    ctx.lineTo(cx - 6.5 * scale, destH * 0.31);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
 
     ctx.restore();
     return;
@@ -3464,8 +3568,8 @@ export function drawPartyBackSprite(
   grad.addColorStop(0, cloakLight);
   grad.addColorStop(1, cloakDark);
   ctx.fillStyle = grad;
-  ctx.strokeStyle = '#070608';
-  ctx.lineWidth = 2.4;
+  ctx.strokeStyle = '#050505';
+  ctx.lineWidth = 2.6;
 
   if (classId === 'forsaken_nun') {
     // Slender habit flaring into jagged tattered skirt hem (matching Frame 3 Nun)
@@ -4130,6 +4234,20 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
     ctx.beginPath();
     ctx.arc(cx, cy, size * 0.2, 0, Math.PI * 2);
     ctx.stroke();
+  } else if (itemId === 'ritual_chalk') {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.45);
+    ctx.fillStyle = '#e5e7eb';
+    ctx.fillRect(-size * 0.08, -size * 0.26, size * 0.16, size * 0.52);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(-size * 0.08, -size * 0.26, size * 0.06, size * 0.52);
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillRect(size * 0.03, -size * 0.26, size * 0.05, size * 0.52);
+    ctx.strokeStyle = '#050505';
+    ctx.lineWidth = Math.max(1.2, size * 0.03);
+    ctx.strokeRect(-size * 0.08, -size * 0.26, size * 0.16, size * 0.52);
+    ctx.restore();
   } else if (itemId === 'silver_coin') {
     const coinGrad = ctx.createRadialGradient(
       cx - size * 0.08,
@@ -4621,7 +4739,7 @@ export function getFloorTileTexture(
   isExterior: boolean = false
 ): HTMLCanvasElement {
   const v = Math.abs(variant) % 6;
-  const key = `v5_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}`;
+  const key = `v6_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}`;
   const cached = tileCache.get(key);
   if (cached) return cached;
 
@@ -4672,39 +4790,58 @@ export function getFloorTileTexture(
     return canvas;
   }
 
-  // 2. 2.5D STONE WALL & CRACKED WALL (28px Top Ledge + 20px Front Staggered Masonry Face)
+  // 2. 2.5D STONE WALL & CRACKED WALL (26px Top Ledge + 22px Front Staggered Masonry Face + Deep Rim Grime)
   if (tileType === 'WALL' || tileType === 'CRACKED_WALL') {
-    const topCol = floor === 1 ? '#451d21' : floor === 3 ? '#362354' : '#464a44';
-    const frontCol = floor === 1 ? '#261013' : floor === 3 ? '#1c112d' : '#232622';
-    const mortarCol = '#08070a';
+    const topCol = floor === 1 ? '#3b181c' : floor === 3 ? '#2c1b47' : '#3a3e38';
+    const topDark = floor === 1 ? '#220c0f' : floor === 3 ? '#180d29' : '#242723';
+    const frontCol = floor === 1 ? '#200c0f' : floor === 3 ? '#150c24' : '#1b1e1a';
+    const mortarCol = '#060508';
 
-    // Top horizontal wall roof/ledge (upper 28px)
-    ctx.fillStyle = topCol;
-    ctx.fillRect(0, 0, 48, 28);
+    // Top horizontal wall roof/ledge with mottled slate gradient (upper 26px)
+    const topGrad = ctx.createLinearGradient(0, 0, 48, 26);
+    topGrad.addColorStop(0, topCol);
+    topGrad.addColorStop(1, topDark);
+    ctx.fillStyle = topGrad;
+    ctx.fillRect(0, 0, 48, 26);
     ctx.strokeStyle = mortarCol;
     ctx.lineWidth = 1.4;
-    ctx.strokeRect(1, 1, 46, 26);
+    ctx.strokeRect(1, 1, 46, 24);
 
-    // Highlight bevel edge separating top ledge from 20px vertical front face
-    ctx.fillStyle = floor === 1 ? '#7f1d1d' : floor === 3 ? '#6d28d9' : '#6c756b';
-    ctx.fillRect(0, 26, 48, 2);
+    // Subtle cracks & weathered seams on wall top
+    ctx.strokeStyle = 'rgba(8, 6, 10, 0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(10 + v * 3, 2);
+    ctx.lineTo(14 + v * 2, 13);
+    ctx.lineTo(9 + v * 3, 22);
+    ctx.stroke();
 
-    // Front vertical stone masonry face (exact 20px height: y = 28..48)
-    ctx.fillStyle = frontCol;
-    ctx.fillRect(0, 28, 48, 20);
+    // Highlight bevel edge separating top ledge from 22px vertical front face
+    ctx.fillStyle = floor === 1 ? '#7f1d1d' : floor === 3 ? '#6d28d9' : '#646d63';
+    ctx.fillRect(0, 25, 48, 2);
 
-    // Staggered stone bricks across the 20px front face (two 10px courses offset by half brick)
+    // Front vertical stone masonry face (21px height: y = 27..48)
+    const faceGrad = ctx.createLinearGradient(0, 27, 0, 48);
+    faceGrad.addColorStop(0, frontCol);
+    faceGrad.addColorStop(1, '#0c0b0e');
+    ctx.fillStyle = faceGrad;
+    ctx.fillRect(0, 27, 48, 21);
+
+    // Staggered stone bricks across the vertical front face with subtle face tint variation
+    ctx.fillStyle = floor === 1 ? 'rgba(90, 24, 30, 0.35)' : floor === 3 ? 'rgba(76, 36, 128, 0.32)' : 'rgba(64, 70, 62, 0.35)';
+    ctx.fillRect(2, 28, 21, 9);
+    ctx.fillRect(14, 38, 20, 8);
     ctx.strokeStyle = mortarCol;
-    ctx.lineWidth = 1.3;
-    ctx.strokeRect(1, 28, 23, 10);
-    ctx.strokeRect(24, 28, 23, 10);
-    ctx.strokeRect(1, 38, 12, 9);
-    ctx.strokeRect(13, 38, 22, 9);
-    ctx.strokeRect(35, 38, 12, 9);
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(1, 27, 23, 10);
+    ctx.strokeRect(24, 27, 23, 10);
+    ctx.strokeRect(1, 37, 12, 10);
+    ctx.strokeRect(13, 37, 22, 10);
+    ctx.strokeRect(35, 37, 12, 10);
 
-    // Moss / Grime at wall base
-    ctx.fillStyle = floor === 1 ? 'rgba(220, 38, 38, 0.25)' : 'rgba(26, 52, 24, 0.45)';
-    ctx.fillRect(0, 44, 48, 4);
+    // Damp moss / dried blood grime clinging to wall base
+    ctx.fillStyle = floor === 1 ? 'rgba(136, 19, 27, 0.42)' : floor === 3 ? 'rgba(88, 28, 135, 0.38)' : 'rgba(28, 56, 26, 0.56)';
+    ctx.fillRect(0, 43, 48, 5);
 
     if (tileType === 'CRACKED_WALL') {
       // Glowing structural fissure indicating Brown Vial destructible wall
@@ -4809,44 +4946,72 @@ export function getFloorTileTexture(
       ctx.stroke();
     }
   } else if (floor === 2) {
-    // Nội điện Tầng 2 (Giáo Đường Goethe): Gạch đá xám tro, vết sáp nến chảy, mảnh kính màu vỡ, vệt máu đen (6 biến thể)
-    ctx.fillStyle = v % 2 === 0 ? '#272926' : '#212320';
+    // Nội điện Tầng 2 (Giáo Đường Goethe): Đá phiến nứt nẻ, rêu ẩm mốc, vệt máu khô sẫm màu, sáp nến & mảnh kính vỡ (6 biến thể)
+    ctx.fillStyle = v % 2 === 0 ? '#232522' : '#1d1f1c';
     ctx.fillRect(0, 0, 48, 48);
 
-    // Ash-grey cathedral flagstone joints
-    ctx.strokeStyle = '#0d0e0c';
-    ctx.lineWidth = 1.4;
+    // Irregular fractured slate flagstones + beveled inner stone highlight
+    ctx.fillStyle = v % 3 === 0 ? '#292b27' : '#252724';
+    ctx.fillRect(2, 2, 21, 20);
+    ctx.fillRect(25, 2, 21, 22);
+    ctx.fillRect(2, 24, 25, 22);
+    ctx.fillRect(29, 26, 17, 20);
+
+    ctx.strokeStyle = '#090a08';
+    ctx.lineWidth = 1.6;
     ctx.strokeRect(1, 1, 46, 46);
     ctx.beginPath();
-    ctx.moveTo(0, 24 + (v % 3 - 1) * 3);
-    ctx.lineTo(48, 24 - (v % 3 - 1) * 3);
-    ctx.moveTo(24 + (v % 2) * 5, 0);
-    ctx.lineTo(22, 24);
+    ctx.moveTo(0, 23 + (v % 3 - 1) * 2);
+    ctx.lineTo(48, 24 - (v % 3 - 1) * 2);
+    ctx.moveTo(23 + (v % 2) * 4, 0);
+    ctx.lineTo(22, 23);
+    ctx.moveTo(27, 24);
+    ctx.lineTo(28, 48);
     ctx.stroke();
 
-    // Stone grain speckles
-    ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    for (let i = 0; i < 8; i++) {
-      ctx.fillRect(((i * 13 + v * 7) % 42) + 3, ((i * 19 + v * 11) % 42) + 3, 2, 2);
-    }
+    // Organic slate fractures & ash/dust grime in crevices
+    ctx.strokeStyle = 'rgba(10, 10, 12, 0.72)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(6 + v * 2, 7);
+    ctx.lineTo(14 + v, 15);
+    ctx.lineTo(11, 20);
+    ctx.moveTo(35, 31);
+    ctx.lineTo(42, 39);
+    ctx.stroke();
 
-    if (v === 1 || v === 5) {
-      // Melted candle wax drips & pool (Vết sáp nến chảy)
-      ctx.fillStyle = 'rgba(231, 219, 188, 0.72)';
+    // Damp moss creeping from mortar joints
+    ctx.fillStyle = 'rgba(34, 62, 32, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(23, 24, 5.5, 2.5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (v === 0) {
+      // Scattered bone ash & fractured stone chips
+      ctx.fillStyle = 'rgba(120, 113, 108, 0.36)';
       ctx.beginPath();
-      ctx.ellipse(18, 28, 7, 4.5, 0.2, 0, Math.PI * 2);
+      ctx.ellipse(14, 34, 7, 4, -0.2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = 'rgba(250, 240, 215, 0.85)';
+      ctx.fillStyle = '#c8beab';
+      ctx.fillRect(10, 32, 6, 2);
+      ctx.fillRect(34, 12, 4, 2);
+    } else if (v === 1 || v === 5) {
+      // Melted candle wax drips & dried crimson stain
+      ctx.fillStyle = 'rgba(225, 212, 180, 0.68)';
       ctx.beginPath();
-      ctx.arc(32, 16, 3.2, 0, Math.PI * 2);
+      ctx.ellipse(18, 29, 6.5, 4, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(74, 11, 16, 0.58)';
+      ctx.beginPath();
+      ctx.arc(34, 15, 4.2, 0, Math.PI * 2);
       ctx.fill();
     } else if (v === 2) {
       // Shattered stained-glass shards (Mảnh kính màu vỡ)
       const shards: Array<[number, number, string]> = [
-        [14, 18, '#dc2626'],
-        [30, 14, '#2563eb'],
-        [24, 34, '#d97706'],
-        [36, 30, '#9333ea'],
+        [14, 18, '#b91c1c'],
+        [30, 14, '#1d4ed8'],
+        [24, 34, '#b45309'],
+        [36, 30, '#7e22ce'],
       ];
       for (const [sx, sy, col] of shards) {
         ctx.fillStyle = col;
@@ -4858,42 +5023,55 @@ export function getFloorTileTexture(
         ctx.fill();
       }
     } else if (v === 3) {
-      // Black blood smear & puddle (Vệt máu đen)
-      ctx.fillStyle = 'rgba(18, 5, 10, 0.82)';
+      // Dried dark-crimson blood smear & splatter
+      ctx.fillStyle = 'rgba(54, 8, 12, 0.84)';
       ctx.beginPath();
-      ctx.ellipse(26, 28, 10, 6, 0.4, 0, Math.PI * 2);
+      ctx.ellipse(26, 28, 10, 5.5, 0.4, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(88, 12, 18, 0.75)';
+      ctx.strokeStyle = 'rgba(110, 16, 22, 0.78)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(14, 22);
+      ctx.moveTo(13, 21);
       ctx.lineTo(36, 35);
       ctx.stroke();
     } else if (v === 4) {
-      // Dull moss in flagstone corners
-      ctx.fillStyle = 'rgba(45, 76, 43, 0.55)';
+      // Thick damp moss & decayed stone crumble
+      ctx.fillStyle = 'rgba(42, 74, 38, 0.62)';
       ctx.beginPath();
-      ctx.arc(6, 6, 6, 0, Math.PI * 2);
-      ctx.arc(41, 40, 5, 0, Math.PI * 2);
+      ctx.arc(7, 7, 6.5, 0, Math.PI * 2);
+      ctx.arc(40, 39, 5.5, 0, Math.PI * 2);
       ctx.fill();
     }
   } else if (floor === 1) {
-    // Tầng 1 (Lâu Đài Hắc Ám): Đá bazan đen xám nứt nẻ, thảm nhung đỏ viền vàng sờn rách, rãnh thoát máu, xương vụn, xiềng xích đứt, khe lửa đỏ (6 biến thể)
-    ctx.fillStyle = v % 2 === 0 ? '#1b1619' : '#161214';
+    // Tầng 1 (Lâu Đài Hắc Ám): Đá phiến bazan nứt nẻ, vệt máu khô, thảm nhung rách, rãnh máu, xương vụn & tro tàn (6 biến thể)
+    ctx.fillStyle = v % 2 === 0 ? '#191417' : '#141013';
     ctx.fillRect(0, 0, 48, 48);
-    ctx.strokeStyle = '#090608';
-    ctx.lineWidth = 1.4;
+    ctx.fillStyle = '#20191d';
+    ctx.fillRect(2, 2, 20, 21);
+    ctx.fillRect(25, 25, 21, 20);
+    ctx.strokeStyle = '#080507';
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(1, 1, 46, 46);
+    ctx.beginPath();
+    ctx.moveTo(0, 24);
+    ctx.lineTo(48, 24);
+    ctx.moveTo(24, 0);
+    ctx.lineTo(24, 48);
+    ctx.stroke();
 
     if (v === 0) {
-      // Cracked dark charcoal basalt
-      ctx.strokeStyle = '#2d2529';
+      // Cracked dark charcoal basalt + dried blood stain + ash
+      ctx.strokeStyle = '#2e2428';
       ctx.lineWidth = 1.3;
       ctx.beginPath();
       ctx.moveTo(8, 12);
       ctx.lineTo(22, 24);
       ctx.lineTo(18, 40);
       ctx.stroke();
+      ctx.fillStyle = 'rgba(88, 12, 18, 0.55)';
+      ctx.beginPath();
+      ctx.ellipse(34, 14, 6, 3.5, 0.5, 0, Math.PI * 2);
+      ctx.fill();
     } else if (v === 1) {
       // Tattered crimson velvet carpet with frayed gold-thread trim (Thảm nhung đỏ thẫm viền chỉ vàng sờn rách)
       ctx.fillStyle = '#5c1118';
@@ -5790,7 +5968,8 @@ export function drawMultiTileLandmark(
   tileH: number,
   animTick: number,
   isLooted: boolean = false,
-  isPlayerInside: boolean = false
+  isPlayerInside: boolean = false,
+  deityType: RitualDeityType = 'uninscribed'
 ) {
   ctx.save();
   const cx = (tileX + 0.5) * tileW;
@@ -5798,21 +5977,56 @@ export function drawMultiTileLandmark(
   const pulse = Math.sin(animTick * 0.6) * 0.5 + 0.5;
 
   if (tileType === 'RITUAL_CIRCLE') {
-    // 3x3 Tile (144x144px) Sunken Arcane Matrix carved into stone floor
+    // 3x3 Tile (144x144px) Sunken Arcane Matrix carved into stone floor with 4 distinct deity themes
     const radiusOuter = tileW * 1.38;
     const radiusMid = tileW * 1.02;
     const radiusInner = tileW * 0.56;
 
+    const paletteMap: Record<
+      RitualDeityType,
+      {
+        glowInner: string;
+        glowOuter: string;
+        primary: string;
+        secondary: string;
+        nodeFill: string;
+      }
+    > = {
+      uninscribed: {
+        glowInner: isPlayerInside ? 'rgba(148, 163, 184, 0.25)' : 'rgba(71, 85, 105, 0.14)',
+        glowOuter: 'rgba(15, 23, 42, 0.10)',
+        primary: isPlayerInside ? '#cbd5e1' : 'rgba(148, 163, 184, 0.65)',
+        secondary: isPlayerInside ? '#94a3b8' : 'rgba(100, 116, 139, 0.55)',
+        nodeFill: '#94a3b8',
+      },
+      holy_mother: {
+        glowInner: isPlayerInside ? 'rgba(248, 250, 252, 0.42)' : 'rgba(234, 179, 8, 0.22)',
+        glowOuter: 'rgba(250, 204, 21, 0.18)',
+        primary: isPlayerInside ? '#ffffff' : `rgba(248, 250, 252, ${0.72 + pulse * 0.22})`,
+        secondary: isPlayerInside ? '#fef08a' : `rgba(234, 179, 8, ${0.60 + pulse * 0.28})`,
+        nodeFill: isPlayerInside ? '#fef08a' : '#f8fafc',
+      },
+      demon_lord: {
+        glowInner: isPlayerInside ? 'rgba(220, 38, 38, 0.48)' : 'rgba(153, 27, 27, 0.26)',
+        glowOuter: 'rgba(127, 29, 29, 0.20)',
+        primary: isPlayerInside ? '#fca5a5' : `rgba(239, 68, 68, ${0.72 + pulse * 0.24})`,
+        secondary: isPlayerInside ? '#ef4444' : `rgba(185, 28, 28, ${0.65 + pulse * 0.28})`,
+        nodeFill: isPlayerInside ? '#fecaca' : '#ef4444',
+      },
+      void_god: {
+        glowInner: isPlayerInside ? 'rgba(192, 132, 252, 0.46)' : 'rgba(107, 33, 168, 0.26)',
+        glowOuter: 'rgba(88, 28, 135, 0.22)',
+        primary: isPlayerInside ? '#e9d5ff' : `rgba(192, 132, 252, ${0.72 + pulse * 0.24})`,
+        secondary: isPlayerInside ? '#c084fc' : `rgba(126, 34, 206, ${0.62 + pulse * 0.28})`,
+        nodeFill: isPlayerInside ? '#f3e8ff' : '#a855f7',
+      },
+    };
+    const pal = paletteMap[deityType] || paletteMap.uninscribed;
+
     // Sunken stone recess ring
     const recessGrad = ctx.createRadialGradient(cx, cy, radiusInner * 0.2, cx, cy, radiusOuter);
-    recessGrad.addColorStop(
-      0,
-      isPlayerInside ? 'rgba(220, 38, 38, 0.42)' : 'rgba(88, 28, 135, 0.20)'
-    );
-    recessGrad.addColorStop(
-      0.65,
-      isPlayerInside ? 'rgba(250, 204, 21, 0.28)' : 'rgba(127, 29, 29, 0.16)'
-    );
+    recessGrad.addColorStop(0, pal.glowInner);
+    recessGrad.addColorStop(0.65, pal.glowOuter);
     recessGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = recessGrad;
     ctx.beginPath();
@@ -5820,24 +6034,15 @@ export function drawMultiTileLandmark(
     ctx.fill();
 
     // Chiseled dark groove shadow
-    ctx.strokeStyle = '#07050a';
+    ctx.strokeStyle = '#050505';
     ctx.lineWidth = 4.5;
     ctx.beginPath();
     ctx.arc(cx, cy, radiusOuter, 0, Math.PI * 2);
     ctx.arc(cx, cy, radiusMid, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Glowing carved runes (blazes bright when player stands inside the 3x3 matrix)
-    const primaryStroke = isLooted
-      ? 'rgba(100, 116, 139, 0.45)'
-      : isPlayerInside
-      ? '#fef08a'
-      : `rgba(239, 68, 68, ${0.68 + pulse * 0.25})`;
-    const secondaryStroke = isLooted
-      ? 'rgba(71, 85, 105, 0.35)'
-      : isPlayerInside
-      ? '#f87171'
-      : `rgba(250, 204, 21, ${0.55 + pulse * 0.3})`;
+    const primaryStroke = isLooted ? 'rgba(100, 116, 139, 0.42)' : pal.primary;
+    const secondaryStroke = isLooted ? 'rgba(71, 85, 105, 0.34)' : pal.secondary;
 
     ctx.strokeStyle = primaryStroke;
     ctx.lineWidth = isPlayerInside ? 2.8 : 2;
@@ -5852,23 +6057,59 @@ export function drawMultiTileLandmark(
     ctx.arc(cx, cy, radiusInner, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 8-Pointed Octagram & Elder Glyphs across the 3x3 floor
-    for (let i = 0; i < 8; i++) {
-      const a1 = (i * Math.PI) / 4;
-      const a2 = ((i + 3) * Math.PI) / 4;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(a1) * radiusMid, cy + Math.sin(a1) * radiusMid);
-      ctx.lineTo(cx + Math.cos(a2) * radiusMid, cy + Math.sin(a2) * radiusMid);
-      ctx.stroke();
+    if (deityType !== 'uninscribed') {
+      // 8-Pointed Octagram & Elder Glyphs across the 3x3 floor
+      for (let i = 0; i < 8; i++) {
+        const a1 = (i * Math.PI) / 4;
+        const a2 = ((i + 3) * Math.PI) / 4;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a1) * radiusMid, cy + Math.sin(a1) * radiusMid);
+        ctx.lineTo(cx + Math.cos(a2) * radiusMid, cy + Math.sin(a2) * radiusMid);
+        ctx.stroke();
 
-      // Rune nodes around outer ring
-      const rx = cx + Math.cos(a1) * ((radiusOuter + radiusMid) * 0.5);
-      const ry = cy + Math.sin(a1) * ((radiusOuter + radiusMid) * 0.5);
-      ctx.fillStyle = isPlayerInside ? '#fef08a' : '#f87171';
+        // Rune nodes around outer ring
+        const rx = cx + Math.cos(a1) * ((radiusOuter + radiusMid) * 0.5);
+        const ry = cy + Math.sin(a1) * ((radiusOuter + radiusMid) * 0.5);
+        ctx.fillStyle = pal.nodeFill;
+        ctx.beginPath();
+        ctx.arc(rx, ry, isPlayerInside ? 4 : 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Distinct Center Symbol per Deity
+    if (deityType === 'holy_mother') {
+      ctx.strokeStyle = primaryStroke;
+      ctx.lineWidth = 2.4;
       ctx.beginPath();
-      ctx.arc(rx, ry, isPlayerInside ? 4 : 2.6, 0, Math.PI * 2);
+      ctx.moveTo(cx, cy - radiusInner * 0.65);
+      ctx.lineTo(cx, cy + radiusInner * 0.65);
+      ctx.moveTo(cx - radiusInner * 0.45, cy - radiusInner * 0.15);
+      ctx.lineTo(cx + radiusInner * 0.45, cy - radiusInner * 0.15);
+      ctx.stroke();
+    } else if (deityType === 'demon_lord') {
+      ctx.strokeStyle = primaryStroke;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const a1 = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+        const a2 = (((i + 2) % 5) * 2 * Math.PI) / 5 - Math.PI / 2;
+        ctx.moveTo(cx + Math.cos(a1) * radiusInner * 0.78, cy + Math.sin(a1) * radiusInner * 0.78);
+        ctx.lineTo(cx + Math.cos(a2) * radiusInner * 0.78, cy + Math.sin(a2) * radiusInner * 0.78);
+      }
+      ctx.stroke();
+    } else if (deityType === 'void_god') {
+      ctx.strokeStyle = primaryStroke;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, radiusInner * 0.72, radiusInner * 0.36, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = pal.nodeFill;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radiusInner * 0.2, 0, Math.PI * 2);
       ctx.fill();
     }
+
     ctx.restore();
     return;
   }
@@ -6368,5 +6609,498 @@ export function drawNpcSetDressing(
 
   ctx.restore();
 }
+
+export interface PaperdollSpec {
+  spriteKey: string;
+  equippedWeapon?: string | null;
+  equippedShield?: string | null;
+  equippedHead?: string | null;
+  equippedBody?: string | null;
+  weaponCategory?: 'sword' | 'heavy_axe' | 'dagger' | 'staff' | 'unarmed';
+  weaponHands?: 0 | 1 | 2;
+  vfxColor?: string;
+  isUndeadSummon?: boolean;
+  isPureTank?: boolean;
+  limbs?: {
+    leftArm: boolean;
+    rightArm: boolean;
+    leftLeg: boolean;
+    rightLeg: boolean;
+    infected?: Record<'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg', boolean>;
+  };
+}
+
+/**
+ * Live Equipment & Limb Paperdoll Renderer for Inventory [I]
+ * Dynamically mirrors equipped Weapon, Shield, Helm, Armor & Severed/Infected limbs.
+ */
+export function drawInventoryPaperdoll(
+  ctx: CanvasRenderingContext2D,
+  spec: PaperdollSpec,
+  w: number,
+  h: number
+) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+
+  // Moody dark gothic alcove backdrop
+  const bg = ctx.createRadialGradient(w * 0.5, h * 0.44, 6, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
+  bg.addColorStop(0, spec.isUndeadSummon ? '#20142c' : '#241b1e');
+  bg.addColorStop(0.7, '#110d13');
+  bg.addColorStop(1, '#070509');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // Pedestal floor shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.68)';
+  ctx.beginPath();
+  ctx.ellipse(w * 0.5, h * 0.89, w * 0.34, h * 0.055, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const cx = w * 0.5;
+  const scale = Math.min(w / 120, h / 160);
+  const limbs = spec.limbs || { leftArm: true, rightArm: true, leftLeg: true, rightLeg: true };
+  const inf = limbs.infected || { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false };
+
+  const key = spec.spriteKey;
+  const isSkeleton = key === 'summon_skeleton';
+  const isWraith = key === 'summon_wraith' || spec.isPureTank;
+  const isChild = key === 'summon_child_12';
+  const isGhoul = key === 'summon_ghoul';
+
+  // Determine armor palette from equippedBody
+  const bodyId = spec.equippedBody || '';
+  let coatLight =
+    key === 'fallen_knight'
+      ? '#64748b'
+      : key === 'forsaken_nun'
+      ? '#442b36'
+      : key === 'night_hunter'
+      ? '#344c3a'
+      : isSkeleton
+      ? '#27272a'
+      : isGhoul
+      ? '#3f6212'
+      : '#4b362e';
+  let coatDark =
+    key === 'fallen_knight'
+      ? '#1e293b'
+      : key === 'forsaken_nun'
+      ? '#1b1015'
+      : key === 'night_hunter'
+      ? '#141f17'
+      : '#0f0c12';
+  let trim = '#c5a059';
+
+  if (bodyId.includes('inquisitor') || bodyId.includes('blood')) {
+    coatLight = '#7f1d1d';
+    coatDark = '#29070a';
+    trim = '#eab308';
+  } else if (bodyId.includes('plate') || bodyId.includes('chainmail') || bodyId.includes('iron')) {
+    coatLight = '#94a3b8';
+    coatDark = '#334155';
+    trim = '#cbd5e1';
+  } else if (bodyId.includes('void') || bodyId.includes('abyss')) {
+    coatLight = '#4c1d95';
+    coatDark = '#170a2e';
+    trim = '#c084fc';
+  } else if (bodyId.includes('leather') || bodyId.includes('hunter')) {
+    coatLight = '#573b26';
+    coatDark = '#24160d';
+    trim = '#a16207';
+  }
+
+  ctx.strokeStyle = '#070509';
+  ctx.lineWidth = Math.max(1.5, 2 * scale);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  // Wraith / Child-12 Spectral Ghost Silhouette
+  if (isWraith || isChild) {
+    const aura = ctx.createRadialGradient(cx, h * 0.45, 4, cx, h * 0.45, 46 * scale);
+    aura.addColorStop(0, isChild ? 'rgba(186, 230, 253, 0.35)' : 'rgba(168, 85, 247, 0.35)');
+    aura.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(cx, h * 0.45, 46 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = isChild ? 'rgba(186, 230, 253, 0.72)' : 'rgba(88, 28, 135, 0.78)';
+    ctx.strokeStyle = isChild ? '#e0f2fe' : '#c084fc';
+    ctx.beginPath();
+    ctx.moveTo(cx, h * 0.22);
+    ctx.lineTo(cx + 22 * scale, h * 0.84);
+    ctx.lineTo(cx + 6 * scale, h * 0.75);
+    ctx.lineTo(cx, h * 0.86);
+    ctx.lineTo(cx - 8 * scale, h * 0.75);
+    ctx.lineTo(cx - 22 * scale, h * 0.84);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isChild ? '#e0f2fe' : '#e9d5ff';
+    ctx.beginPath();
+    ctx.arc(cx, h * 0.22, 11 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#070509';
+    ctx.beginPath();
+    ctx.arc(cx - 4 * scale, h * 0.22, 2.1 * scale, 0, Math.PI * 2);
+    ctx.arc(cx + 4 * scale, h * 0.22, 2.1 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+    return;
+  }
+
+  // Cloak behind shoulders
+  ctx.fillStyle = key === 'fallen_knight' ? '#7f1d1d' : coatDark;
+  ctx.beginPath();
+  ctx.moveTo(cx - 22 * scale, h * 0.30);
+  ctx.lineTo(cx - 30 * scale, h * 0.84);
+  ctx.lineTo(cx + 30 * scale, h * 0.84);
+  ctx.lineTo(cx + 22 * scale, h * 0.30);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Legs (left & right)
+  const drawPaperdollLeg = (dir: -1 | 1, intact: boolean, infected: boolean) => {
+    const lx = cx + dir * 11 * scale;
+    if (!intact) {
+      drawArterialStump(ctx, lx, h * 0.62, 7.5 * scale);
+      return;
+    }
+    ctx.fillStyle = infected ? '#4d7c0f' : isSkeleton ? '#cbd5e1' : '#332924';
+    ctx.fillRect(lx - 5.5 * scale, h * 0.56, 11 * scale, h * 0.31);
+    ctx.strokeRect(lx - 5.5 * scale, h * 0.56, 11 * scale, h * 0.31);
+    ctx.fillStyle = '#181416';
+    ctx.fillRect(lx - 6.5 * scale, h * 0.81, 13 * scale, h * 0.08);
+    ctx.strokeRect(lx - 6.5 * scale, h * 0.81, 13 * scale, h * 0.08);
+  };
+  drawPaperdollLeg(-1, limbs.leftLeg, inf.leftLeg);
+  drawPaperdollLeg(1, limbs.rightLeg, inf.rightLeg);
+
+  // Torso Armor / Coat
+  const torsoGrad = ctx.createLinearGradient(cx, h * 0.29, cx, h * 0.61);
+  torsoGrad.addColorStop(0, coatLight);
+  torsoGrad.addColorStop(1, coatDark);
+  ctx.fillStyle = torsoGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - 20 * scale, h * 0.30);
+  ctx.lineTo(cx + 20 * scale, h * 0.30);
+  ctx.lineTo(cx + 16 * scale, h * 0.61);
+  ctx.lineTo(cx - 16 * scale, h * 0.61);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Armor trim / sash
+  ctx.strokeStyle = trim;
+  ctx.lineWidth = 1.6 * scale;
+  ctx.beginPath();
+  ctx.moveTo(cx - 14 * scale, h * 0.32);
+  ctx.lineTo(cx, h * 0.45);
+  ctx.lineTo(cx + 14 * scale, h * 0.32);
+  ctx.stroke();
+  ctx.strokeStyle = '#070509';
+  ctx.lineWidth = Math.max(1.5, 2 * scale);
+
+  // Left Arm & Shield (or empty if 2-handed / severed)
+  if (limbs.leftArm) {
+    ctx.fillStyle = inf.leftArm ? '#65a30d' : coatLight;
+    ctx.beginPath();
+    ctx.moveTo(cx - 20 * scale, h * 0.32);
+    ctx.lineTo(cx - 34 * scale, h * 0.54);
+    ctx.lineTo(cx - 25 * scale, h * 0.58);
+    ctx.lineTo(cx - 16 * scale, h * 0.40);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    if (spec.equippedShield && (spec.weaponHands || 1) < 2) {
+      const shId = spec.equippedShield;
+      const sx = cx - 33 * scale;
+      const sy = h * 0.52;
+      const isBlessed = shId.includes('holy') || shId.includes('sanctuary');
+      const isIron = shId.includes('iron') || shId.includes('tower') || shId.includes('aegis');
+      ctx.fillStyle = isBlessed ? '#d4af37' : isIron ? '#64748b' : '#5c3a1e';
+      ctx.strokeStyle = isBlessed ? '#fef08a' : '#070509';
+      ctx.beginPath();
+      ctx.moveTo(sx - 11 * scale, sy - 14 * scale);
+      ctx.lineTo(sx + 11 * scale, sy - 14 * scale);
+      ctx.lineTo(sx + 9 * scale, sy + 7 * scale);
+      ctx.lineTo(sx, sy + 18 * scale);
+      ctx.lineTo(sx - 9 * scale, sy + 7 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = '#070509';
+    }
+  } else {
+    drawArterialStump(ctx, cx - 21 * scale, h * 0.36, 7 * scale);
+  }
+
+  // Right Arm & Weapon
+  if (limbs.rightArm) {
+    ctx.fillStyle = inf.rightArm ? '#65a30d' : coatLight;
+    ctx.beginPath();
+    ctx.moveTo(cx + 20 * scale, h * 0.32);
+    ctx.lineTo(cx + 34 * scale, h * 0.53);
+    ctx.lineTo(cx + 25 * scale, h * 0.57);
+    ctx.lineTo(cx + 16 * scale, h * 0.40);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    const cat = spec.weaponCategory || 'unarmed';
+    const wCol = spec.vfxColor || '#cbd5e1';
+    const hx = cx + 31 * scale;
+    const hy = h * 0.53;
+    const is2H = (spec.weaponHands || 1) >= 2;
+
+    if (cat === 'sword') {
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(is2H ? -0.45 : -0.25);
+      // Hilt & Crossguard
+      ctx.fillStyle = '#c5a059';
+      ctx.fillRect(-7 * scale, -2 * scale, 14 * scale, 3.5 * scale);
+      ctx.strokeRect(-7 * scale, -2 * scale, 14 * scale, 3.5 * scale);
+      // Blade
+      const bladeLen = (is2H ? 52 : 38) * scale;
+      ctx.fillStyle = wCol === '#991b1b' ? '#7f1d1d' : '#cbd5e1';
+      ctx.beginPath();
+      ctx.moveTo(-3 * scale, -2 * scale);
+      ctx.lineTo(0, -bladeLen);
+      ctx.lineTo(3 * scale, -2 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    } else if (cat === 'heavy_axe') {
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(-0.3);
+      ctx.fillStyle = '#5c3a1e';
+      ctx.fillRect(-2 * scale, -44 * scale, 4 * scale, 52 * scale);
+      ctx.strokeRect(-2 * scale, -44 * scale, 4 * scale, 52 * scale);
+      ctx.fillStyle = '#94a3b8';
+      ctx.beginPath();
+      ctx.moveTo(2 * scale, -42 * scale);
+      ctx.quadraticCurveTo(16 * scale, -48 * scale, 14 * scale, -28 * scale);
+      ctx.lineTo(2 * scale, -32 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    } else if (cat === 'dagger') {
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(0.45);
+      ctx.fillStyle = '#c5a059';
+      ctx.fillRect(-4 * scale, -2 * scale, 8 * scale, 2.5 * scale);
+      ctx.fillStyle = wCol === '#7e22ce' ? '#a855f7' : '#e2e8f0';
+      ctx.beginPath();
+      ctx.moveTo(-2.5 * scale, -2 * scale);
+      ctx.lineTo(0, -24 * scale);
+      ctx.lineTo(2.5 * scale, -2 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    } else if (cat === 'staff') {
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(-0.12);
+      ctx.fillStyle = '#5c3a1e';
+      ctx.fillRect(-2 * scale, -48 * scale, 4 * scale, 58 * scale);
+      ctx.strokeRect(-2 * scale, -48 * scale, 4 * scale, 58 * scale);
+      ctx.fillStyle = wCol;
+      ctx.beginPath();
+      ctx.arc(0, -52 * scale, 6.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  } else {
+    drawArterialStump(ctx, cx + 21 * scale, h * 0.36, 7 * scale);
+  }
+
+  // Head + Equipped Helm / Hood / Veil
+  const headId = spec.equippedHead || '';
+  if (headId.includes('helm') || key === 'fallen_knight') {
+    const helmGrad = ctx.createLinearGradient(cx - 12 * scale, h * 0.10, cx + 12 * scale, h * 0.30);
+    helmGrad.addColorStop(0, '#94a3b8');
+    helmGrad.addColorStop(1, '#334155');
+    ctx.fillStyle = helmGrad;
+    ctx.beginPath();
+    ctx.ellipse(cx, h * 0.20, 12.5 * scale, 13.5 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#070509';
+    ctx.fillRect(cx - 8 * scale, h * 0.18, 16 * scale, 2.8 * scale);
+    ctx.fillRect(cx - 1.5 * scale, h * 0.18, 3 * scale, 10 * scale);
+  } else {
+    // Hood or Veil
+    ctx.fillStyle =
+      headId.includes('blood') || headId.includes('crown')
+        ? '#7f1d1d'
+        : key === 'forsaken_nun'
+        ? '#e6dcc0'
+        : key === 'night_hunter'
+        ? '#2e4232'
+        : coatLight;
+    ctx.beginPath();
+    ctx.moveTo(cx, h * 0.06);
+    ctx.bezierCurveTo(cx + 20 * scale, h * 0.10, cx + 22 * scale, h * 0.28, cx + 17 * scale, h * 0.33);
+    ctx.lineTo(cx - 17 * scale, h * 0.33);
+    ctx.bezierCurveTo(cx - 22 * scale, h * 0.28, cx - 20 * scale, h * 0.10, cx, h * 0.06);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isSkeleton ? '#d4d4d8' : isGhoul ? '#65a30d' : '#d8c2ae';
+    ctx.beginPath();
+    ctx.arc(cx, h * 0.21, 10 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isSkeleton ? '#38bdf8' : '#09070a';
+    ctx.beginPath();
+    ctx.arc(cx - 3.8 * scale, h * 0.20, 1.8 * scale, 0, Math.PI * 2);
+    ctx.arc(cx + 3.8 * scale, h * 0.20, 1.8 * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Framed Dark-Fantasy Bust Portrait Fallback (used when .jpg portrait is unavailable or fails to load)
+ */
+export function drawCharacterBustPortrait(
+  ctx: CanvasRenderingContext2D,
+  spriteKey: string,
+  size: number
+) {
+  ctx.clearRect(0, 0, size, size);
+  ctx.save();
+
+  const isUndead = spriteKey.startsWith('summon_') || spriteKey.includes('ghoul') || spriteKey.includes('skeleton');
+  const isVoid = spriteKey.includes('void') || spriteKey.includes('wraith') || spriteKey.includes('chimera');
+
+  const bg = ctx.createRadialGradient(size * 0.5, size * 0.38, 2, size * 0.5, size * 0.5, size * 0.72);
+  if (isVoid) {
+    bg.addColorStop(0, '#3b1c5e');
+    bg.addColorStop(1, '#090512');
+  } else if (isUndead) {
+    bg.addColorStop(0, '#2a331d');
+    bg.addColorStop(1, '#090b08');
+  } else if (spriteKey === 'forsaken_nun') {
+    bg.addColorStop(0, '#38222a');
+    bg.addColorStop(1, '#0a0709');
+  } else if (spriteKey === 'night_hunter') {
+    bg.addColorStop(0, '#1f3023');
+    bg.addColorStop(1, '#080b09');
+  } else {
+    bg.addColorStop(0, '#3b181b');
+    bg.addColorStop(1, '#0a0709');
+  }
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, size, size);
+
+  const cx = size * 0.5;
+  const s = size / 64;
+  ctx.strokeStyle = '#070509';
+  ctx.lineWidth = Math.max(1.2, 1.6 * s);
+
+  // Shoulders bust
+  ctx.fillStyle =
+    spriteKey === 'fallen_knight'
+      ? '#475569'
+      : spriteKey === 'forsaken_nun'
+      ? '#2d1c24'
+      : spriteKey === 'night_hunter'
+      ? '#243628'
+      : isVoid
+      ? '#4c1d95'
+      : isUndead
+      ? '#3f6212'
+      : '#4a3525';
+  ctx.beginPath();
+  ctx.moveTo(cx - 24 * s, size);
+  ctx.quadraticCurveTo(cx - 20 * s, 39 * s, cx, 38 * s);
+  ctx.quadraticCurveTo(cx + 20 * s, 39 * s, cx + 24 * s, size);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  if (spriteKey === 'fallen_knight') {
+    // Steel Barbute Helm + Crimson Collar
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(cx - 12 * s, 37 * s, 24 * s, 7 * s);
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.ellipse(cx, 25 * s, 13 * s, 15 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#070509';
+    ctx.fillRect(cx - 8 * s, 22 * s, 16 * s, 3 * s);
+    ctx.fillRect(cx - 1.5 * s, 22 * s, 3 * s, 11 * s);
+  } else {
+    // Hood / Veil
+    ctx.fillStyle =
+      spriteKey === 'forsaken_nun'
+        ? '#e6dcc0'
+        : spriteKey === 'night_hunter'
+        ? '#2e4232'
+        : isVoid
+        ? '#581c87'
+        : '#3b3330';
+    ctx.beginPath();
+    ctx.moveTo(cx, 6 * s);
+    ctx.bezierCurveTo(cx + 21 * s, 12 * s, cx + 21 * s, 36 * s, cx + 16 * s, 43 * s);
+    ctx.lineTo(cx - 16 * s, 43 * s);
+    ctx.bezierCurveTo(cx - 21 * s, 36 * s, cx - 21 * s, 12 * s, cx, 6 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Face
+    ctx.fillStyle =
+      spriteKey === 'summon_skeleton'
+        ? '#cbd5e1'
+        : spriteKey === 'summon_ghoul'
+        ? '#84cc16'
+        : spriteKey === 'summon_child_12'
+        ? '#bae6fd'
+        : '#d6bfa9';
+    ctx.beginPath();
+    ctx.arc(cx, 26 * s, 10.5 * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Eyes
+    ctx.fillStyle =
+      spriteKey === 'summon_skeleton'
+        ? '#38bdf8'
+        : isVoid
+        ? '#e879f9'
+        : '#110d12';
+    ctx.beginPath();
+    ctx.arc(cx - 4 * s, 25 * s, 2 * s, 0, Math.PI * 2);
+    ctx.arc(cx + 4 * s, 25 * s, 2 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Inner antique frame edge
+  ctx.strokeStyle = 'rgba(197, 160, 89, 0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(1, 1, size - 2, size - 2);
+
+  ctx.restore();
+}
+
 
 
