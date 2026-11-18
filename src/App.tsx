@@ -15,6 +15,7 @@ import {
   VolumeX,
   HelpCircle,
   Settings,
+  Dices,
 } from 'lucide-react';
 import { CONFIG, WeaponCategory } from './game/config';
 import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './game/narrative';
@@ -82,6 +83,11 @@ import {
   isAllyGearLocked,
   isHolyMotherBanned,
   banHolyMother,
+  syncCorruptionHolyBan,
+  canUseHolySkill,
+  getFloor3MiasmaMultiplier,
+  dissectEnemyCorpseCleanly,
+  useEmergencyAmputationScroll,
   grantAffinityOnce,
   HOLY_MOTHER_REFUSAL_MSG,
   bloodForgeWeapon,
@@ -103,6 +109,7 @@ type ActiveModal =
   | 'saves'
   | 'guide'
   | 'settings'
+  | 'hunter_note'
   | 'npc_priest'
   | 'npc_smuggler'
   | 'npc_prisoner'
@@ -534,7 +541,7 @@ export default function App() {
     const pillars: Array<{ key: AffinityPillarKey; name: string; icon: string }> = [
       { key: 'holyMother', name: 'Thánh Mẫu', icon: '✝️' },
       { key: 'primordialVoid', name: 'Hư Vô Nguyên Thủy', icon: '🌌' },
-      { key: 'demonicPact', name: 'Giao Kèo Ác Quỷ', icon: '🩸' },
+      { key: 'demonicPact', name: 'Huyết Quỷ', icon: '🩸' },
     ];
 
     for (const pInfo of pillars) {
@@ -734,7 +741,7 @@ export default function App() {
         const autoSide: 'HEADS' | 'TAILS' = Math.random() < 0.5 ? 'HEADS' : 'TAILS';
         setCoinToss({
           title,
-          subtitle: `${subtitle} [HOẢNG LOẠN — Tâm Trí xuống thấp: Mất quyền chọn mặt xu!]`,
+          subtitle: `${subtitle} [HOẢNG LOẠN — Lý Trí xuống thấp: Mất quyền chọn mặt xu!]`,
           chosenSide: autoSide,
           flipping: true,
           resultSide: null,
@@ -941,7 +948,7 @@ export default function App() {
       forsaken_nun:
         '✝️ Tội Ác Máu Đen: Giữa sương mù, hình ảnh bức tượng Thánh Mẫu khóc ra máu đen lại hiện về. Đứa em trai duy nhất của bạn — Thánh Tử Thứ 13 — vẫn đang bị giam dưới đáy địa ngục này.',
       night_hunter:
-        '🗡️ Lời Nguyền Hóa Đá: Lớp vảy đá xám trên cánh tay lại nhói buốt. Chỉ có bình Tiên Dược Cổ Đại dưới đáy Vực Sao và Lõi Khóa Hư Vô mới giúp bạn thoát khỏi Thung Lũng Xương Tàn.',
+        '🗡️ Lời Nguyền Hóa Đá: Lớp vảy đá xám trên cánh tay lại nhói buốt. Chỉ có bình Tiên Dược Nguyên Sơ dưới đáy Vực Sao và Lõi Khóa Hư Vô mới giúp bạn thoát khỏi Thung Lũng Xương Tàn.',
     };
     isInputLockedRef.current = false;
     setIsInputLocked(false);
@@ -1226,8 +1233,8 @@ export default function App() {
         });
         addLog(
           sanityMult > 1
-            ? 'Cơ thể tàn phế mất chi khiến nỗi tuyệt vọng trỗi dậy — tâm trí bị bóng tối bào mòn nhanh hơn (+50%)!'
-            : 'Bóng tối đặc quánh và sự tĩnh lặng chết chóc đang bào mòn tâm trí...'
+            ? 'Cơ thể tàn phế mất chi khiến nỗi tuyệt vọng trỗi dậy — Lý Trí bị bóng tối bào mòn nhanh hơn (+50%)!'
+            : 'Bóng tối đặc quánh và sự tĩnh lặng chết chóc đang bào mòn Lý Trí...'
         );
       }
     }, 1000);
@@ -1466,17 +1473,17 @@ export default function App() {
             ? 'forsaken_nun'
             : 'night_hunter';
         const titleMap: Record<string, string> = {
-          fallen_knight: 'HIỆP SĨ SA NGÃ MARCUS',
-          forsaken_nun: 'NỮ TU BỊ RUỒNG BỎ AGNES',
-          night_hunter: 'THỢ SĂN ĐÊM CROW',
+          fallen_knight: 'KẺ GÁC MỘ VÔ DANH MARCUS',
+          forsaken_nun: 'KẺ DỊ GIÁO MANG DẤU ẤN AGNES',
+          night_hunter: 'GÃ SĂN DI VẬT CROW',
         };
         const introSpeechMap: Record<string, string> = {
           fallen_knight:
             '“Thanh trường kiếm của ta đã sứt mẻ giữa đám cuồng tín, nhưng ta vẫn còn đủ sức đứng chắn trước lưỡi đao của lũ quái vật. Ngươi có cần một lá chắn thép cùng tiến sâu vào Giáo Đường không?”',
           forsaken_nun:
-            '“Ta không thể quay lại lễ đường đầy mùi nến sáp nữa... Nếu ngươi cũng đang lần theo dấu vết của những kẻ mất tích dưới hầm sâu, xin hãy cho ta đồng hành và cầu nguyện giữ Tâm Trí cho cả đội.”',
+            '“Ta không thể quay lại lễ đường đầy mùi nến sáp nữa... Nếu ngươi cũng đang lần theo dấu vết của những kẻ mất tích dưới hầm sâu, xin hãy cho ta đồng hành và cầu nguyện giữ Lý Trí cho cả đội.”',
           night_hunter:
-            '“Sương mù quanh khu mộ đá này nồng nặc mùi sát khí. Một kẻ đi lẻ sẽ sớm làm mồi cho bầy thú đói. Nếu ngươi chia phần chiến lợi phẩm công bằng, dao găm của ta sẽ yểm trợ phía sau ngươi.”',
+            '“Sương mù quanh khu mộ đá này nồng nặc mùi sát khí. Một kẻ đi lẻ sẽ sớm làm mồi cho bầy thú đói. Nếu ngươi chia phần chiến lợi phẩm công bằng, cung ngắn và dao găm của ta sẽ yểm trợ phía sau ngươi.”',
         };
         const partyFull = player.party.length >= 3;
         const choices: InteractionChoice[] = [];
@@ -1538,24 +1545,29 @@ export default function App() {
             (player.inventory.green_herb || 0) > 0 || (player.inventory.white_vial || 0) > 0;
           choices.push({
             label: canHeal
-              ? '🌿 Trao Thảo Dược / Lọ Trắng cứu chữa'
-              : '🌿 Trao Thảo Dược cứu chữa (Cần Thảo Dược Xanh hoặc Lọ Trắng)',
+              ? '🌿 Trao Thảo Dược Xanh / Thuốc Giải Độc cứu chữa'
+              : '🌿 Trao Thảo Dược cứu chữa (Cần Thảo Dược Xanh hoặc Thuốc Giải Độc)',
             onSelect: () => {
               if (!canHeal) {
                 openNpcRpgDialogue(
                   'npc_priest',
-                  '“Khụ khụ... Ngươi chưa có Thảo Dược Xanh hay Lọ Thuốc Trắng nào trong hành trang cả...”'
+                  '“Khụ khụ... Ngươi chưa có Thảo Dược Xanh hay Thuốc Giải Độc nào trong hành trang cả...”'
                 );
                 return;
               }
               const useWhite = (player.inventory.green_herb || 0) <= 0;
               const secondBookId = CONFIG.BOOKS[1].id;
               let gainedHolyAff = false;
+              let learnedHolyLight = false;
               setPlayer((prev) => {
                 const next: PlayerState = JSON.parse(JSON.stringify(prev));
                 next.energyStones += 2;
                 if (!isHolyMotherBanned(next)) {
                   gainedHolyAff = grantAffinityOnce(next, 'milestone_help_priest', 'holyMother', 1);
+                  if (!next.skillLevels?.holy_light) {
+                    next.skillLevels.holy_light = 1;
+                    learnedHolyLight = true;
+                  }
                 }
                 if (!next.readBookIds.includes(secondBookId)) {
                   next.readBookIds.push(secondBookId);
@@ -1571,9 +1583,9 @@ export default function App() {
               });
               setInteractionMenu(null);
               addLog(
-                `✨ Giáo Sĩ Mù trao tặng +2 Đá Năng Lượng và [Sổ Kiểm Kê Tế Lễ]${
-                  gainedHolyAff ? ' (+1 Thiện cảm Thánh Mẫu)' : ''
-                }!`
+                `✨ Giáo Sĩ Mù trao tặng +2 Đá Linh Hồn Rỗng và [${CONFIG.BOOKS[1]?.title || 'Sổ Kiểm Kê Tế Lễ'}]${
+                  learnedHolyLight ? ' + Lĩnh hội [Ánh Sáng Thánh Mẫu]' : ''
+                }${gainedHolyAff ? ' (+1 Tín Ngưỡng Thánh Mẫu)' : ''}!`
               );
               setLogOverlayVisible(true);
             },
@@ -1613,7 +1625,7 @@ export default function App() {
                 ),
             },
             {
-              label: '✝ Giải thoát nhẹ nhàng (-10 Tha Hóa, +1 Thiện cảm Thánh Mẫu & [Mảnh Linh Hồn Thuần Khiết])',
+              label: '✝ Giải thoát nhẹ nhàng (-10 Tha Hóa, +1 Tín Ngưỡng Thánh Mẫu & [Mảnh Linh Hồn Thuần Khiết])',
               onSelect: () => {
                 let gainedHoly = false;
                 setPlayer((prev) => {
@@ -1629,21 +1641,21 @@ export default function App() {
                 setInteractionMenu(null);
                 addLog(
                   `✝️ Bạn nhẹ nhàng tháo gỡ các ống đồng lạnh lẽo, trả lại sự thanh thản cho Thánh Tử Thứ 12 và thu nhận [Mảnh Linh Hồn Thuần Khiết]${
-                    gainedHoly ? ' (+1 Thiện cảm Thánh Mẫu)' : ''
+                    gainedHoly ? ' (+1 Tín Ngưỡng Thánh Mẫu)' : ''
                   }.`
                 );
                 setLogOverlayVisible(true);
               },
             },
             {
-              label: '🩸 Rút cạn máu vàng tế đàn (+15 Tha Hóa, +1 Thiện cảm Ác Quỷ, +2 Đá NL & +2 Bình Máu)',
+              label: '🩸 Rút cạn máu vàng tế đàn (+15 Tha Hóa, +1 Tín Ngưỡng Huyết Quỷ, +2 Đá LH & +2 Bình Máu)',
               onSelect: () => {
                 setPlayer((prev) => {
                   const next: PlayerState = JSON.parse(JSON.stringify(prev));
-                  next.corruption = Math.min(100, next.corruption + 15);
                   next.energyStones += 2;
                   grantAffinityOnce(next, 'milestone_drain_child_12', 'demonicPact', 1);
                   banHolyMother(next);
+                  syncCorruptionHolyBan(next);
                   next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 2) + 2;
                   next.inventory.blood_vial = (next.inventory.blood_vial || 0) + 2;
                   next.questFlags.child12Resolved = true;
@@ -1651,7 +1663,7 @@ export default function App() {
                 });
                 setInteractionMenu(null);
                 addLog(
-                  '🩸 Bạn rút cạn dòng máu vàng từ tế đàn của Thánh Tử Thứ 12, thu về Đá Năng Lượng, hai Bình Máu đặc quánh (+1 Thiện cảm Ác Quỷ).'
+                  '🩸 Bạn rút cạn dòng máu vàng từ tế đàn của Thánh Tử Thứ 12, thu về 2 Đá Linh Hồn Rỗng, 2 Bình Máu đặc quánh (+1 Tín Ngưỡng Huyết Quỷ, +15 Tha Hóa).'
                 );
                 setLogOverlayVisible(true);
               },
@@ -1659,7 +1671,7 @@ export default function App() {
           );
         } else if (canNecroChild12) {
           choices.push({
-            label: '💀 Niệm [Chiêu Hồn Thuật] dựng dậy Vong Linh Thánh Tử 12 (-15 Tâm Trí, +12 Tha Hóa)',
+            label: '💀 Niệm [Chiêu Hồn Thuật] dựng dậy Vong Linh Thánh Tử 12 (-15 Lý Trí, +12 Tha Hóa)',
             onSelect: () => {
               const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
               const res = castNecromancyOnChild12(pCopy);
@@ -1687,23 +1699,29 @@ export default function App() {
         const speech =
           customSpeech ||
           (player.questFlags?.brokenKnightResolved
-            ? '“Hãy mang chiếc nhẫn ấy lên phía trên trao lại cho tiểu thư trong Lồng Kính...”'
-            : '“Các giáo sĩ đã khóa chặt cổng sắt sau lưng bọn ta... Trước khi lên trên kia, Đội trưởng đã nhờ ta giữ chiếc nhẫn đính hôn này. Xin ngươi... hãy mang nó lên trao lại cho tiểu thư trong Lồng Kính...”');
+            ? '“Hãy mang [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis] ấy lên phía trên trao lại cho tiểu thư trong Lồng Kính... Nếu có thể, hãy tìm lại thẻ bài đồng đội nằm rải rác quanh nghĩa địa và lâu đài.”'
+            : '“Các giáo sĩ đã khóa chặt cổng sắt sau lưng tiểu đội ta... Trước khi lên trên kia, Đội trưởng nhờ ta giữ [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis] này. Xin ngươi... hãy mang nó lên trao lại cho tiểu thư trong Lồng Kính...”');
         const choices: InteractionChoice[] = [
           {
-            label: '"Điều gì đã xảy ra với Đội trưởng của các anh?"',
+            label: '"Điều gì đã xảy ra với Đội trưởng và tiểu đội của anh?"',
             onSelect: () =>
               openNpcRpgDialogue(
                 'npc_broken_knight',
-                '“Ngài ấy chưa từng quay lưng lại với đồng đội... Khi bóng tối từ khe nứt sắp tràn ngập mặt đất, ngài ấy tự bước lên bệ đá cao nhất để gánh lấy tất cả.”'
+                '“Ngài ấy chưa từng quay lưng lại với đồng đội... Khi bóng tối từ khe nứt sắp tràn ngập mặt đất, ngài ấy tự bước lên bệ đá cao nhất để gánh lấy tất cả. Mộ đồng đội của ta vẫn còn rải rác quanh Thung Lũng...”'
               ),
           },
         ];
         if (!player.questFlags?.brokenKnightResolved) {
           choices.push(
             {
-              label: '💍 Nhận [Nhẫn Kỵ Sĩ Của Vaelis] & băng bó cho anh ta',
+              label: '💍 Nhận [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis] & băng bó cho anh ta',
               onSelect: () => {
+                const updatedKnightReadOk =
+                  player.classId === 'fallen_knight' &&
+                  player.corruption < 30 &&
+                  Boolean(player.questFlags?.vaelisTalked) &&
+                  Boolean(player.questFlags?.vaelisDefeated) &&
+                  player.readBookIds.length >= 3;
                 setPlayer((prev) => ({
                   ...prev,
                   inventory: {
@@ -1712,17 +1730,61 @@ export default function App() {
                   },
                   questFlags: { ...prev.questFlags, brokenKnightResolved: true },
                 }));
-                setInteractionMenu(null);
-                addLog('💍 Nhận [Nhẫn Kỵ Sĩ Của Vaelis] từ Kỵ Sĩ Gãy Kiếm Roland.');
-                setLogOverlayVisible(true);
+                addLog('💍 Nhận [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis] từ Kỵ Sĩ Gãy Chân Roland.');
+                if (updatedKnightReadOk) {
+                  setInteractionMenu({
+                    title: 'MỤC TIÊU CÁ NHÂN: LỜI THỀ KỴ ĐOÀN',
+                    description:
+                      'Bạn đã đọc qua các trang Nhật Ký Viễn Chinh, hiểu trọn bi kịch của Vaelis và nắm trong tay [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis]. Bạn muốn ở lại dựng bia mộ hoàn thành tâm nguyện cá nhân hay tiếp tục xuống Vết Rách định đoạt vận mệnh thế giới?',
+                    selectedIndex: 0,
+                    choices: [
+                      {
+                        label: '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Dựng Bia Mộ Kỵ Đoàn (S-Ending)',
+                        onSelect: () => {
+                          const res = evaluateCanonEnding({
+                            classId: player.classId,
+                            corruption: player.corruption,
+                            holyMotherBanned: isHolyMotherBanned(player),
+                            readBookIds: player.readBookIds,
+                            inventory: {
+                              ...player.inventory,
+                              knight_ring: (player.inventory.knight_ring || 0) + 1,
+                            },
+                            learnedSkillIds: Object.keys(player.skillLevels),
+                            vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
+                            vaelisDefeated: Boolean(player.questFlags?.vaelisDefeated),
+                            curedPetrification: Boolean(player.questFlags?.curedPetrification),
+                            child13Rescued: Boolean(player.questFlags?.child13Rescued),
+                            child13InParty: player.party.some((a) => a.id === 'child_13' && a.hp > 0),
+                            endingAction: 'STAY_BUILD_GRAVES',
+                          });
+                          setInteractionMenu(null);
+                          setActiveModal(null);
+                          setEndingInfo(res);
+                          setScreen('ending');
+                        },
+                      },
+                      {
+                        label: '🌌 Tiếp Tục Xuống Vết Rách Định Đoạt Thế Giới (World Endings)',
+                        onSelect: () => {
+                          setInteractionMenu(null);
+                          addLog('🌌 Bạn cất [Thẻ Bài Kỵ Đoàn], quyết tâm tiến về Vết Rách Tầng 3 định đoạt thế giới.');
+                          setLogOverlayVisible(true);
+                        },
+                      },
+                    ],
+                  });
+                } else {
+                  setInteractionMenu(null);
+                  setLogOverlayVisible(true);
+                }
               },
             },
             {
-              label: '⚔️ Ban cái chết êm ái (+8 Tha Hóa, +12 Bạc & nhận [Nhẫn Kỵ Sĩ])',
+              label: '⚔️ Ban cái chết êm ái (+15 Tha Hóa, +12 Bạc & nhận [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis])',
               onSelect: () => {
                 setPlayer((prev) => {
                   const next: PlayerState = JSON.parse(JSON.stringify(prev));
-                  next.corruption = Math.min(100, next.corruption + 8);
                   next.silverCoins += 12;
                   next.inventory.silver_coin = (next.inventory.silver_coin ?? next.silverCoins - 12) + 12;
                   next.inventory.knight_ring = (next.inventory.knight_ring || 0) + 1;
@@ -1733,12 +1795,13 @@ export default function App() {
                   };
                   banHolyMother(next);
                   grantAffinityOnce(next, 'milestone_kill_npc', 'demonicPact', 1);
+                  syncCorruptionHolyBan(next);
                   return next;
                 });
                 markCoordLooted(tileCoordKey);
                 setInteractionMenu(null);
                 addLog(
-                  '⚔️ Bạn ban nhát kiếm ân huệ kết thúc nỗi thống khổ của Kỵ Sĩ Gãy Kiếm, thu lại [Nhẫn Kỵ Sĩ Của Vaelis] cùng túi bạc.'
+                  '⚔️ Bạn ban nhát kiếm ân huệ kết thúc nỗi thống khổ của Kỵ Sĩ Gãy Chân, thu lại [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis] cùng túi bạc.'
                 );
                 setLogOverlayVisible(true);
               },
@@ -1767,7 +1830,7 @@ export default function App() {
         }
         choices.push({ label: 'Rời đi', onSelect: closePrompt });
         setInteractionMenu({
-          title: 'KỴ SĨ GÃY KIẾM ROLAND',
+          title: 'KỴ SĨ GÃY CHÂN ROLAND',
           description: speech,
           selectedIndex: 0,
           choices,
@@ -1776,9 +1839,12 @@ export default function App() {
       }
 
       if (npcId === 'npc_smith') {
+        const isHunterDiscount = player.classId === 'night_hunter';
         const speech =
           customSpeech ||
-          '“...” (Từ vết sẹo cổ cụt ngang phát ra tiếng thở khò khè như bễ lò rèn. Bốn cánh tay khổng lồ giơ búa tạ chỉ vào chảo sắt sôi máu quỷ — sẵn sàng tôi luyện vũ khí của bạn).';
+          (isHunterDiscount
+            ? '“...” (Đôi mắt trên chiếc đầu đeo thắt lưng gã khẽ nheo lại khi nhận ra dấu ấn Gã Săn Di Vật. Gã giơ búa tạ chỉ vào chảo máu quỷ — sẵn sàng giảm nửa mức Tha Hóa khi Huyết Rèn cho ngươi).'
+            : '“...” (Từ vết sẹo cổ cụt ngang phát ra tiếng thở khò khè như bễ lò rèn. Bốn cánh tay khổng lồ giơ búa tạ chỉ vào chảo sắt sôi máu quỷ — sẵn sàng tôi luyện vũ khí của bạn).');
         const choices: InteractionChoice[] = [
           {
             label: '"Ngươi từng là thợ rèn của Kỵ Đoàn sao?"',
@@ -1798,6 +1864,8 @@ export default function App() {
             choices.push({
               label: forged
                 ? `✓ [${w.name}] đã tôi luyện Huyết Rèn`
+                : isHunterDiscount
+                ? `🔥 Huyết Rèn [${w.name}] (+35% ST vĩnh viễn, +8 Tha Hóa — Ưu đãi Săn Di Vật)`
                 : `🔥 Huyết Rèn [${w.name}] (+35% ST vĩnh viễn, +15 Tha Hóa)`,
               onSelect: () => {
                 if (forged) {
@@ -1808,11 +1876,20 @@ export default function App() {
                   return;
                 }
                 const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+                const corBefore = pCopy.corruption;
                 const res = bloodForgeWeapon(pCopy, wId);
+                if (isHunterDiscount && res.success) {
+                  pCopy.corruption = Math.min(100, corBefore + 8);
+                  syncCorruptionHolyBan(pCopy);
+                }
                 pCopy.questFlags.smithUsed = true;
                 setPlayer(pCopy);
                 setInteractionMenu(null);
-                addLog(res.message);
+                addLog(
+                  isHunterDiscount && res.success
+                    ? `${res.message} (Đặc quyền Gã Săn Di Vật: Giảm Tha Hóa xuống +8%)`
+                    : res.message
+                );
                 setLogOverlayVisible(true);
               },
             });
@@ -1849,8 +1926,8 @@ export default function App() {
           choices.push(
             {
               label: hasRing
-                ? '💍 Trao lại [Nhẫn Kỵ Sĩ Của Vaelis]'
-                : '💍 Trao lại [Nhẫn Kỵ Sĩ Của Vaelis] (Chưa có)',
+                ? '💍 Trao lại [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis]'
+                : '💍 Trao lại [Thẻ Bài Kỵ Đoàn & Nhẫn Vaelis] (Chưa có)',
               onSelect: () => {
                 if (!hasRing) {
                   openNpcRpgDialogue(
@@ -1876,27 +1953,27 @@ export default function App() {
                 }));
                 setInteractionMenu(null);
                 addLog(
-                  '💍✨ Quý Cô ôm chiếc nhẫn bật khóc: Sinh lực và tâm trí bạn được xoa dịu, nhận [Chìa Khóa Tư Liệu Mật Goethe] cùng Hồ Sơ Tội Đồ.'
+                  '💍✨ Quý Cô ôm chiếc nhẫn bật khóc: Sinh Lực và Lý Trí bạn được xoa dịu, nhận [Chìa Khóa Tư Liệu Mật Goethe] cùng Hồ Sơ Tội Đồ.'
                 );
                 setLogOverlayVisible(true);
               },
             },
             {
-              label: '💥 Đập vỡ Lồng Kính cướp Đá Năng Lượng (+2 Đá NL, +15 Tha Hóa)',
+              label: '💥 Đập vỡ Lồng Kính cướp Đá Linh Hồn (+2 Đá LH, +15 Tha Hóa)',
               onSelect: () => {
                 setPlayer((prev) => {
                   const next: PlayerState = JSON.parse(JSON.stringify(prev));
-                  next.corruption = Math.min(100, next.corruption + 15);
                   next.energyStones += 2;
                   next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 2) + 2;
                   next.questFlags.glassLadyResolved = true;
                   banHolyMother(next);
                   grantAffinityOnce(next, 'milestone_kill_npc', 'demonicPact', 1);
+                  syncCorruptionHolyBan(next);
                   return next;
                 });
                 setInteractionMenu(null);
                 addLog(
-                  '💔 Bạn đập vỡ Lồng Kính đoạt lấy hai viên Đá Năng Lượng giữa tiếng khóc nghẹn tắt dần.'
+                  '💔 Bạn đập vỡ Lồng Kính đoạt lấy hai viên Đá Linh Hồn Rỗng giữa tiếng khóc nghẹn tắt dần.'
                 );
                 setLogOverlayVisible(true);
               },
@@ -1914,9 +1991,12 @@ export default function App() {
       }
 
       if (npcId === 'npc_physician') {
+        const isHunter = player.classId === 'night_hunter';
         const speech =
           customSpeech ||
-          '“Hắc hắc! Ngươi xuống tới tận đáy vực này rồi sao? Gần khe nứt kia chỉ còn ĐÚNG MỘT BÌNH [Tiên Dược Cổ Đại]! Kẻ khôn ngoan dùng nó để tẩy độc hóa đá; kẻ điên rồ lại mang nó tưới lên hạt giống sự sống giữa hỗn mang...”';
+          (isHunter
+            ? '“Hắc hắc! Ngươi mang mảnh giấy của ta xuống tận đây sao, Gã Săn Di Vật? Gần khe nứt kia chỉ còn ĐÚNG MỘT BÌNH [Tiên Dược Nguyên Sơ]! Ta để ngươi tự chọn: dùng nó cứu bản thân hay tưới lên hạt giống Thánh Thụ bên cạnh Thánh Tử 13!”'
+            : '“Hắc hắc! Ngươi xuống tới tận đáy vực này rồi sao? Gần khe nứt kia chỉ còn ĐÚNG MỘT BÌNH [Tiên Dược Nguyên Sơ]! Kẻ khôn ngoan dùng nó để tẩy độc hóa đá; kẻ điên rồ lại mang nó tưới lên hạt giống sự sống giữa hỗn mang...”');
         const choices: InteractionChoice[] = [
           {
             label: '"Đôi chân hóa đá của ông là do thứ sương mù dưới đây ư?"',
@@ -1929,7 +2009,7 @@ export default function App() {
         ];
         if (!player.questFlags?.physicianTalked) {
           choices.push({
-            label: '🧪 Học Công Thức Giả Kim Cấm & nhận +1 Lọ Thuốc Xanh',
+            label: '🧪 Học Công Thức Giả Kim Cấm & nhận +1 Thuốc Hồi Huyết',
             onSelect: () => {
               setPlayer((prev) => ({
                 ...prev,
@@ -1948,7 +2028,7 @@ export default function App() {
               }));
               setInteractionMenu(null);
               addLog(
-                '🧪 Lão Thần Y trao tặng 1 Lọ Thuốc Xanh và mở khóa công thức Giả Kim Cấm!'
+                '🧪 Lão Thần Y trao tặng 1 [Thuốc Hồi Huyết] và mở khóa công thức Giả Kim Cấm!'
               );
               setLogOverlayVisible(true);
             },
@@ -1967,7 +2047,7 @@ export default function App() {
       if (npcId === 'npc_chronicler') {
         const speech =
           customSpeech ||
-          '“Thánh Mẫu chọn Khuôn Khổ Trật Tự. Ác Quỷ chọn Tham Vọng. Còn Thánh Thụ chỉ nảy mầm từ Ý Chí Tự Do! Chỉ những kẻ chưa từng vấy bẩn tâm hồn mới đọc trọn được thần chú cổ xưa này.”';
+          '“Thánh Mẫu chọn Khuôn Khổ Trật Tự. Huyết Quỷ chọn Tham Vọng. Còn Thánh Thụ chỉ nảy mầm từ Ý Chí Tự Do! Chỉ những kẻ chưa từng vấy bẩn tâm hồn mới đọc trọn được thần chú cổ xưa này.”';
         const choices: InteractionChoice[] = [
           {
             label: '"Bia đá cổ ngữ này ghi chép gì về nguồn gốc khe nứt?"',
@@ -1980,7 +2060,7 @@ export default function App() {
         ];
         if (!player.questFlags?.chroniclerTalked) {
           choices.push({
-            label: '📜 Nhận [Mảnh Thần Chú Tái Thiết] & Giải mã Cổ Thư (+1 Thiện cảm Hư Vô)',
+            label: '📜 Nhận [Mảnh Thần Chú Tái Thiết] & Giải mã Cổ Thư (+1 Tín Ngưỡng Hư Vô)',
             onSelect: () => {
               const loreBooks = CONFIG.BOOKS.slice(0, 4).map((b) => b.id);
               setPlayer((prev) => {
@@ -1993,7 +2073,7 @@ export default function App() {
               });
               setInteractionMenu(null);
               addLog(
-                '📜 Kẻ Chép Sử Hóa Thạch trao [Mảnh Thần Chú Tái Thiết] cùng những trang cổ thư bị phong ấn (+1 Thiện cảm Hư Vô).'
+                '📜 Kẻ Chép Sử Hóa Thạch trao [Mảnh Thần Chú Tái Thiết] cùng những trang cổ thư bị phong ấn (+1 Tín Ngưỡng Hư Vô, -10 Lý Trí tối đa).'
               );
               setLogOverlayVisible(true);
             },
@@ -2036,7 +2116,7 @@ export default function App() {
               ? [
                   {
                     id: 'lucky_coin',
-                    name: `Đồng Xu May Mắn (Còn ${remainingCoins}/2)`,
+                    name: `Thẻ Bài Bạc (Còn ${remainingCoins}/2)`,
                     price: 24,
                   },
                 ]
@@ -2155,12 +2235,12 @@ export default function App() {
       if (npcId === 'void_rift') {
         const speech =
           customSpeech ||
-          '“Trước mặt bạn là khe nứt không gian tím thẫm đang gầm rú giữa những ngôi sao chết. Bên trong chiếc lồng sắt mở hé là Thánh Tử Thứ 13 đang run rẩy — và trên bệ đá rêu phong đặt độc nhất một bình Tiên Dược Cổ Đại.”';
+          '“Trước mặt bạn là khe nứt không gian tím thẫm đang gầm rú giữa những ngôi sao chết. Bên trong chiếc lồng sắt mở hé là Thánh Tử Thứ 13 đang run rẩy — và trên bệ đá rêu phong đặt độc nhất một bình Tiên Dược Nguyên Sơ.”';
         const choices: InteractionChoice[] = [];
 
         if (!riftElixirCollected) {
           choices.push({
-            label: '🏺 Thu lấy [Tiên Dược Cổ Đại] trên bệ đá',
+            label: '🏺 Thu lấy [Tiên Dược Nguyên Sơ] trên bệ đá',
             onSelect: () => {
               setRiftElixirCollected(true);
               setPlayer((prev) => ({
@@ -2171,7 +2251,7 @@ export default function App() {
                 },
               }));
               setInteractionMenu(null);
-              addLog('🏺 Bạn thu giữ bình [Tiên Dược Cổ Đại] duy nhất bên mép Vết Rách!');
+              addLog('🏺 Bạn thu giữ bình [Tiên Dược Nguyên Sơ] duy nhất bên mép Vết Rách!');
               setLogOverlayVisible(true);
             },
           });
@@ -2180,20 +2260,21 @@ export default function App() {
         const canTrueEnding =
           (player.inventory.void_core || 0) > 0 &&
           (player.inventory.elixir_of_ancients || 0) > 0 &&
-          player.readBookIds.length >= 4;
+          (player.readBookIds.includes('book_9') || player.readBookIds.length >= 4);
         choices.push({
-          label: '🌳 Tưới [Tiên Dược Cổ Đại] lên Thánh Tử 13 & cắm [Lõi Khóa Hư Vô]',
+          label: '🌳 Tưới [Tiên Dược Nguyên Sơ] lên Thánh Tử 13 & cắm [Lõi Khóa Hư Vô]',
           onSelect: () => {
             if (!canTrueEnding) {
               openNpcRpgDialogue(
                 'void_rift',
-                '“Nghi thức chưa đủ vật dẫn: Cần có Lõi Khóa Hư Vô, bình Tiên Dược Cổ Đại còn nguyên vẹn và tri thức từ những Cổ Thư trong Thư Viện.”'
+                '“Nghi thức chưa đủ vật dẫn: Cần có Lõi Khóa Hư Vô, bình Tiên Dược Nguyên Sơ còn nguyên vẹn và tri thức từ những Cổ Thư trong Thư Viện.”'
               );
               return;
             }
             const res = evaluateCanonEnding({
               classId: player.classId,
               corruption: player.corruption,
+              holyMotherBanned: isHolyMotherBanned(player),
               readBookIds: player.readBookIds,
               inventory: player.inventory,
               learnedSkillIds: Object.keys(player.skillLevels),
@@ -2212,6 +2293,7 @@ export default function App() {
         });
 
         const canOrderEnding =
+          !isHolyMotherBanned(player) &&
           player.corruption === 0 &&
           (player.inventory.void_core || 0) > 0 &&
           (player.inventory.reconstruction_scroll || 0) > 0;
@@ -2221,13 +2303,14 @@ export default function App() {
             if (!canOrderEnding) {
               openNpcRpgDialogue(
                 'void_rift',
-                '“Nghi thức Trật Tự bị đẩy lùi: Cần tâm hồn hoàn toàn thuần khiết, Lõi Khóa Hư Vô và Mảnh Thần Chú Tái Thiết.”'
+                '“Nghi thức Trật Tự bị đẩy lùi: Cần tâm hồn thuần khiết chưa bị Thánh Mẫu khước từ, Lõi Khóa Hư Vô và Mảnh Thần Chú Tái Thiết.”'
               );
               return;
             }
             const res = evaluateCanonEnding({
               classId: player.classId,
               corruption: player.corruption,
+              holyMotherBanned: isHolyMotherBanned(player),
               readBookIds: player.readBookIds,
               inventory: player.inventory,
               learnedSkillIds: Object.keys(player.skillLevels),
@@ -2245,12 +2328,67 @@ export default function App() {
           },
         });
 
+        const child13AliveAtRift = player.party.some((a) => a.id === 'child_13' && a.hp > 0);
+        const knightPersonalAtRift =
+          player.classId === 'fallen_knight' &&
+          player.corruption < 30 &&
+          Boolean(player.questFlags?.vaelisTalked) &&
+          Boolean(player.questFlags?.vaelisDefeated) &&
+          player.readBookIds.length >= 3;
+        const nunPersonalAtRift =
+          player.classId === 'forsaken_nun' &&
+          player.corruption < 15 &&
+          Boolean(player.questFlags?.child13Rescued) &&
+          child13AliveAtRift &&
+          player.readBookIds.length >= 3;
+        const hunterPersonalAtRift =
+          player.classId === 'night_hunter' &&
+          Boolean(player.questFlags?.curedPetrification) &&
+          Boolean(player.questFlags?.vaelisDefeated);
+
+        if (knightPersonalAtRift || nunPersonalAtRift || hunterPersonalAtRift) {
+          choices.push({
+            label: knightPersonalAtRift
+              ? '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Ở lại Thung Lũng dựng Bia Mộ Kỵ Đoàn (S-Ending)'
+              : nunPersonalAtRift
+              ? '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Đưa Thánh Tử 13 & Bằng Chứng Trận Pháp Ra Cổng Sắt (S-Ending)'
+              : '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Phá Kết Giới & Rời Thung Lũng (S-Ending)',
+            onSelect: () => {
+              const res = evaluateCanonEnding({
+                classId: player.classId,
+                corruption: player.corruption,
+                holyMotherBanned: isHolyMotherBanned(player),
+                readBookIds: player.readBookIds,
+                inventory: player.inventory,
+                learnedSkillIds: Object.keys(player.skillLevels),
+                vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
+                vaelisDefeated: Boolean(player.questFlags?.vaelisDefeated),
+                curedPetrification: Boolean(player.questFlags?.curedPetrification),
+                child13Rescued: Boolean(player.questFlags?.child13Rescued),
+                child13InParty: child13AliveAtRift,
+                endingAction: knightPersonalAtRift ? 'STAY_BUILD_GRAVES' : 'ESCAPE_EXTERIOR_GATE',
+              });
+              setInteractionMenu(null);
+              setActiveModal(null);
+              setEndingInfo(res);
+              setScreen('ending');
+            },
+          });
+        }
+
         if (!player.questFlags?.child13Rescued) {
           choices.push({
             label: '🔓 Phá xiềng xích giải cứu Thánh Tử Thứ 13 & đưa vào Tổ Đội',
             onSelect: () => {
               const child13Ally = createRecruitedAlly('child_13');
               const canJoin = player.party.length < 3 && !player.party.some((a) => a.id === 'child_13');
+              const updatedParty = canJoin ? [...player.party, child13Ally] : player.party;
+              const nunReadyNow =
+                player.classId === 'forsaken_nun' &&
+                canJoin &&
+                player.corruption < 15 &&
+                player.readBookIds.length >= 3;
+
               setPlayer((prev) => ({
                 ...prev,
                 questFlags: { ...prev.questFlags, child13Rescued: true },
@@ -2259,13 +2397,54 @@ export default function App() {
                     ? [...prev.party, child13Ally]
                     : prev.party,
               }));
-              setInteractionMenu(null);
               addLog(
                 canJoin
                   ? '🤝💔 Bạn bẻ gãy xiềng xích giải cứu Thánh Tử Thứ 13! Đứa trẻ run rẩy nép sau lưng bạn, hướng về phía Cổng Sắt Ngoại Vi.'
                   : '⚠️ Hàng ngũ đồng hành đã kín chỗ; bạn chỉ kịp mở khóa cũi sắt cho Thánh Tử Thứ 13.'
               );
-              setLogOverlayVisible(true);
+              if (nunReadyNow) {
+                setInteractionMenu({
+                  title: 'MỤC TIÊU CÁ NHÂN: BẰNG CHỨNG & THÁNH TỬ 13',
+                  description:
+                    'Bạn đã giải cứu thành công Thánh Tử Thứ 13 cùng đầy đủ bằng chứng về Trận Pháp Giáo Hội. Bạn muốn đưa em trai trốn thoát ngay qua Cổng Sắt hay tiếp tục ở lại Vết Rách định đoạt vận mệnh thế giới?',
+                  selectedIndex: 0,
+                  choices: [
+                    {
+                      label: '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Đưa Thánh Tử 13 Thoát Ra Ngoài (S-Ending)',
+                      onSelect: () => {
+                        const res = evaluateCanonEnding({
+                          classId: player.classId,
+                          corruption: player.corruption,
+                          holyMotherBanned: isHolyMotherBanned(player),
+                          readBookIds: player.readBookIds,
+                          inventory: player.inventory,
+                          learnedSkillIds: Object.keys(player.skillLevels),
+                          vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
+                          vaelisDefeated: Boolean(player.questFlags?.vaelisDefeated),
+                          curedPetrification: Boolean(player.questFlags?.curedPetrification),
+                          child13Rescued: true,
+                          child13InParty: updatedParty.some((a) => a.id === 'child_13' && a.hp > 0),
+                          endingAction: 'ESCAPE_EXTERIOR_GATE',
+                        });
+                        setInteractionMenu(null);
+                        setActiveModal(null);
+                        setEndingInfo(res);
+                        setScreen('ending');
+                      },
+                    },
+                    {
+                      label: '🌌 Tiếp Tục Ở Lại Vết Rách Định Đoạt Thế Giới (World Endings)',
+                      onSelect: () => {
+                        setInteractionMenu(null);
+                        setLogOverlayVisible(true);
+                      },
+                    },
+                  ],
+                });
+              } else {
+                setInteractionMenu(null);
+                setLogOverlayVisible(true);
+              }
             },
           });
         }
@@ -2318,7 +2497,7 @@ export default function App() {
 
         if (player.classId === 'fallen_knight') {
           choices.push({
-            label: '⚔️ Ở lại Thung Lũng dựng Bia Mộ Kỵ Đoàn',
+            label: '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Ở lại Thung Lũng dựng Bia Mộ Kỵ Đoàn (S-Ending)',
             onSelect: () => {
               if (
                 player.corruption >= 30 ||
@@ -2327,13 +2506,14 @@ export default function App() {
               ) {
                 openNpcRpgDialogue(
                   'vaelis_climax',
-                  '“Lời thề Kỵ Đoàn chưa trọn vẹn: Ngươi cần thấu hiểu bi kịch của Vaelis trước khi vung nhát kiếm cuối, giữ lòng ít vấy bẩn và đọc đủ Cổ Thư.”'
+                  '“Lời thề Kỵ Đoàn chưa trọn vẹn: Ngươi cần thấu hiểu bi kịch của Vaelis trước khi vung nhát kiếm cuối, giữ lòng ít vấy bẩn và đọc đủ Nhật Ký / Cổ Thư.”'
                 );
                 return;
               }
               const res = evaluateCanonEnding({
                 classId: player.classId,
                 corruption: player.corruption,
+                holyMotherBanned: isHolyMotherBanned(player),
                 readBookIds: player.readBookIds,
                 inventory: player.inventory,
                 learnedSkillIds: Object.keys(player.skillLevels),
@@ -2354,12 +2534,12 @@ export default function App() {
 
         choices.push(
           {
-            label: '🌌 Giữ [Lõi Khóa Hư Vô] & tiếp tục khám phá Thung Lũng',
+            label: '🌌 Tiếp Tục Xuống Vết Rách Định Đoạt Thế Giới (Giữ [Lõi Khóa Hư Vô])',
             onSelect: () => {
               setInteractionMenu(null);
               setActiveModal(null);
               addLog(
-                '🌀 Bạn nắm chặt [Lõi Khóa Hư Vô] và tiếp tục hành trình!'
+                '🌀 Bạn nắm chặt [Lõi Khóa Hư Vô] và tiếp tục tiến về Vết Rách Tầng 3!'
               );
               setLogOverlayVisible(true);
             },
@@ -2546,9 +2726,43 @@ export default function App() {
         });
       }
 
+      if (!corpse.corpseDevoured && (player.inventory.scroll_field_dissection || 0) > 0) {
+        corpseChoices.push({
+          label: '🔪 Giải Phẫu Xác Quái ([Cuộn Giải Phẫu Thực Địa] — 0 Tha Hóa, giữ thuần khiết)',
+          onSelect: () => {
+            setInteractionMenu(null);
+            const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+            const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(corpse));
+            const rng = new SeededRNG(`${world.seed}_dissect_${corpse.uid}`);
+            const res = dissectEnemyCorpseCleanly(pCopy, eCopy, rng);
+            if (res.success) {
+              sfx.playHealOrChime();
+              setPlayer(pCopy);
+              setWorld((prev) => {
+                const curRoom = prev.rooms[room.id];
+                if (!curRoom) return prev;
+                return {
+                  ...prev,
+                  rooms: {
+                    ...prev.rooms,
+                    [room.id]: {
+                      ...curRoom,
+                      enemies: curRoom.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
+                      corpses: (curRoom.corpses || []).map((c) => (c.uid === eCopy.uid ? eCopy : c)),
+                    },
+                  },
+                };
+              });
+            }
+            addLog(res.message);
+            setLogOverlayVisible(true);
+          },
+        });
+      }
+
       if (!corpse.corpseRaised && !corpse.corpseDevoured && canCastNecro) {
         corpseChoices.push({
-          label: '💀 Niệm [Chiêu Hồn Thuật] dựng dậy thành thuộc hạ (-15 Tâm Trí, +12 Tha Hóa)',
+          label: '💀 Niệm [Chiêu Hồn Thuật] dựng dậy thành thuộc hạ (-15 Lý Trí, +12 Tha Hóa)',
           onSelect: () => {
             setInteractionMenu(null);
             const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
@@ -2811,7 +3025,7 @@ export default function App() {
         });
         addLog(
           item1 === 'lucky_coin'
-            ? '📦✨ Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Đồng Xu May Mắn] ẩn dưới lớp rơm!'
+            ? '📦✨ Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Thẻ Bài Bạc] ẩn dưới lớp rơm!'
             : bonusFood
             ? `📦 Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}] cùng [${CONFIG.ITEMS[bonusFood]?.name || bonusFood}].`
             : `📦 Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}].`
@@ -2960,7 +3174,7 @@ export default function App() {
             foodQty > 0
               ? ` & +${foodQty} [${CONFIG.ITEMS[foodId]?.name || foodId}]`
               : '';
-          const coinPart = foundLuckyCoin ? ' & 🪙 +1 [Đồng Xu May Mắn]' : '';
+          const coinPart = foundLuckyCoin ? ' & 🪙 +1 [Thẻ Bài Bạc]' : '';
           addLog(
             `${prefixLog ? `${prefixLog} ` : ''}🗝️ Mở nắp rương cổ: Thu được [${equipRewardName}], [${CONFIG.ITEMS[vialId]?.name || vialId}]${foodPart}${coinPart}.`
           );
@@ -3012,23 +3226,23 @@ export default function App() {
         return;
       }
 
-      // BOOKSHELF: Grants AT MOST 1 item.
+      // BOOKSHELF: Grants AT MOST 1 item from Lore, Chiến Kỹ Scroll, Survival Scroll, or Alchemy Recipe Book; Lose = Cursed Book Trap.
       if (tile === TILE.BOOKSHELF && !room.lootedCoords.includes(coordKey)) {
         const shelfRng = new SeededRNG(`${world.seed}_bookshelf_type_${room.id}_${coordKey}`);
         const isScrollShelf = shelfRng.chance(0.55);
 
         setInteractionMenu({
           title: isScrollShelf
-            ? 'KỆ SÁCH CỔ — NGĂN BÍ KÍP KỸ NĂNG'
+            ? 'KỆ SÁCH CỔ — NGĂN BÍ KÍP & CÔNG THỨC'
             : 'KỆ SÁCH CỔ — NGĂN BIÊN NIÊN SỬ',
           description: isScrollShelf
-            ? 'Giữa những tầng sách mục nát thấp thoáng ánh sáng của một Cuộn Bí Kíp Kỹ Năng cổ xưa. Hãy Tung Đồng Xu Định Mệnh để tìm kiếm giữa đống giấy vụn.'
+            ? 'Giữa những tầng sách mục nát thấp thoáng cuộn da cổ xưa, Bí Kíp Sinh Tồn hoặc Sách Công Thức Giả Kim. Hãy Tung Đồng Xu Định Mệnh (hoặc dùng Chìa Khóa Vạn Năng) để lục tìm cẩn trọng.'
             : 'Kệ sách gỗ mục nát lưu giữ 1 trang Ghi Chép Biên Niên Sử cổ đại của Đại Giáo Đường Goethe.',
           selectedIndex: 0,
           choices: [
             {
               label: isScrollShelf
-                ? 'Tung Đồng Xu tìm Cuộn Bí Kíp Kỹ Năng'
+                ? 'Tung Đồng Xu tìm Bí Kíp / Công Thức Cổ'
                 : 'Đọc & Thu thập Ghi Chép Cổ',
               onSelect: () => {
                 setInteractionMenu(null);
@@ -3072,34 +3286,67 @@ export default function App() {
                   return;
                 }
 
-                // Skill Scroll Shelf (Chiến Kỹ only — God spells require Affinity at Hexen Altar!): Requires Coin Toss!
-                triggerCoinToss(
-                  'LỤC KỆ SÁCH',
-                  '',
-                  (_won, tier) => {
-                    if (tier === 'win') {
-                      const uncollectedScrollSkills = CONFIG.SKILLS.filter(
-                        (s) =>
-                          s.branch === 'Chiến Kỹ' &&
-                          (player.skillLevels[s.id] || 0) === 0 &&
-                          (player.inventory[`scroll_${s.id}`] || 0) === 0
+                const grantShelfTreasure = (tier: CoinOutcomeTier) => {
+                  if (tier === 'win') {
+                    const survivalScrollPool = [
+                      'scroll_shadow_step',
+                      'scroll_distract_ash',
+                      'scroll_field_dissection',
+                      'scroll_emergency_amputation',
+                    ];
+                    const recipeBookPool = [
+                      'recipe_book_expedition',
+                      'recipe_book_cathedral',
+                      'recipe_book_forbidden',
+                    ].filter((rbId) => {
+                      const recIds = CONFIG.ITEMS[rbId]?.unlockRecipes || [];
+                      return recIds.some((rid) => !player.unlockedRecipes.includes(rid));
+                    });
+                    const uncollectedSkillScrolls = CONFIG.SKILLS.filter(
+                      (s) =>
+                        s.branch === 'Chiến Kỹ' &&
+                        (player.skillLevels[s.id] || 0) === 0 &&
+                        (player.inventory[`scroll_${s.id}`] || 0) === 0
+                    ).map((s) => `scroll_${s.id}`);
+
+                    const rewardCandidates: string[] = [
+                      ...uncollectedSkillScrolls,
+                      ...survivalScrollPool,
+                      ...recipeBookPool,
+                    ];
+
+                    if (rewardCandidates.length > 0 && rng.chance(0.75)) {
+                      const pickedId = rng.pick(rewardCandidates);
+                      setPlayer((prev) => ({
+                        ...prev,
+                        inventory: {
+                          ...prev.inventory,
+                          [pickedId]: (prev.inventory[pickedId] || 0) + 1,
+                        },
+                      }));
+                      sfx.playHealOrChime();
+                      addLog(
+                        `📜✨ Thu nhận được [${CONFIG.ITEMS[pickedId]?.name || pickedId}]. Hãy mở Túi [I] để đọc hoặc sử dụng!`
                       );
-
-                      if (uncollectedScrollSkills.length > 0) {
-                        const pickedSkill = rng.pick(uncollectedScrollSkills);
-                        const scrollItemId = `scroll_${pickedSkill.id}`;
-
+                    } else {
+                      const uncollectedLore = CONFIG.BOOKS.filter(
+                        (b) => !player.readBookIds.includes(b.id)
+                      );
+                      if (uncollectedLore.length > 0) {
+                        const b = rng.pick(uncollectedLore);
                         setPlayer((prev) => ({
                           ...prev,
-                          inventory: {
-                            ...prev.inventory,
-                            [scrollItemId]: (prev.inventory[scrollItemId] || 0) + 1,
-                          },
+                          readBookIds: prev.readBookIds.includes(b.id)
+                            ? prev.readBookIds
+                            : [...prev.readBookIds, b.id],
+                          unlockedRecipes:
+                            b.unlockRecipeId && !prev.unlockedRecipes.includes(b.unlockRecipeId)
+                              ? [...prev.unlockedRecipes, b.unlockRecipeId]
+                              : prev.unlockedRecipes,
                         }));
+                        setSelectedLoreBookId(b.id);
                         sfx.playHealOrChime();
-                        addLog(
-                          `📜✨ Thu nhận được [${CONFIG.ITEMS[scrollItemId]?.name || pickedSkill.name}]. Bấm Túi [I] để lĩnh hội Chiến Kỹ.`
-                        );
+                        addLog(`📜✨ Giữa ngăn bí mật ẩn giấu trang Cổ Thư "${b.title}"!`);
                       } else {
                         const rareArchiveItem = rng.pick([
                           'blue_vial',
@@ -3116,30 +3363,58 @@ export default function App() {
                         }));
                         sfx.playHealOrChime();
                         addLog(
-                          `📜✨ Toàn bộ Chiến Kỹ cổ đã lĩnh hội, bạn tìm thấy [${CONFIG.ITEMS[rareArchiveItem]?.name}] cất giấu sau kệ sách.`
+                          `📜✨ Tìm thấy [${CONFIG.ITEMS[rareArchiveItem]?.name}] cất giấu sau giá sách.`
                         );
                       }
-                    } else if (tier === 'partial') {
-                      // 1 Heads + 1 Tails with Shift -> inferior reward (1 common herb/bandage instead of Scroll)
-                      const lesserItem = rng.pick(['green_herb', 'bandage', 'white_herb']);
-                      setPlayer((prev) => ({
-                        ...prev,
-                        inventory: {
-                          ...prev.inventory,
-                          [lesserItem]: (prev.inventory[lesserItem] || 0) + 1,
-                        },
-                      }));
-                      addLog(
-                        `📜⚖️ Cuộn giấy mục nát vỡ vụn giữa tay, chỉ sót lại [${CONFIG.ITEMS[lesserItem]?.name}] kẹp sau giá gỗ.`
-                      );
-                    } else {
-                      // Lose -> Nothing!
-                      addLog(
-                        '📜💨 Kệ sách chỉ toàn giấy mục nát và tro bụi.'
-                      );
                     }
-                    setLogOverlayVisible(true);
+                  } else if (tier === 'partial') {
+                    const lesserItem = rng.pick(['green_herb', 'bandage', 'white_herb']);
+                    setPlayer((prev) => ({
+                      ...prev,
+                      inventory: {
+                        ...prev.inventory,
+                        [lesserItem]: (prev.inventory[lesserItem] || 0) + 1,
+                      },
+                    }));
+                    addLog(
+                      `📜⚖️ Cuộn giấy mục nát vỡ vụn giữa tay, chỉ sót lại [${CONFIG.ITEMS[lesserItem]?.name}] kẹp sau giá gỗ.`
+                    );
+                  } else {
+                    // Cursed Book Trap!
+                    setPlayer((prev) => ({
+                      ...prev,
+                      mind: Math.max(0, prev.mind - 10),
+                      corruption: Math.min(100, prev.corruption + 4),
+                    }));
+                    sfx.playSfx('hurt');
+                    addLog(
+                      '🕸️📖 BẪY SÁCH NGUYỀN! Bụi cổ ngữ đen phụt thẳng vào mặt bạn (-10 Lý Trí, +4 Tha Hóa)!'
+                    );
                   }
+                  setLogOverlayVisible(true);
+                };
+
+                const shelfLockpicks = player.inventory.lockpick || 0;
+                const useLockpickOnShelf =
+                  shelfLockpicks > 0
+                    ? () => {
+                        setPlayer((prev) => ({
+                          ...prev,
+                          inventory: {
+                            ...prev.inventory,
+                            lockpick: Math.max(0, (prev.inventory.lockpick || 0) - 1),
+                          },
+                        }));
+                        grantShelfTreasure('win');
+                      }
+                    : undefined;
+
+                // Skill/Survival/Recipe Scroll Shelf (requires Coin Toss or Lockpick)
+                triggerCoinToss(
+                  'LỤC KỆ SÁCH CỔ',
+                  'Đoán sai sẽ kích hoạt Bẫy Sách Nguyền (-10 Lý Trí)!',
+                  (_won, tier) => grantShelfTreasure(tier),
+                  useLockpickOnShelf
                 );
               },
             },
@@ -3221,18 +3496,17 @@ export default function App() {
           selectedIndex: 0,
           choices: [
             {
-              label: 'Thiền định hấp thụ Chướng Khí (-18 Tâm Trí, +8 Tha Hóa → +1 Thiện cảm Hư Vô)',
+              label: 'Thiền định hấp thụ Chướng Khí (-18 Lý Trí, +8 Tha Hóa → +1 Tín Ngưỡng Hư Vô)',
               onSelect: () => {
                 setInteractionMenu(null);
-                setPlayer((prev) => ({
-                  ...prev,
-                  mind: Math.max(2, prev.mind - 18),
-                  corruption: Math.min(100, prev.corruption + 8),
-                  affinities: {
-                    ...prev.affinities,
-                    primordialVoid: prev.affinities.primordialVoid + 1,
-                  },
-                }));
+                setPlayer((prev) => {
+                  const next: PlayerState = JSON.parse(JSON.stringify(prev));
+                  next.mind = Math.max(2, next.mind - 18);
+                  next.corruption = Math.min(100, next.corruption + 8);
+                  grantAffinityOnce(next, `miasma_${room.id}_${coordKey}`, 'primordialVoid', 1);
+                  syncCorruptionHolyBan(next);
+                  return next;
+                });
                 setWorld((prev) => ({
                   ...prev,
                   rooms: {
@@ -3244,7 +3518,7 @@ export default function App() {
                   },
                 }));
                 addLog(
-                  '🌌 Bạn hít sâu luồng Chướng Khí tím, tâm trí rúng động khi nghe rõ nhịp thở của Hư Vô Nguyên Thủy.'
+                  '🌌 Bạn hít sâu luồng Chướng Khí tím, Lý Trí tối đa giảm nhẹ (-10) khi nghe rõ nhịp thở của Hư Vô Nguyên Thủy (+1 Tín Ngưỡng).'
                 );
                 setLogOverlayVisible(true);
               },
@@ -3336,11 +3610,11 @@ export default function App() {
                   },
                 },
                 {
-                  label: '✏️ Dùng [Phấn Khắc Ấn] vẽ biểu tượng Ác Quỷ',
+                  label: '✏️ Dùng [Phấn Khắc Ấn] vẽ biểu tượng Huyết Quỷ',
                   onSelect: () => {
                     consumeChalkAndInscribe(
                       'demon_lord',
-                      '🩸 Bạn dùng [Phấn Khắc Ấn] vẽ ấn ký Huyết Trận Ác Quỷ lên mặt đá. Hãy nhấn [F] lần nữa để tiến hành nghi lễ!'
+                      '🩸 Bạn dùng [Phấn Khắc Ấn] vẽ ấn ký Huyết Trận Huyết Quỷ lên mặt đá. Hãy nhấn [F] lần nữa để tiến hành nghi lễ!'
                     );
                   },
                 },
@@ -3376,7 +3650,7 @@ export default function App() {
               selectedIndex: 0,
               choices: [
                 {
-                  label: '✝ Cầu nguyện thanh tẩy Tâm Trí (+25 Tâm Trí, -5 Tha Hóa)',
+                  label: '✝ Cầu nguyện thanh tẩy Lý Trí (+25 Lý Trí, -5 Tha Hóa)',
                   onSelect: () => {
                     setInteractionMenu(null);
                     sfx.playSfx('ritual');
@@ -3386,12 +3660,12 @@ export default function App() {
                       mind: Math.min(prev.maxMind, prev.mind + 25),
                       corruption: Math.max(0, prev.corruption - 5),
                     }));
-                    addLog('✝️ Ánh sáng trắng dịu dàng gột rửa tâm trí bạn giữa bóng tối.');
+                    addLog('✝️ Ánh sáng trắng dịu dàng gột rửa Lý Trí bạn giữa bóng tối.');
                     setLogOverlayVisible(true);
                   },
                 },
                 {
-                  label: '✝ Dâng lời khấn cầu ban phước (+1 Thiện cảm Thánh Mẫu)',
+                  label: '✝ Dâng lời khấn cầu ban phước (+1 Tín Ngưỡng Thánh Mẫu)',
                   onSelect: () => {
                     setInteractionMenu(null);
                     sfx.playSfx('ritual');
@@ -3405,7 +3679,7 @@ export default function App() {
                     });
                     addLog(
                       gained
-                        ? '✝️ Lời cầu nguyện thanh sạch vang vọng: Thánh Mẫu hồi đáp bằng ánh hào quang ấm áp (+1 Thiện cảm Thánh Mẫu).'
+                        ? '✝️ Lời cầu nguyện thanh sạch vang vọng: Thánh Mẫu hồi đáp bằng ánh hào quang ấm áp (+1 Tín Ngưỡng Thánh Mẫu).'
                         : '✝️ Lời cầu nguyện vang vọng giữa ánh sáng trắng dịu dàng.'
                     );
                     setLogOverlayVisible(true);
@@ -3420,7 +3694,7 @@ export default function App() {
           if (deityType === 'demon_lord') {
             const demonChoices: InteractionChoice[] = [
               {
-                label: '🩸 Cắt máu hiến tế (-20 Sinh Lực, +10 Tha Hóa → +1 Ác Quỷ & +15 Tâm Trí)',
+                label: '🩸 Cắt máu hiến tế (-20 Sinh Lực, +15 Tha Hóa → +1 Huyết Quỷ & +15 Lý Trí)',
                 onSelect: () => {
                   setInteractionMenu(null);
                   sfx.playSfx('ritual');
@@ -3429,12 +3703,12 @@ export default function App() {
                     const next: PlayerState = JSON.parse(JSON.stringify(prev));
                     next.hp = Math.max(5, next.hp - 20);
                     next.mind = Math.min(next.maxMind, next.mind + 15);
-                    next.corruption = Math.min(100, next.corruption + 10);
                     banHolyMother(next);
                     grantAffinityOnce(next, circleActionId, 'demonicPact', 1);
+                    syncCorruptionHolyBan(next);
                     return next;
                   });
-                  addLog('🩸 Máu tươi thấm vào cổ ngữ đỏ thẫm, khế ước bóng tối âm thầm đáp lời.');
+                  addLog('🩸 Máu tươi thấm vào cổ ngữ đỏ thẫm, khế ước Huyết Quỷ âm thầm đáp lời.');
                   setLogOverlayVisible(true);
                 },
               },
@@ -3443,7 +3717,7 @@ export default function App() {
             player.party.forEach((ally, idx) => {
               if (ally.hp <= 0) return;
               demonChoices.push({
-                label: `🩸 Hiến tế [${ally.name}] lên Huyết Trận Ác Quỷ (+Ác Quỷ, hồi đầy Sinh Lực & Tâm Trí)`,
+                label: `🩸 Hiến tế [${ally.name}] lên Huyết Trận Huyết Quỷ (+Huyết Quỷ, hồi đầy Sinh Lực & Lý Trí)`,
                 onSelect: () => {
                   setInteractionMenu(null);
                   sfx.playSfx('ritual');
@@ -3456,14 +3730,14 @@ export default function App() {
                     }
                     next.hp = next.maxHp;
                     next.mind = next.maxMind;
-                    next.corruption = Math.min(100, next.corruption + 25);
                     banHolyMother(next);
                     grantAffinityOnce(next, circleActionId, 'demonicPact', 1);
                     grantAffinityOnce(next, 'milestone_sacrifice_ally', 'demonicPact', 1);
+                    syncCorruptionHolyBan(next);
                     return next;
                   });
                   setSelectedInvMemberIdx(0);
-                  addLog(`🩸 Huyết Trận Ác Quỷ nuốt trọn sinh linh của [${ally.name}], trả lại toàn bộ hành trang vào kho đồ.`);
+                  addLog(`🩸 Huyết Trận Huyết Quỷ nuốt trọn sinh linh của [${ally.name}], trả lại toàn bộ hành trang vào kho đồ.`);
                   setLogOverlayVisible(true);
                 },
               });
@@ -3471,7 +3745,7 @@ export default function App() {
 
             demonChoices.push({ label: 'Rời đi', onSelect: closePrompt });
             setInteractionMenu({
-              title: 'HUYẾT TRẬN ÁC QUỶ',
+              title: 'HUYẾT TRẬN HUYẾT QUỶ',
               description:
                 'Mặt đá nhuốm đỏ rỉ ra hơi nóng tanh nồng. Chỉ máu thịt tự cắt hoặc hiến tế đồng đội/xác sống mới làm thỏa mãn vòng tròn này.',
               selectedIndex: 0,
@@ -3484,7 +3758,7 @@ export default function App() {
             const voidChoices: InteractionChoice[] = [];
             if ((player.inventory.pure_soul_shard || 0) > 0) {
               voidChoices.push({
-                label: '💎 Dâng hiến 1 [Mảnh Linh Hồn Thuần Khiết] cho Hư Vô (+Thiện cảm Hư Vô & +2 Đá NL)',
+                label: '💎 Dâng hiến 1 [Mảnh Linh Hồn Thuần Khiết] cho Hư Vô (+Tín Ngưỡng Hư Vô & +2 Đá LH)',
                 onSelect: () => {
                   setInteractionMenu(null);
                   sfx.playSfx('ritual');
@@ -3498,7 +3772,7 @@ export default function App() {
                     grantAffinityOnce(next, 'milestone_void_offering', 'primordialVoid', 1);
                     return next;
                   });
-                  addLog('🌌 Mảnh Linh Hồn tan chảy thành ánh tím sâu thẳm, ban tặng 2 Đá Năng Lượng và tri thức Hư Vô.');
+                  addLog('🌌 Mảnh Linh Hồn tan chảy thành ánh tím sâu thẳm, ban tặng 2 Đá Linh Hồn Rỗng và tri thức Hư Vô.');
                   setLogOverlayVisible(true);
                 },
               });
@@ -3509,7 +3783,7 @@ export default function App() {
             if (relicOfferId) {
               const relicName = CONFIG.ITEMS[relicOfferId]?.name || 'Cổ Vật';
               voidChoices.push({
-                label: `🏺 Dâng hiến 1 [${relicName}] vào Ấn Trận Hư Vô (+Thiện cảm Hư Vô & +1 Lọ Tím)`,
+                label: `🏺 Dâng hiến 1 [${relicName}] vào Ấn Trận Hư Vô (+Tín Ngưỡng Hư Vô & +1 Thuốc An Thần)`,
                 onSelect: () => {
                   setInteractionMenu(null);
                   sfx.playSfx('ritual');
@@ -3531,7 +3805,7 @@ export default function App() {
               const offeredBookId = player.readBookIds[player.readBookIds.length - 1];
               const offeredBookTitle = CONFIG.BOOKS.find((b) => b.id === offeredBookId)?.title || 'Sách Cổ';
               voidChoices.push({
-                label: `📜 Dâng hiến tri thức Sách Cổ [${offeredBookTitle}] (+Thiện cảm Hư Vô & +1 Đá NL)`,
+                label: `📜 Dâng hiến tri thức Sách Cổ [${offeredBookTitle}] (+Tín Ngưỡng Hư Vô & +1 Đá LH)`,
                 onSelect: () => {
                   setInteractionMenu(null);
                   sfx.playSfx('ritual');
@@ -3545,13 +3819,13 @@ export default function App() {
                     grantAffinityOnce(next, 'milestone_void_offering', 'primordialVoid', 1);
                     return next;
                   });
-                  addLog(`🌌 Ký ức về trang Sách Cổ [${offeredBookTitle}] bị Hư Vô nuốt chửng, để lại một viên Đá Năng Lượng lạnh buốt.`);
+                  addLog(`🌌 Ký ức về trang Sách Cổ [${offeredBookTitle}] bị Hư Vô nuốt chửng, để lại một viên Đá Linh Hồn Rỗng lạnh buốt.`);
                   setLogOverlayVisible(true);
                 },
               });
             }
             voidChoices.push({
-              label: '🌌 Dâng Tâm Trí khai mở Ấn Trận (-18 Tâm Trí → +Thiện cảm Hư Vô & +1 Đá NL)',
+              label: '🌌 Dâng Lý Trí khai mở Ấn Trận (-18 Lý Trí → +Tín Ngưỡng Hư Vô & +1 Đá LH)',
               onSelect: () => {
                 setInteractionMenu(null);
                 sfx.playSfx('ritual');
@@ -3565,7 +3839,7 @@ export default function App() {
                   grantAffinityOnce(next, 'milestone_void_offering', 'primordialVoid', 1);
                   return next;
                 });
-                addLog('🌌 Tiếng thì thầm từ Vực Sao vang lên trong đầu bạn, kết tinh thành một viên Đá Năng Lượng.');
+                addLog('🌌 Tiếng thì thầm từ Vực Sao vang lên trong đầu bạn, kết tinh thành một viên Đá Linh Hồn Rỗng.');
                 setLogOverlayVisible(true);
               },
             });
@@ -3615,12 +3889,12 @@ export default function App() {
 
       if (tile === TILE.HEXEN_ALTAR) {
         setInteractionMenu({
-          title: 'BÀN THỜ HEXEN',
-          description: 'Bàn thờ đá khắc ấn ký cổ thần tỏa ra ánh sáng tím lạnh lẽo.',
+          title: 'ĐÀI CỘNG HƯỞNG',
+          description: 'Đài đá khắc ấn ký cổ thần tỏa ra ánh sáng tím lạnh lẽo.',
           selectedIndex: 0,
           choices: [
             {
-              label: 'Chạm vào Bàn Thờ Hexen',
+              label: 'Chạm vào Đài Cộng Hưởng',
               onSelect: () => {
                 setInteractionMenu(null);
                 setActiveModal('hexen');
@@ -3633,7 +3907,7 @@ export default function App() {
       }
     }
 
-    // Check parked dismissed companions waiting near Hexen Altar (Manhattan <= 1)
+    // Check parked dismissed companions waiting near Đài Cộng Hưởng (Manhattan <= 1)
     const parkedSpots = getParkedCompanionSpots(room, player);
     for (const [dx, dy] of searchOffsets) {
       if (Math.abs(dx) + Math.abs(dy) > 1) continue;
@@ -3643,7 +3917,7 @@ export default function App() {
       if (parked) {
         setInteractionMenu({
           title: `${parked.ally.name.toUpperCase()}`,
-          description: `${parked.ally.name} đang kiên nhẫn chờ bạn bên cạnh ánh sáng Bàn Thờ Hexen (Sinh lực ${parked.ally.hp}/${parked.ally.maxHp}, Tâm trí ${parked.ally.mind}/${parked.ally.maxMind}).`,
+          description: `${parked.ally.name} đang kiên nhẫn chờ bạn bên cạnh ánh sáng Đài Cộng Hưởng (Sinh Lực ${parked.ally.hp}/${parked.ally.maxHp}, Lý Trí ${parked.ally.mind}/${parked.ally.maxMind}).`,
           selectedIndex: 0,
           choices: [
             {
@@ -3680,29 +3954,41 @@ export default function App() {
       }
     }
 
-    // Check Escape Iron Gate in F2_EXTERIOR (strictly enforces child_13 alive in party for Forsaken Nun)
+    // Check Escape / Personal Ending gate in F2_EXTERIOR across all 3 canon characters
     const child13AliveInParty = player.party.some((a) => a.id === 'child_13' && a.hp > 0);
+    const knightGateOk =
+      player.classId === 'fallen_knight' &&
+      player.corruption < 30 &&
+      Boolean(player.questFlags?.vaelisTalked) &&
+      Boolean(player.questFlags?.vaelisDefeated) &&
+      player.readBookIds.length >= 3;
     const nunGateOk =
       player.classId === 'forsaken_nun' &&
+      player.corruption < 15 &&
       Boolean(player.questFlags?.child13Rescued) &&
-      child13AliveInParty;
+      child13AliveInParty &&
+      player.readBookIds.length >= 3;
     const hunterGateOk =
       player.classId === 'night_hunter' &&
       Boolean(player.questFlags?.curedPetrification && player.questFlags?.vaelisDefeated);
-    if (room.id === 'F2_EXTERIOR' && (nunGateOk || hunterGateOk)) {
+    if (room.id === 'F2_EXTERIOR' && (knightGateOk || nunGateOk || hunterGateOk)) {
       setInteractionMenu({
-        title: 'CỔNG SẮT RỜI THUNG LŨNG',
-        description:
-          'Kết Giới Chướng Khí nơi Cổng Sắt Ngoại Vi đã suy yếu. Bạn đã hoàn thành tâm nguyện và có thể rời khỏi Thung Lũng Xương Tàn ngay lúc này.',
+        title: 'MỤC TIÊU CÁ NHÂN & VẬN MỆNH THUNG LŨNG',
+        description: knightGateOk
+          ? 'Lời thề Kỵ Đoàn đã tròn. Bạn có thể ở lại Thung Lũng dựng bia mộ đồng đội ngay lúc này, hoặc quay xuống Vết Rách Tầng 3 để định đoạt vận mệnh thế giới.'
+          : 'Kết Giới Chướng Khí nơi Cổng Sắt Ngoại Vi đã suy yếu. Bạn đã hoàn thành mục tiêu cá nhân và có thể rời khỏi Thung Lũng Xương Tàn ngay, hoặc tiếp tục xuống Vết Rách Tầng 3 định đoạt thế giới.',
         selectedIndex: 0,
         choices: [
           {
-            label: '🚪 Mở Cổng Sắt rời khỏi Thung Lũng',
+            label: knightGateOk
+              ? '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Ở lại Dựng Bia Mộ Kỵ Đoàn (S-Ending)'
+              : '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Mở Cổng Sắt Rời Thung Lũng (S-Ending)',
             onSelect: () => {
               setInteractionMenu(null);
               const outEnding = evaluateCanonEnding({
                 classId: player.classId,
                 corruption: player.corruption,
+                holyMotherBanned: isHolyMotherBanned(player),
                 readBookIds: player.readBookIds,
                 inventory: player.inventory,
                 learnedSkillIds: Object.keys(player.skillLevels),
@@ -3711,13 +3997,20 @@ export default function App() {
                 curedPetrification: Boolean(player.questFlags?.curedPetrification),
                 child13Rescued: Boolean(player.questFlags?.child13Rescued),
                 child13InParty: child13AliveInParty,
-                endingAction: 'ESCAPE_EXTERIOR_GATE',
+                endingAction: knightGateOk ? 'STAY_BUILD_GRAVES' : 'ESCAPE_EXTERIOR_GATE',
               });
               setEndingInfo(outEnding);
               setScreen('ending');
             },
           },
-          { label: 'Ở lại thêm', onSelect: closePrompt },
+          {
+            label: '🌌 Tiếp Tục Xuống Vết Rách Định Đoạt Thế Giới (World Endings)',
+            onSelect: () => {
+              closePrompt();
+              addLog('🌌 Bạn chọn ở lại để tiếp tục tiến xuống Vết Rách Tầng 3 định đoạt vận mệnh thế giới.');
+              setLogOverlayVisible(true);
+            },
+          },
         ],
       });
       return;
@@ -3784,7 +4077,8 @@ export default function App() {
       const tickResult = advanceRoomEnemiesOneTurn(
         curRoom,
         curPlayerPos,
-        curPlayer.equippedBody
+        curPlayer.equippedBody,
+        (curPlayer.stealthStepsTurns || 0) > 0
       );
 
       setWorld((prev) => {
@@ -3937,17 +4231,25 @@ export default function App() {
         addLog('🥀 Cơn Đói Cực Hạn rút cạn 3 Sinh Lực mỗi bước chân!');
       }
 
-      // Step hazard: MIASMA_VENT deals -3 Tâm Trí, +2 Tha Hóa unless wearing Beak Mask or Star-Pelt Coat
+      // Step hazard: MIASMA_VENT deals -3 Lý Trí, +2 Tha Hóa scaled by Floor 3 Void Miasma resistance
       if (targetTile === TILE.MIASMA_VENT) {
         const immuneMiasma =
           player.equippedHead === 'beak_mask' || player.equippedBody === 'star_pelt_coat';
-        if (immuneMiasma) {
-          addLog('🦅 Trang bị kháng Chướng Khí giúp bạn bước qua Khe Nứt Hư Vô mà không mất Tâm Trí!');
+        const miasmaMult = getFloor3MiasmaMultiplier(player);
+        if (immuneMiasma || miasmaMult <= 0) {
+          addLog('🦅 Cộng hưởng Hư Vô hoặc Trang bị kháng Chướng Khí giúp bạn bước qua Khe Nứt mà không mất Lý Trí!');
         } else {
-          nextMind = Math.max(0, nextMind - 3);
-          nextCor = Math.min(100, nextCor + 2);
-          addLog('🌫️ Khói tím chướng khí tràn vào buồng phổi, bào mòn lý trí!');
+          const mindLoss = Math.max(1, Math.round(3 * miasmaMult));
+          const corGain = Math.max(1, Math.round(2 * miasmaMult));
+          nextMind = Math.max(0, nextMind - mindLoss);
+          nextCor = Math.min(100, nextCor + corGain);
+          addLog('🌫️ Khói tím chướng khí tràn vào buồng phổi, bào mòn Lý Trí!');
         }
+      }
+
+      const nextStealth = Math.max(0, (player.stealthStepsTurns || 0) - 1);
+      if ((player.stealthStepsTurns || 0) > 0 && nextStealth === 0) {
+        addLog('🌑 Lớp sương ẩn thân [Bước Chân Bóng Tối] đã tan biến.');
       }
 
       const updatedPlayer: PlayerState = {
@@ -3956,11 +4258,13 @@ export default function App() {
         mind: nextMind,
         corruption: nextCor,
         hunger: nextHunger,
+        stealthStepsTurns: nextStealth,
         stats: {
           ...player.stats,
           stepsTaken: nextSteps,
         },
       };
+      syncCorruptionHolyBan(updatedPlayer);
 
       setPlayerPos({ x: nx, y: ny });
       setTrailCoords((prev) => [{ x: playerPos.x, y: playerPos.y }, ...prev].slice(0, 4));
@@ -4036,7 +4340,7 @@ export default function App() {
           };
         });
         addLog(
-          '🩸⚙️ BẪY CHÔNG BẬT MẠNH! Răng sắt gỉ sét ngoạm sâu vào bắp chân (-22 Sinh Lực, -6 Tâm Trí, Chảy Máu)!'
+          '🩸⚙️ BẪY CHÔNG BẬT MẠNH! Răng sắt gỉ sét ngoạm sâu vào bắp chân (-22 Sinh Lực, -6 Lý Trí, Chảy Máu)!'
         );
         setLogOverlayVisible(true);
         return;
@@ -4635,11 +4939,11 @@ export default function App() {
             const sk = CONFIG.SKILLS.find((s) => s.id === skId);
             if (!sk) return;
             const curMind = activeAllyForKeys ? activeAllyForKeys.mind : player.mind;
-            const lockedByHoly =
-              !activeAllyForKeys && sk.branch === 'Thánh Mẫu' && isHolyMotherBanned(player);
+            const holyCheck = !activeAllyForKeys ? canUseHolySkill(player, sk) : { allowed: true };
+            const lockedByHoly = !holyCheck.allowed;
             if (curMind < sk.mindCost || lockedByHoly) {
               setCombatLogs((prev) => [
-                lockedByHoly ? HOLY_MOTHER_REFUSAL_MSG : '⚠️ Không đủ Tâm Trí để thi triển kỹ năng này!',
+                lockedByHoly ? holyCheck.reason || HOLY_MOTHER_REFUSAL_MSG : '⚠️ Không đủ Lý Trí để thi triển kỹ năng này!',
                 ...prev.slice(0, 18),
               ]);
               return;
@@ -4999,22 +5303,22 @@ export default function App() {
           if (!showCombatPortrait) {
             const enemyW =
               tpl.spriteScale === '3x3'
-                ? 465
+                ? 500
                 : tpl.spriteScale === '2x3'
-                ? 430
+                ? 465
                 : tpl.spriteScale === '2x2'
-                ? 375
-                : 310;
+                ? 425
+                : 375;
             const enemyH =
               tpl.spriteScale === '3x3'
-                ? 420
+                ? 430
                 : tpl.spriteScale === '2x3'
-                ? 395
+                ? 420
                 : tpl.spriteScale === '2x2'
-                ? 365
-                : 345;
+                ? 405
+                : 395;
             const enemyX = w * 0.5 - enemyW * 0.5;
-            const enemyY = h * 0.04;
+            const enemyY = h * 0.015;
 
             drawPixelSprite(
               ctx,
@@ -5206,7 +5510,7 @@ export default function App() {
               </div>
               {player.inventory.lucky_coin > 0 && (
                 <div className="text-xs text-[#9b8f82]">
-                  Giữ [Shift] để tung 2 đồng xu cùng lúc (Đồng Xu May Mắn: x{player.inventory.lucky_coin})
+                  Giữ [Shift] để tung 2 đồng xu cùng lúc (Thẻ Bài Bạc: x{player.inventory.lucky_coin})
                 </div>
               )}
 
@@ -5323,10 +5627,11 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setCharacterNameInput(generateRandomCharacterName())}
-                        className="px-3 py-1.5 df-btn-bronze text-[11px] font-bold shrink-0 cursor-pointer"
+                        className="px-2.5 py-1.5 df-btn-bronze flex items-center justify-center shrink-0 cursor-pointer"
                         title="Đặt Tên Ngẫu Nhiên"
+                        aria-label="Đặt Tên Ngẫu Nhiên"
                       >
-                        🎲 Ngẫu Nhiên
+                        <Dices className="w-4 h-4 text-[#e5cfa0]" />
                       </button>
                     </div>
                   </div>
@@ -5344,8 +5649,6 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {CONFIG.CLASSES.map((cls) => {
                     const active = cls.id === selectedClassId;
-                    const startWpn = CONFIG.WEAPONS[cls.startingWeapon];
-                    const startSkill = CONFIG.SKILLS.find((s) => s.id === cls.startingSkill);
                     return (
                       <button
                         key={cls.id}
@@ -5387,29 +5690,6 @@ export default function App() {
                           </div>
                           <p className="text-[11px] leading-snug text-[#d3d3d3]">{cls.lore}</p>
                         </div>
-
-                        <div className="mt-2.5 pt-2 border-t border-[#3a3a3a]/70 space-y-0.5 text-[10px] font-mono">
-                          <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#9e968c]">Công / Chí mạng:</span>
-                            <span>
-                              <b className="text-[#c96b6b]">{startWpn ? `${startWpn.dmg[0]}–${startWpn.dmg[1]}` : '150–200'}</b>
-                              <span className="text-[#5e564e]"> • </span>
-                              <b className="text-[#c5a059]">{startWpn ? `${Math.round(startWpn.critChance * 100)}%` : '15%'}</b>
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#9e968c]">Thủ / Né / Chạy:</span>
-                            <span>
-                              <b className="text-[#94a3b8]">{Math.round(cls.naturalArmor * 100)}%</b>
-                              <span className="text-[#5e564e]"> • </span>
-                              <b className="text-[#9ab08e]">+{Math.round(cls.evasionBonus * 100)}%/{Math.round(cls.baseFleeChance * 100)}%</b>
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#9e968c]">Kỹ năng đầu:</span>
-                            <span className="text-[#c5a059] font-bold">{startSkill?.name}</span>
-                          </div>
-                        </div>
                       </button>
                     );
                   })}
@@ -5420,7 +5700,7 @@ export default function App() {
                     [{CONFIG.WEAPONS[selectedClass.startingWeapon]?.name}] • [{CONFIG.SKILLS.find((s) => s.id === selectedClass.startingSkill)?.name}]
                   </div>
                   <span className="text-[10px] text-[#9e968c] italic">
-                    * Sinh Lực &amp; Tâm Trí ẩn đến khi vào Thung Lũng.
+                    * Sinh Lực &amp; Lý Trí ẩn đến khi vào Thung Lũng.
                   </span>
                 </div>
               </div>
@@ -5469,7 +5749,7 @@ export default function App() {
                               {slot.world.currentRoomId} • {slot.timestamp}
                             </div>
                             <div>
-                              Sinh Lực {slot.player.hp}/{slot.player.maxHp} • Tâm Trí {slot.player.mind}/{slot.player.maxMind} • Tha Hóa{' '}
+                              Sinh Lực {slot.player.hp}/{slot.player.maxHp} • Lý Trí {slot.player.mind}/{slot.player.maxMind} • Tha Hóa{' '}
                               {slot.player.corruption}%
                             </div>
                           </div>
@@ -5519,19 +5799,19 @@ export default function App() {
 
     const prologueTexts = [
       {
-        title: 'KHUNG I: LÂU ĐÀI HẮC ÁM ĐÈ NÁT GIÁO ĐƯỜNG GOETHE',
+        title: 'LÂU ĐÀI HẮC ÁM ĐÈ NÁT GIÁO ĐƯỜNG GOETHE',
         desc: 'Đêm Trăng Đỏ, Lâu Đài Hắc Ám từ trên cao giáng thẳng xuống đè sập tháp chuông Giáo Đường Goethe — vùi lấp mọi lối thoát dưới tầng tầng bóng tối.',
         image: prologueFrame1Img,
         alt: 'Lâu Đài Hắc Ám giáng xuống dưới Trăng Đỏ đè nát mái Giáo Đường Goethe',
       },
       {
-        title: 'KHUNG II: BỨC TƯỢNG THÁNH MẪU VỠ & ÁNH MẮT TRONG SƯƠNG',
+        title: 'BỨC TƯỢNG THÁNH MẪU VỠ & ÁNH MẮT TRONG SƯƠNG',
         desc: 'Giữa sương mù tím đặc quánh, bức tượng Thánh Mẫu cổ nứt toác rỉ thứ dịch đen lạnh lẽo; từng cặp mắt đỏ rực dần hé mở dõi theo bất kỳ kẻ sống sót nào.',
         image: prologueFrame2Img,
         alt: 'Bức tượng Thánh Mẫu nứt vỡ rỉ dịch đen giữa sương mù tím và những cặp mắt đỏ rực',
       },
       {
-        title: 'KHUNG III: TRƯỚC CỔNG SẮT RĂNG CƯA NGOẠI VI',
+        title: 'TRƯỚC CỔNG SẮT RĂNG CƯA NGOẠI VI',
         desc: 'Bức tường sương xám cuồn cuộn ép sát sau lưng đẩy bạn về phía cánh cổng sắt hoen gỉ — hãy khắc ghi 3 quyết định quá khứ của chính mình trước khi bước vào.',
         image: frame3Image,
         alt: 'Nhân vật đứng giữa làn sương xám nhạt trước cổng sắt răng cưa Ngoại Vi Đại Giáo Đường',
@@ -5541,10 +5821,7 @@ export default function App() {
     return (
       <div className="min-h-screen h-screen bg-[#070509] text-[#d3d3d3] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
         <div className="max-w-3xl w-full df-panel p-5 space-y-3 my-auto">
-          <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-2">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-[#c5a059]">
-              Dẫn Nhập Vaelis ({prologueFrame + 1}/3)
-            </span>
+          <div className="flex items-center justify-end border-b border-[#3a3a3a] pb-2">
             <button
               type="button"
               onClick={finishPrologueAndPlay}
@@ -5583,7 +5860,7 @@ export default function App() {
 
           {/* Class-Specific 3-Step Intro Choices on Frame 3 */}
           {prologueFrame === 2 && (
-            <div className="p-4 df-well space-y-3">
+            <div className="p-4 df-well space-y-3 max-h-[42vh] overflow-y-auto">
               {(() => {
                 const clsKey =
                   (player.classId as 'fallen_knight' | 'forsaken_nun' | 'night_hunter') ||
@@ -5597,7 +5874,7 @@ export default function App() {
                         Ký Ức & Hành Trang Của {player.name} — Bước {introStepIdx + 1}/3
                       </div>
                       <span className="text-[11px] text-[#a3998f] font-mono">
-                        Tha Hóa: {player.corruption}% • Tâm Trí: {player.mind}/{player.maxMind}
+                        Tha Hóa: {player.corruption}% • Lý Trí: {player.mind}/{player.maxMind}
                       </span>
                     </div>
 
@@ -5646,7 +5923,7 @@ export default function App() {
                         </div>
                         <div>
                           Vũ khí: <b>{CONFIG.WEAPONS[player.equippedWeapon]?.name}</b> • Bạc:{' '}
-                          <b>{player.silverCoins}</b> • Tha Hóa: <b>{player.corruption}%</b> • Tâm Trí:{' '}
+                          <b>{player.silverCoins}</b> • Tha Hóa: <b>{player.corruption}%</b> • Lý Trí:{' '}
                           <b>{player.mind}/{player.maxMind}</b>
                         </div>
                       </div>
@@ -5692,7 +5969,7 @@ export default function App() {
   if (screen === 'ending' && endingInfo) {
     return (
       <div className="min-h-screen bg-[#070509] text-[#d3d3d3] flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full df-panel p-8 space-y-6 text-center">
+        <div className="max-w-2xl w-full df-panel p-8 space-y-6 text-center max-h-[90vh] overflow-y-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1 df-well border-[#8b0000] text-xs uppercase tracking-widest text-[#c96b6b]">
             <Sparkles className="w-3.5 h-3.5" /> Kết Cục Định Mệnh
           </div>
@@ -5703,7 +5980,7 @@ export default function App() {
             {endingInfo.title}
           </h1>
           <div className="text-sm uppercase tracking-widest text-[#b54848]">{endingInfo.subtitle}</div>
-          <p className="text-base text-[#d3d3d3] leading-relaxed border-y border-[#3a3a3a] py-5">
+          <p className="text-base text-[#d3d3d3] leading-relaxed border-y border-[#3a3a3a] py-5 max-h-[40vh] overflow-y-auto px-2">
             {endingInfo.epilogue}
           </p>
           <div className="flex flex-wrap justify-center gap-4 pt-2">
@@ -5786,9 +6063,9 @@ export default function App() {
 
     return (
       <div className="h-screen w-screen overflow-hidden bg-[#060508] text-[#d3d3d3] flex flex-col select-none">
-        {/* UPPER 68% COMBAT STAGE */}
+        {/* UPPER COMBAT STAGE (~64%, flex-fills remaining height safely) */}
         <div
-          className={`relative h-[68%] w-full bg-[#09070c] border-b border-[#c5a059]/45 flex flex-col items-center justify-between overflow-hidden ${
+          className={`relative flex-1 min-h-0 w-full bg-[#09070c] border-b border-[#c5a059]/45 flex flex-col items-center justify-between overflow-hidden ${
             screenShakeMode === 'heavy'
               ? 'animate-heavy-shake'
               : screenShakeMode === 'normal'
@@ -5812,14 +6089,14 @@ export default function App() {
           )}
 
           {/* Top Chamfered Telegraph & Enemy Header Banner */}
-          <div className="z-20 w-full max-w-4xl mt-1.5 px-3 shrink-0">
+          <div className="z-20 w-full max-w-5xl mt-1.5 px-3 shrink-0">
             <div
               className={`df-well px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
                 activeCombatEnemy.telegraphCoinFlip ? 'border-[#dc2626] bg-[#1e070a]/95' : ''
               }`}
             >
               <div className="min-w-0">
-                <div className="text-xs uppercase tracking-widest text-[#c96b6b] font-bold flex items-center gap-2 flex-wrap">
+                <div className="text-xs sm:text-sm uppercase tracking-widest text-[#c96b6b] font-bold flex items-center gap-2 flex-wrap">
                   <span>Hiệp #{activeCombatEnemy.turnCount + 1} • {activeCombatEnemy.customName || tpl.name}</span>
                   {enemyWeaponLost && (
                     <span className="px-1.5 py-0.5 bg-[#2a0c10] border border-[#8b0000] text-[11px] text-[#e5cfa0]">
@@ -5842,21 +6119,21 @@ export default function App() {
                     </span>
                   )}
                 </div>
-                <div
-                  className={`text-sm italic truncate ${
-                    activeCombatEnemy.telegraphCoinFlip
-                      ? 'text-[#fca5a5] font-bold not-italic animate-pulse'
-                      : 'text-[#d3d3d3]'
-                  }`}
-                >
-                  {activeCombatEnemy.telegraphCoinFlip
-                    ? `⚠️ ĐÒN TỬ THẦN BÁO TRƯỚC: [${tpl.coinFlipSkill?.name || tpl.telegraphName}] — Chọn [3] PHÒNG THỦ hoặc chuẩn bị Tung Đồng Xu!`
-                    : activeCombatEnemy.telegraphing
-                    ? `⚠️ SẮP TUNG: [${tpl.telegraphName}] — ${tpl.telegraphDesc}`
-                    : `“${tpl.telegraphDesc}”`}
-                </div>
+                {(activeCombatEnemy.telegraphCoinFlip || activeCombatEnemy.telegraphing) && (
+                  <div
+                    className={`text-sm truncate mt-0.5 ${
+                      activeCombatEnemy.telegraphCoinFlip
+                        ? 'text-[#fca5a5] font-bold animate-pulse'
+                        : 'text-[#fbbf24] font-semibold'
+                    }`}
+                  >
+                    {activeCombatEnemy.telegraphCoinFlip
+                      ? `⚠️ ĐÒN TỬ THẦN BÁO TRƯỚC: [${tpl.coinFlipSkill?.name || tpl.telegraphName}] — Chọn [3] PHÒNG THỦ hoặc chuẩn bị Tung Đồng Xu!`
+                      : `⚠️ SẮP TUNG: [${tpl.telegraphName}]`}
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-2 shrink-0 text-xs uppercase tracking-wider text-[#a3998f] font-mono">
+              <div className="flex items-center gap-2 shrink-0 text-xs sm:text-sm uppercase tracking-wider text-[#a3998f] font-mono">
                 <span>⌖ Chọn:</span>
                 <span className="text-[#c5a059] font-bold">{currentTargetLimb?.name}</span>
               </div>
@@ -5864,11 +6141,11 @@ export default function App() {
           </div>
 
           {/* Center Responsive 16:11 Stage Wrapper with Portrait Backdrop, Weapon VFX & On-Body Anatomical Reticles */}
-          <div className="flex-1 min-h-0 w-full flex items-center justify-center py-1 relative z-10">
-            <div className="relative h-full max-h-[440px] aspect-[16/11] max-w-full flex items-center justify-center">
+          <div className="flex-1 min-h-0 w-full flex items-center justify-center py-0.5 relative z-10">
+            <div className="relative h-full aspect-[16/11] max-w-full flex items-center justify-center">
               {showBossPortrait && tpl.combatPortraitUrl && (
                 <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute left-[18%] top-[2%] w-[64%] h-[82%] overflow-hidden combat-portrait-stage-mask">
+                  <div className="absolute left-[10%] top-[0%] w-[80%] h-[94%] overflow-hidden combat-portrait-stage-mask">
                     <img
                       src={tpl.combatPortraitUrl}
                       alt={activeCombatEnemy.customName || tpl.name}
@@ -5888,8 +6165,8 @@ export default function App() {
                     {activeCombatEnemy.severedLimbs.map((sevId) => {
                       const pos = reticleMap[sevId];
                       if (!pos) return null;
-                      const localX = Math.max(8, Math.min(92, ((pos.nx - 0.18) / 0.64) * 100));
-                      const localY = Math.max(8, Math.min(92, ((pos.ny - 0.02) / 0.82) * 100));
+                      const localX = Math.max(8, Math.min(92, ((pos.nx - 0.10) / 0.80) * 100));
+                      const localY = Math.max(8, Math.min(92, (pos.ny / 0.94) * 100));
                       return (
                         <React.Fragment key={`gash_${sevId}`}>
                           <div
@@ -6082,17 +6359,17 @@ export default function App() {
           </div>
         </div>
 
-        {/* LOWER 32% DARK FANTASY CONTROL DOCK (100% Keyboard-Driven) */}
-        <div className="h-[32%] w-full bg-[#08070b] p-2.5 flex gap-2.5">
-          {/* LEFT BOX (240px): Vertical Serif Command Buttons with Number Hotkeys */}
-          <div className="w-[240px] shrink-0 df-panel p-2 flex flex-col justify-between gap-1 pointer-events-none">
+        {/* LOWER 36% DARK FANTASY CONTROL DOCK (100% Keyboard-Driven) */}
+        <div className="h-[36%] min-h-[245px] w-full bg-[#08070b] p-2.5 sm:p-3 flex gap-2.5 sm:gap-3">
+          {/* LEFT BOX (295px): Vertical Serif Command Buttons with Number Hotkeys */}
+          <div className="w-[275px] sm:w-[300px] shrink-0 df-panel p-2.5 flex flex-col justify-between gap-1 overflow-y-auto pointer-events-none">
             {!activeCombatEnemy.defeated ? (
               <>
-                <div className="text-xs font-bold uppercase tracking-wider text-[#c5a059] px-1 truncate border-b border-[#3a3a3a] pb-0.5">
+                <div className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#c5a059] px-1 truncate border-b border-[#3a3a3a] pb-0.5">
                   Lượt: {actingName}
                 </div>
                 <div
-                  className={`w-full py-1 px-2.5 text-left text-xs sm:text-sm font-bold truncate ${
+                  className={`w-full py-1 px-3 text-left text-sm font-bold truncate ${
                     isPureTankTurn || isResolvingTurn
                       ? 'df-btn opacity-45'
                       : combatFocusPhase === 'action' && combatActionCursor === 0
@@ -6106,7 +6383,7 @@ export default function App() {
                     : `[1] ⚔ Đ.Thường (${currentTargetLimb?.name})`}
                 </div>
                 <div
-                  className={`w-full py-1 px-2.5 text-left text-xs sm:text-sm font-bold ${
+                  className={`w-full py-1 px-3 text-left text-sm font-bold ${
                     combatMenuMode === 'skills' ||
                     (combatFocusPhase === 'action' && combatActionCursor === 1)
                       ? 'df-btn-active ring-1 ring-[#fbbf24]'
@@ -6117,7 +6394,7 @@ export default function App() {
                   [2] ✦ K.Năng ({activeSkillIds.length})
                 </div>
                 <div
-                  className={`w-full py-1 px-2.5 text-left text-xs sm:text-sm font-bold ${
+                  className={`w-full py-1 px-3 text-left text-sm font-bold ${
                     (combatFocusPhase === 'action' && combatActionCursor === 2) || isPureTankTurn
                       ? 'df-btn-active ring-1 ring-[#fbbf24]'
                       : 'df-btn'
@@ -6127,7 +6404,7 @@ export default function App() {
                   {isPureTankTurn ? '[3] 🛡 Khiên Linh Hồn (+Đội)' : '[3] 🛡 Phòng Thủ'}
                 </div>
                 <div
-                  className={`w-full py-1 px-2.5 text-left text-xs sm:text-sm font-bold ${
+                  className={`w-full py-1 px-3 text-left text-sm font-bold ${
                     combatMenuMode === 'items' ||
                     (combatFocusPhase === 'action' && combatActionCursor === 3)
                       ? 'df-btn-active ring-1 ring-[#fbbf24]'
@@ -6140,7 +6417,7 @@ export default function App() {
                 {activeActorIdx === 0 && (
                   <>
                     <div
-                      className={`w-full py-1 px-2.5 text-left text-xs sm:text-sm font-bold text-[#9ab08e] ${
+                      className={`w-full py-1 px-3 text-left text-sm font-bold text-[#9ab08e] ${
                         combatFocusPhase === 'action' && combatActionCursor === 4
                           ? 'df-btn-active ring-1 ring-[#fbbf24]'
                           : 'df-btn'
@@ -6150,7 +6427,7 @@ export default function App() {
                       [5] 💬 Trò Chuyện
                     </div>
                     <div
-                      className={`w-full py-1 px-2.5 text-left text-xs sm:text-sm font-bold text-[#a3998f] ${
+                      className={`w-full py-1 px-3 text-left text-sm font-bold text-[#a3998f] ${
                         combatFocusPhase === 'action' && combatActionCursor === 5
                           ? 'df-btn-active ring-1 ring-[#fbbf24]'
                           : 'df-btn'
@@ -6164,27 +6441,27 @@ export default function App() {
               </>
             ) : (
               <div className="my-auto text-center space-y-2 p-2">
-                <div className="text-sm font-bold uppercase text-[#c5a059]">Chiến Thắng!</div>
-                <div className="w-full py-2 df-btn-bronze font-bold text-xs uppercase">
-                  [Enter] Thu Chiến Lợi Phẩm
+                <div className="text-base font-bold uppercase text-[#c5a059]">Chiến Thắng!</div>
+                <div className="w-full py-2.5 df-btn-bronze font-bold text-sm uppercase">
+                  [Enter] Thoát
                 </div>
               </div>
             )}
           </div>
 
           {/* RIGHT BOX: Dynamic Sub-Menu OR Horizontal Party Status Table */}
-          <div className="flex-1 df-panel p-2.5 overflow-y-auto flex flex-col justify-between pointer-events-none">
+          <div className="flex-1 df-panel p-3 overflow-y-auto flex flex-col justify-between pointer-events-none">
             {combatMenuMode === 'skills' && !activeCombatEnemy.defeated ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
-                  <span className="text-xs font-bold uppercase text-[#c5a059]">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1.5">
+                  <span className="text-xs sm:text-sm font-bold uppercase text-[#c5a059]">
                     Chọn Kỹ Năng — {actingName}
                   </span>
                   <span className="text-xs text-[#a3998f] font-mono">
                     [WASD] Chọn • [Enter] Dùng • [ESC] Quay lại
                   </span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {activeSkillIds.map((skId, sIdx) => {
                     const sk = CONFIG.SKILLS.find((s) => s.id === skId);
                     if (!sk) return null;
@@ -6195,14 +6472,14 @@ export default function App() {
                       : player.skillLevels[skId] || 1;
                     const curMind = activeAlly ? activeAlly.mind : player.mind;
                     const lockedByHoly =
-                      !activeAlly && sk.branch === 'Thánh Mẫu' && isHolyMotherBanned(player);
+                      !activeAlly && !canUseHolySkill(player, sk).allowed;
                     const isCursor =
                       combatFocusPhase === 'skills_menu' &&
                       sIdx === combatSubCursor % Math.max(1, activeSkillIds.length);
                     return (
                       <div
                         key={sk.id}
-                        className={`p-2 text-left text-xs ${
+                        className={`p-2.5 text-left text-xs sm:text-sm ${
                           curMind < sk.mindCost || lockedByHoly ? 'opacity-40' : ''
                         } ${isCursor ? 'df-card-active ring-1 ring-[#fbbf24]' : 'df-card'}`}
                       >
@@ -6210,25 +6487,25 @@ export default function App() {
                           <span>
                             {sk.name} (Cấp {lv})
                           </span>
-                          <span>-{sk.mindCost} Tâm Trí</span>
+                          <span>-{sk.mindCost} Lý Trí</span>
                         </div>
-                        <div className="text-xs text-[#d3d3d3]">{sk.descLv1}</div>
+                        <div className="text-xs text-[#d3d3d3] mt-0.5">{sk.descLv1}</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
             ) : combatMenuMode === 'items' && !activeCombatEnemy.defeated ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
-                  <span className="text-xs font-bold uppercase text-[#c5a059]">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1.5">
+                  <span className="text-xs sm:text-sm font-bold uppercase text-[#c5a059]">
                     Chọn Vật Phẩm Thực Dụng ({actingName})
                   </span>
                   <span className="text-xs text-[#a3998f] font-mono">
                     [WASD] Chọn • [Enter] Dùng • [ESC] Quay lại
                   </span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                   {usableCombatItems.map(([itemId, count], iIdx) => {
                     const item = CONFIG.ITEMS[itemId];
                     if (!item) return null;
@@ -6238,11 +6515,11 @@ export default function App() {
                     return (
                       <div
                         key={itemId}
-                        className={`p-2 flex items-center gap-2 text-left text-xs ${
+                        className={`p-2.5 flex items-center gap-2.5 text-left text-xs sm:text-sm ${
                           isCursor ? 'df-card-active ring-1 ring-[#fbbf24]' : 'df-card'
                         }`}
                       >
-                        <ItemArtworkCanvas itemOrWeaponId={itemId} size={32} />
+                        <ItemArtworkCanvas itemOrWeaponId={itemId} size={36} />
                         <div className="min-w-0">
                           <div className="font-bold text-[#c5a059] truncate">
                             {item.name} (x{count})
@@ -6256,79 +6533,61 @@ export default function App() {
               </div>
             ) : (
               /* DEFAULT: HORIZONTAL PARTY STATUS ROWS */
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-4 text-xs uppercase tracking-wider text-[#a3998f] border-b border-[#3a3a3a] pb-1">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-4 text-xs sm:text-sm uppercase tracking-wider text-[#a3998f] border-b border-[#3a3a3a] pb-1.5">
                   <span>Đội Hình & Trạng Thái Tứ Chi</span>
-                  <span>W/S/A/D Chọn • Enter/Space Xác nhận • ESC Quay lại</span>
+                  <span className="text-xs font-mono">W/S/A/D Chọn • Enter/Space Xác nhận • ESC Quay lại</span>
                 </div>
 
                 {/* Row 1: Main Character */}
                 <div
-                  className={`p-1.5 grid grid-cols-12 items-center gap-2 text-xs ${
+                  className={`p-2.5 sm:p-3 grid grid-cols-12 items-center gap-3 text-sm ${
                     activeActorIdx === 0 && !activeCombatEnemy.defeated
                       ? 'df-card-active'
                       : 'df-card'
                   }`}
                 >
-                  <div className="col-span-3 flex items-center gap-2 min-w-0">
-                    {(() => {
-                      const clsPortrait = CONFIG.CLASSES.find(
-                        (c) => c.id === player.classId
-                      )?.combatPortraitUrl;
-                      const isDangerWarn =
-                        player.statuses.bleeding ||
-                        Object.values(player.limbs.infected).some(Boolean) ||
-                        player.corruption >= 60;
-                      return (
-                        <CharacterPortraitBox
-                          spriteKey={player.classId}
-                          portraitUrl={clsPortrait}
-                          size={44}
-                          alt={player.name}
-                          seamless
-                          isError={Boolean(clsPortrait && portraitErrorMap[clsPortrait])}
-                          onPortraitError={markPortraitError}
-                          className={
-                            isDangerWarn
-                              ? 'drop-shadow-[0_0_8px_rgba(220,38,38,0.75)]'
-                              : ''
-                          }
-                        />
-                      );
-                    })()}
-                    <div className="min-w-0 flex flex-wrap items-center gap-1">
-                      <span className="font-bold text-[#c5a059] truncate">{player.name}</span>
+                  <div className="col-span-3 flex items-center min-w-0">
+                    <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm sm:text-base font-bold text-[#c5a059] truncate">
+                        {player.name}
+                      </span>
                       {activeActorIdx === 0 && !activeCombatEnemy.defeated && (
-                        <span className="text-[11px] text-[#c5a059] font-bold">
+                        <span className="text-xs text-[#c5a059] font-bold">
                           [ĐANG CHỌN]
                         </span>
                       )}
                       {player.statuses.guarding && (
-                        <span className="text-[11px] text-[#94a3b8] font-bold">[THỦ]</span>
+                        <span className="text-xs text-[#94a3b8] font-bold">[THỦ]</span>
                       )}
                       {player.statuses.bleeding && (
-                        <span className="text-[11px] text-[#c96b6b] font-bold">
+                        <span className="text-xs text-[#c96b6b] font-bold">
                           🩸 CHẢY MÁU
                         </span>
                       )}
+                      {Object.values(player.limbs.infected).some(Boolean) && (
+                        <span className="text-xs text-[#d97706] font-bold">
+                          ☣️ NHIỄM TRÙNG
+                        </span>
+                      )}
                       {!player.statuses.bleeding && (player.statuses.bleedImmunityTurns || 0) > 0 && (
-                        <span className="text-[11px] text-[#9ab08e] font-bold">
+                        <span className="text-xs text-[#9ab08e] font-bold">
                           🩹 ĐÃ CẦM MÁU
                         </span>
                       )}
                       {player.hunger < 50 && !player.statuses.bleeding && (
-                        <span className="text-[11px] text-[#9ab08e] font-bold">[NHANH]</span>
+                        <span className="text-xs text-[#9ab08e] font-bold">[NHANH]</span>
                       )}
                     </div>
                   </div>
                   <div className="col-span-3">
-                    <div className="flex justify-between text-xs mb-0.5">
-                      <span className="text-[#c96b6b]">Sinh Lực</span>
-                      <span className="font-mono text-[#d3d3d3]">
+                    <div className="flex justify-between text-xs sm:text-sm mb-1">
+                      <span className="text-[#c96b6b] font-semibold">Sinh Lực</span>
+                      <span className="font-mono font-bold text-[#d3d3d3]">
                         {player.hp}/{player.maxHp}
                       </span>
                     </div>
-                    <div className="w-full h-2 bg-[#1a0b0d] border border-[#5e1414]">
+                    <div className="w-full h-3 bg-[#1a0b0d] border border-[#5e1414]">
                       <div
                         className="h-full bg-[#8b0000]"
                         style={{ width: `${Math.max(0, Math.min(100, (player.hp / Math.max(1, player.maxHp)) * 100))}%` }}
@@ -6336,20 +6595,20 @@ export default function App() {
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <div className="flex justify-between text-xs mb-0.5">
-                      <span className="text-[#94a3b8]">Tâm Trí</span>
-                      <span className="font-mono text-[#d3d3d3]">
+                    <div className="flex justify-between text-xs sm:text-sm mb-1">
+                      <span className="text-[#94a3b8] font-semibold">Lý Trí</span>
+                      <span className="font-mono font-bold text-[#d3d3d3]">
                         {player.mind}/{player.maxMind}
                       </span>
                     </div>
-                    <div className="w-full h-2 bg-[#11161d] border border-[#3a4a5e]">
+                    <div className="w-full h-3 bg-[#11161d] border border-[#3a4a5e]">
                       <div
                         className="h-full bg-[#4d627a]"
                         style={{ width: `${Math.max(0, Math.min(100, (player.mind / Math.max(1, player.maxMind)) * 100))}%` }}
                       />
                     </div>
                   </div>
-                  <div className="col-span-4 flex flex-wrap gap-1 justify-end">
+                  <div className="col-span-4 flex flex-wrap gap-1.5 justify-end">
                     {(
                       [
                         ['leftArm', 'Tay T'],
@@ -6363,7 +6622,7 @@ export default function App() {
                       return (
                         <span
                           key={k}
-                          className={`px-1.5 py-0.5 text-xs border ${
+                          className={`px-2 py-1 text-xs sm:text-sm font-medium border ${
                             !intact
                               ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b] line-through'
                               : inf
@@ -6386,7 +6645,7 @@ export default function App() {
                   return (
                     <div
                       key={ally.id}
-                      className={`p-1.5 grid grid-cols-12 items-center gap-2 text-xs ${
+                      className={`p-2.5 sm:p-3 grid grid-cols-12 items-center gap-3 text-sm ${
                         isDead
                           ? 'df-well opacity-45'
                           : isTurn
@@ -6394,69 +6653,47 @@ export default function App() {
                           : 'df-card'
                       }`}
                     >
-                      <div className="col-span-3 flex items-center gap-2 min-w-0">
-                        {(() => {
-                          const allyPortrait = CONFIG.CLASSES.find(
-                            (c) => c.id === (ally.spriteKey || ally.classId)
-                          )?.combatPortraitUrl;
-                          const allyWarn =
-                            Boolean(ally.statuses?.bleeding) ||
-                            Object.values(ally.limbs?.infected || {}).some(Boolean);
-                          return (
-                            <CharacterPortraitBox
-                              spriteKey={ally.spriteKey || ally.classId}
-                              portraitUrl={allyPortrait}
-                              size={44}
-                              alt={ally.name}
-                              seamless
-                              isError={Boolean(allyPortrait && portraitErrorMap[allyPortrait])}
-                              onPortraitError={markPortraitError}
-                              className={
-                                allyWarn
-                                  ? 'drop-shadow-[0_0_8px_rgba(220,38,38,0.75)]'
-                                  : ''
-                              }
-                            />
-                          );
-                        })()}
-                        <div className="min-w-0 flex flex-wrap items-center gap-1">
-                          <span className="font-bold text-[#d3d3d3] truncate">{ally.name}</span>
+                      <div className="col-span-3 flex items-center min-w-0">
+                        <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm sm:text-base font-bold text-[#d3d3d3] truncate">
+                            {ally.name}
+                          </span>
                           {isTurn && (
-                            <span className="text-[11px] text-[#c5a059] font-bold">
+                            <span className="text-xs text-[#c5a059] font-bold">
                               [ĐANG CHỌN]
                             </span>
                           )}
-                          <span className="text-[11px] font-bold text-[#a889b8]">
+                          <span className="text-xs font-bold text-[#a889b8]">
                             {ally.isUndeadSummon ? '[CHIÊU HỒN]' : '[ĐỒNG ĐỘI]'}
                           </span>
                           {isPureTankSummon(ally) && (
-                            <span className="px-1 py-0.5 bg-[#191620] border border-[#3a3a3a] text-[11px] text-[#d3d3d3] font-bold">
+                            <span className="px-1.5 py-0.5 bg-[#191620] border border-[#3a3a3a] text-xs text-[#d3d3d3] font-bold">
                               [THUẦN THỦ]
                             </span>
                           )}
                           {ally.guarding && (
-                            <span className="px-1 py-0.5 bg-[#1b1714] border border-[#c5a059] text-[11px] text-[#c5a059] font-bold">[THỦ]</span>
+                            <span className="px-1.5 py-0.5 bg-[#1b1714] border border-[#c5a059] text-xs text-[#c5a059] font-bold">[THỦ]</span>
                           )}
                           {(ally.stunnedTurns || 0) > 0 && (
-                            <span className="px-1 py-0.5 bg-[#291e0e] border border-[#c5a059] text-[11px] text-[#e5cfa0] font-bold">
+                            <span className="px-1.5 py-0.5 bg-[#291e0e] border border-[#c5a059] text-xs text-[#e5cfa0] font-bold">
                               [CHOÁNG]
                             </span>
                           )}
                           {isFrenzied && (
-                            <span className="px-1 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[11px] text-[#d3d3d3] font-bold">
+                            <span className="px-1.5 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-xs text-[#d3d3d3] font-bold">
                               {ally.isUndeadSummon ? '[CUỒNG LOẠN]' : '[HOẢNG LOẠN]'}
                             </span>
                           )}
                         </div>
                       </div>
                       <div className="col-span-3">
-                        <div className="flex justify-between text-xs mb-0.5">
-                          <span className="text-[#c96b6b]">Sinh Lực</span>
-                          <span className="font-mono text-[#d3d3d3]">
+                        <div className="flex justify-between text-xs sm:text-sm mb-1">
+                          <span className="text-[#c96b6b] font-semibold">Sinh Lực</span>
+                          <span className="font-mono font-bold text-[#d3d3d3]">
                             {ally.hp}/{ally.maxHp}
                           </span>
                         </div>
-                        <div className="w-full h-2 bg-[#1a0a0d] border border-[#3a3a3a]">
+                        <div className="w-full h-3 bg-[#1a0a0d] border border-[#3a3a3a]">
                           <div
                             className="h-full bg-[#8b0000]"
                             style={{ width: `${Math.max(0, Math.min(100, (ally.hp / Math.max(1, ally.maxHp)) * 100))}%` }}
@@ -6464,20 +6701,20 @@ export default function App() {
                         </div>
                       </div>
                       <div className="col-span-2">
-                        <div className="flex justify-between text-xs mb-0.5">
-                          <span className="text-[#a3b2c4]">Tâm Trí</span>
-                          <span className="font-mono text-[#d3d3d3]">
+                        <div className="flex justify-between text-xs sm:text-sm mb-1">
+                          <span className="text-[#a3b2c4] font-semibold">Lý Trí</span>
+                          <span className="font-mono font-bold text-[#d3d3d3]">
                             {ally.mind}/{ally.maxMind}
                           </span>
                         </div>
-                        <div className="w-full h-2 bg-[#11151d] border border-[#3a3a3a]">
+                        <div className="w-full h-3 bg-[#11151d] border border-[#3a3a3a]">
                           <div
                             className="h-full bg-[#5b6f8a]"
                             style={{ width: `${Math.max(0, Math.min(100, (ally.mind / Math.max(1, ally.maxMind)) * 100))}%` }}
                           />
                         </div>
                       </div>
-                      <div className="col-span-4 flex flex-wrap gap-1 justify-end">
+                      <div className="col-span-4 flex flex-wrap gap-1.5 justify-end">
                         {(
                           [
                             ['leftArm', 'Tay T'],
@@ -6491,7 +6728,7 @@ export default function App() {
                           return (
                             <span
                               key={k}
-                              className={`px-1.5 py-0.5 text-xs border ${
+                              className={`px-2 py-1 text-xs sm:text-sm font-medium border ${
                                 !intact
                                   ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b] line-through'
                                   : inf
@@ -6552,7 +6789,7 @@ export default function App() {
           {/* Compact 3-God Affinity Status Badges */}
           <div
             className="flex items-center gap-1"
-            title="Thiện cảm với 3 Vị Thần — Dùng để học phép nhánh Thánh Mẫu, Hư Vô và Ác Quỷ tại Bàn Thờ Hexen"
+            title="Tín Ngưỡng với 3 Thực Thể — Dùng để học phép nhánh Thánh Mẫu, Hư Vô và Huyết Quỷ tại Đài Cộng Hưởng"
           >
             {(
               [
@@ -6577,7 +6814,7 @@ export default function App() {
                 {
                   key: 'demonicPact' as const,
                   icon: '🩸',
-                  name: 'Giao Kèo Ác Quỷ',
+                  name: 'Huyết Quỷ',
                   val: player.affinities?.demonicPact || 0,
                   locked: false,
                   activeClass: 'bg-[#2b0c10] border-[#8b0000] text-[#d3d3d3]',
@@ -6587,8 +6824,8 @@ export default function App() {
             ).map((g) => (
               <span
                 key={g.key}
-                title={`${g.name}: Thiện cảm ${g.val}${
-                  g.locked ? ' (Đã bị khóa do nuốt xác)' : ''
+                title={`${g.name}: Tín Ngưỡng ${g.val}/3${
+                  g.locked ? ' (Đã bị khóa)' : ''
                 }`}
                 className={`px-2 py-0.5 border font-mono text-xs leading-none flex items-center gap-1 transition-all ${
                   g.locked
@@ -6698,13 +6935,13 @@ export default function App() {
                         : '🩸'}
                     </span>
                     <span>
-                      Thiện cảm {affinityToast.godName} đã tăng! ({affinityToast.prevVal} →{' '}
-                      {affinityToast.nextVal})
+                      Tín Ngưỡng {affinityToast.godName} đã tăng! ({affinityToast.prevVal} →{' '}
+                      {affinityToast.nextVal}/3)
                     </span>
                   </div>
                   <div className="text-[11px] text-[#d3d3d3]">
                     {affinityToast.unlockedSkills.length > 0
-                      ? `✨ Khai mở tại Bàn Thờ Hexen: ${affinityToast.unlockedSkills.join(', ')}`
+                      ? `✨ Khai mở tại Đài Cộng Hưởng: ${affinityToast.unlockedSkills.join(', ')}`
                       : `🔮 Cộng hưởng thần lực đạt bậc ${affinityToast.nextVal}.`}
                   </div>
                 </div>
@@ -6712,7 +6949,7 @@ export default function App() {
                   type="button"
                   onClick={() => setAffinityToast(null)}
                   className="text-xs opacity-70 hover:opacity-100 px-1 cursor-pointer text-[#d3d3d3]"
-                  aria-label="Đóng thông báo thiện cảm"
+                  aria-label="Đóng thông báo Tín Ngưỡng"
                 >
                   ✕
                 </button>
@@ -6930,7 +7167,7 @@ export default function App() {
               <div className="flex items-center gap-1.5">
                 {memberMind < 30 && (
                   <span className="px-1.5 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[10px] font-bold text-[#d3d3d3]">
-                    Tâm Trí &lt; 30 (Hoảng Loạn)
+                    Lý Trí &lt; 30 (Hoảng Loạn)
                   </span>
                 )}
                 {!isSelectedUndead && memberHunger >= 80 ? (
@@ -6963,11 +7200,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Tâm Trí */}
+              {/* Lý Trí */}
               <div>
                 <div className="flex justify-between items-center text-[11px] mb-1">
                   <span className="flex items-center gap-1 text-[#a3b2c4] font-bold">
-                    <Brain className="w-3 h-3" /> Tâm Trí
+                    <Brain className="w-3 h-3" /> Lý Trí
                   </span>
                   <span className={`font-mono ${memberMind < 30 ? 'text-[#c96b6b] font-bold' : 'text-[#d3d3d3]'}`}>
                     {memberMind}/{memberMaxMind}
@@ -7117,7 +7354,7 @@ export default function App() {
                     </div>
                     <div>
                       <div className="flex justify-between text-[#a3b2c4]">
-                        <span>Tâm Trí</span>
+                        <span>Lý Trí</span>
                         <span>{player.mind}/{player.maxMind}</span>
                       </div>
                       <div className="w-full h-1 bg-[#11151d] border border-[#3a3a3a]">
@@ -7209,7 +7446,7 @@ export default function App() {
                         </div>
                         <div>
                           <div className="flex justify-between text-[#a3b2c4]">
-                            <span>Tâm Trí</span>
+                            <span>Lý Trí</span>
                             <span>{ally.mind}/{ally.maxMind}</span>
                           </div>
                           <div className="w-full h-1 bg-[#11151d] border border-[#3a3a3a]">
@@ -7268,7 +7505,7 @@ export default function App() {
               {invTab !== 'saw' && (player.dismissedCompanions || []).length > 0 && (
                 <div className="df-well p-3 space-y-2 border-[#c5a059]/45">
                   <div className="text-xs font-bold uppercase tracking-wider text-[#c5a059]">
-                    Đồng Hành Đã Rời Nhóm ({(player.dismissedCompanions || []).length}) — Có thể gọi lại từ bất cứ đâu hoặc tại Bàn Thờ Hexen
+                    Đồng Hành Đã Rời Nhóm ({(player.dismissedCompanions || []).length}) — Có thể gọi lại từ bất cứ đâu hoặc tại Đài Cộng Hưởng
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {(player.dismissedCompanions || []).map((dc) => (
@@ -7279,7 +7516,7 @@ export default function App() {
                         <div className="min-w-0">
                           <div className="font-bold text-[#dfd2b4] truncate">{dc.name}</div>
                           <div className="text-[11px] font-mono text-[#9b8f82]">
-                            HP {dc.hp}/{dc.maxHp} • Tâm {dc.mind}/{dc.maxMind}
+                            Sinh Lực {dc.hp}/{dc.maxHp} • Lý Trí {dc.mind}/{dc.maxMind}
                           </div>
                         </div>
                         <button
@@ -8006,7 +8243,69 @@ export default function App() {
                                 <div className="text-xs text-[#9b8f82] leading-snug">{item.desc}</div>
                               </div>
                             </div>
-                            {item.unlockSkillId ? (
+                            {itemId === 'crumpled_hunter_note' ? (
+                              <button
+                                onClick={() => setActiveModal('hunter_note')}
+                                className="df-btn-bronze px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
+                              >
+                                📜 Đọc Mảnh Giấy
+                              </button>
+                            ) : item.unlockRecipes && item.unlockRecipes.length > 0 ? (
+                              (() => {
+                                const missingRecs = item.unlockRecipes!.filter(
+                                  (rid) => !player.unlockedRecipes.includes(rid)
+                                );
+                                return missingRecs.length === 0 ? (
+                                  <span className="px-2.5 py-1 bg-[#121914] border border-[#3a3a3a] text-[10px] font-bold text-[#9ab08e] shrink-0">
+                                    Đã Học Công Thức
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      sfx.playHealOrChime();
+                                      setPlayer((prev) => ({
+                                        ...prev,
+                                        inventory: {
+                                          ...prev.inventory,
+                                          [itemId]: Math.max(0, (prev.inventory[itemId] || 0) - 1),
+                                        },
+                                        unlockedRecipes: Array.from(
+                                          new Set([...prev.unlockedRecipes, ...(item.unlockRecipes || [])])
+                                        ),
+                                      }));
+                                      const msg = `📖 Đã giải mã [${item.name}], mở khóa ${missingRecs.length} công thức Giả Kim mới!`;
+                                      setInvFeedback(msg);
+                                      addLog(msg);
+                                    }}
+                                    className="df-btn-bronze px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
+                                  >
+                                    📖 Học Công Thức
+                                  </button>
+                                );
+                              })()
+                            ) : itemId === 'scroll_shadow_step' ? (
+                              <button
+                                onClick={() => {
+                                  sfx.playSfx('ritual');
+                                  setPlayer((prev) => ({
+                                    ...prev,
+                                    inventory: {
+                                      ...prev.inventory,
+                                      scroll_shadow_step: Math.max(0, (prev.inventory.scroll_shadow_step || 0) - 1),
+                                    },
+                                    stealthStepsTurns: Math.max(prev.stealthStepsTurns || 0, 8),
+                                  }));
+                                  const msg = '🌑 Niệm [Cuộn Bước Chân Bóng Tối]: Ẩn mình khỏi tầm nhìn quái vật trong 8 bước di chuyển!';
+                                  setInvFeedback(msg);
+                                  addLog(msg);
+                                  setActiveModal(null);
+                                  setLogOverlayVisible(true);
+                                }}
+                                className="df-btn-bronze px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
+                              >
+                                🌑 Ẩn Thân (8 Bước)
+                              </button>
+                            ) : item.unlockSkillId ? (
                               (() => {
                                 const skId = item.unlockSkillId!;
                                 const skDef = CONFIG.SKILLS.find((s) => s.id === skId);
@@ -8096,18 +8395,18 @@ export default function App() {
                               >
                                 🥩 Đặt Mồi Nhử
                               </button>
-                            ) : itemId === 'bone_saw' ? (
+                            ) : itemId === 'bone_saw' || itemId === 'scroll_emergency_amputation' ? (
                               <button
                                 onClick={() => {
                                   setIsAmputating(true);
                                   setSawTargetMemberIdx(null);
-                                  setPreviewItemId('bone_saw');
+                                  setPreviewItemId(itemId);
                                   setInvFeedback(null);
                                   setInvTab('saw');
                                 }}
                                 className="df-btn-blood px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
                               >
-                                Dùng
+                                {itemId === 'scroll_emergency_amputation' ? '📜 Cắt Chi Khẩn Cấp' : 'Dùng'}
                               </button>
                             ) : item.mapUsable ? (
                               <button
@@ -8125,6 +8424,51 @@ export default function App() {
                                   if (logs.length > 0) {
                                     setInvFeedback(logs.join(' '));
                                     logs.forEach((l) => addLog(l));
+                                  }
+                                  if (itemId === 'elixir_of_ancients' && !selectedAlly && pCopy.classId === 'night_hunter') {
+                                    if (pCopy.questFlags?.vaelisDefeated) {
+                                      setActiveModal(null);
+                                      setInteractionMenu({
+                                        title: 'MỤC TIÊU CÁ NHÂN: ĐỘC HÓA ĐÁ ĐÃ GIẢI',
+                                        description:
+                                          'Bạn đã uống cạn [Tiên Dược Nguyên Sơ] giải trừ lời nguyền hóa đá và Kết Giới Chướng Khí của Vaelis đã tan vỡ. Bạn muốn rời khỏi Thung Lũng hoàn thành mục tiêu cá nhân hay ở lại Vết Rách định đoạt vận mệnh thế giới?',
+                                        selectedIndex: 0,
+                                        choices: [
+                                          {
+                                            label: '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Rời Thung Lũng (S-Ending Gã Săn Di Vật)',
+                                            onSelect: () => {
+                                              const res = evaluateCanonEnding({
+                                                classId: pCopy.classId,
+                                                corruption: pCopy.corruption,
+                                                holyMotherBanned: isHolyMotherBanned(pCopy),
+                                                readBookIds: pCopy.readBookIds,
+                                                inventory: pCopy.inventory,
+                                                learnedSkillIds: Object.keys(pCopy.skillLevels),
+                                                vaelisTalked: Boolean(pCopy.questFlags?.vaelisTalked),
+                                                vaelisDefeated: true,
+                                                curedPetrification: true,
+                                                child13Rescued: Boolean(pCopy.questFlags?.child13Rescued),
+                                                child13InParty: pCopy.party.some((a) => a.id === 'child_13' && a.hp > 0),
+                                                endingAction: 'ESCAPE_EXTERIOR_GATE',
+                                              });
+                                              setInteractionMenu(null);
+                                              setEndingInfo(res);
+                                              setScreen('ending');
+                                            },
+                                          },
+                                          {
+                                            label: '🌌 Tiếp Tục Ở Lại Vết Rách Định Đoạt Thế Giới (World Endings)',
+                                            onSelect: () => {
+                                              setInteractionMenu(null);
+                                              addLog('🌌 Bạn quyết định ở lại đáy Vực Sao để định đoạt Vết Rách Không Gian.');
+                                              setLogOverlayVisible(true);
+                                            },
+                                          },
+                                        ],
+                                      });
+                                    } else {
+                                      addLog('✨ Độc hóa đá đã tan! Hãy hạ gục Vaelis ở Tầng 1 để phá Kết Giới và mở đường thoát thân, hoặc tiến tới Vết Rách Tầng 3.');
+                                    }
                                   }
                                 }}
                                 className="df-btn-bronze px-3 py-1.5 disabled:opacity-35 font-bold text-xs cursor-pointer shrink-0"
@@ -8157,16 +8501,29 @@ export default function App() {
                         Bàn Pha Chế Giả Kim
                       </div>
                       {CONFIG.RECIPES.map((rec) => {
-                        const canCraft = Object.entries(rec.ingredients).every(
-                          ([ingId, qty]) => (player.inventory[ingId] || 0) >= qty
-                        );
+                        const isRecipeUnlocked =
+                          rec.id === 'recipe_herbal_salve' || player.unlockedRecipes.includes(rec.id);
+                        const canCraft =
+                          isRecipeUnlocked &&
+                          Object.entries(rec.ingredients).every(
+                            ([ingId, qty]) => (player.inventory[ingId] || 0) >= qty
+                          );
                         return (
                           <div
                             key={rec.id}
-                            className="p-3 df-card flex items-center justify-between text-xs gap-2"
+                            className={`p-3 df-card flex items-center justify-between text-xs gap-2 ${
+                              isRecipeUnlocked ? '' : 'opacity-65'
+                            }`}
                           >
                             <div>
-                              <div className="font-bold text-[#dfd2b4]">{rec.name}</div>
+                              <div className="font-bold text-[#dfd2b4]">
+                                {rec.name}
+                                {!isRecipeUnlocked && (
+                                  <span className="ml-1.5 text-[10px] text-[#c96b6b] font-normal">
+                                    [🔒 Cần Sách Công Thức]
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-[11px] text-[#9b8f82]">{rec.desc}</div>
                             </div>
                             <button
@@ -8184,7 +8541,7 @@ export default function App() {
                               }}
                               className="df-btn-bronze px-3 py-1.5 disabled:opacity-35 font-bold cursor-pointer shrink-0"
                             >
-                              Pha Chế
+                              {isRecipeUnlocked ? 'Pha Chế' : '🔒 Khóa'}
                             </button>
                           </div>
                         );
@@ -8282,7 +8639,7 @@ export default function App() {
                     {sawStep === 1 && (
                       <div className="space-y-3">
                         <p className="text-xs text-[#d3d3d3]">
-                          Chọn thành viên trong đội cần phẫu thuật bằng <b>Cưa Xương Rỉ Máu (x{player.inventory.bone_saw || 0})</b>:
+                          Chọn thành viên trong đội cần phẫu thuật bằng <b>Cưa Xương (x{player.inventory.bone_saw || 0})</b> hoặc <b>Cuộn Cắt Chi Khẩn Cấp (x{player.inventory.scroll_emergency_amputation || 0})</b>:
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                           {/* Main Player Card */}
@@ -8414,8 +8771,10 @@ export default function App() {
                           {limbDefs.map(([limbKey, label]) => {
                             const intact = targetLimbs?.[limbKey] ?? true;
                             const infected = targetLimbs?.infected?.[limbKey] ?? false;
-                            const canAmputate =
-                              intact && infected && (player.inventory.bone_saw || 0) > 0;
+                            const hasScrollAmp =
+                              !sawTargetAlly && (player.inventory.scroll_emergency_amputation || 0) > 0;
+                            const hasBoneSaw = (player.inventory.bone_saw || 0) > 0;
+                            const canAmputate = intact && infected && (hasScrollAmp || hasBoneSaw);
                             return (
                               <button
                                 key={limbKey}
@@ -8427,10 +8786,12 @@ export default function App() {
                                   const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
                                   const res = sawTargetAlly
                                     ? amputateAllyLimbWithBoneSaw(pCopy, sawTargetMemberIdx - 1, limbKey)
+                                    : hasScrollAmp
+                                    ? useEmergencyAmputationScroll(pCopy, limbKey)
                                     : amputateInfectedLimbWithBoneSaw(pCopy, limbKey);
                                   setPlayer(pCopy);
                                   if (res.success) {
-                                    const surgeryLog = `Cưa xương siết chặt qua khớp xương của ${targetName}, ngăn chặn độc tố lan vào tim!`;
+                                    const surgeryLog = res.message;
                                     setInvFeedback(surgeryLog);
                                     addLog(`🪚 ${surgeryLog}`);
                                   } else {
@@ -8464,7 +8825,9 @@ export default function App() {
                                   {!intact
                                     ? 'Chi đã bị cắt rời.'
                                     : infected
-                                    ? 'Bấm để cưa bỏ (-12 Sinh Lực)'
+                                    ? hasScrollAmp
+                                      ? 'Dùng Cuộn Cắt Chi (-12 Sinh Lực)'
+                                      : 'Bấm để cưa bỏ (-12 Sinh Lực)'
                                     : 'Không cần phẫu thuật'}
                                 </div>
                               </button>
@@ -8560,7 +8923,7 @@ export default function App() {
 
                   return (
                     <div
-                      className="p-6 df-parchment-frame text-[#26190d] space-y-4"
+                      className="p-6 df-parchment-frame text-[#26190d] space-y-4 max-h-[60vh] overflow-y-auto"
                       style={{
                         fontFamily: "'Cormorant Garamond', serif",
                       }}
@@ -8588,7 +8951,42 @@ export default function App() {
       )}
 
       {/* ========================================================================
-          MODAL 3: HEXEN SOUL ALTAR ([H]) WITH AFFINITIES, STAT NODES, LIMB REGROWTH & 3-FLOOR PORTAL
+          MODAL 2B: CRUMPLED HUNTER NOTE (Gã Săn Di Vật Starter Clues)
+      ======================================================================== */}
+      {activeModal === 'hunter_note' && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+          <div className="max-w-xl w-full df-panel p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-2">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-[#c5a059]" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-[#dfd2b4]">
+                  Mảnh Giấy Nhàu Nát Của Lão Thần Y
+                </h2>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
+              >
+                Đóng [ESC]
+              </button>
+            </div>
+            <div
+              className="p-6 df-parchment-frame text-[#26190d] space-y-3 max-h-[65vh] overflow-y-auto"
+              style={{ fontFamily: "'Cormorant Garamond', serif" }}
+            >
+              <div className="text-xs uppercase tracking-widest font-bold text-[#8b0000] border-b border-[#6e5233]/40 pb-1">
+                Thư Mật Gửi Gã Săn Di Vật
+              </div>
+              <p className="text-base leading-relaxed whitespace-pre-line">
+                {`“Khụ... Ta là Lão Thần Y dưới đáy Vực Sao. Đôi chân ta đã hóa đá quá nửa vì chướng khí Thung Lũng.\n\nNếu ngươi lần theo dấu máu xuống tới Tầng 3, bên mép Vết Rách Hư Vô chỉ còn ĐÚNG MỘT BÌNH [Tiên Dược Nguyên Sơ] đặt cạnh lồng sắt của Thánh Tử Thứ 13.\n\nTa không thể cứu nổi tất cả. Hoặc là ngươi dùng nó cho mục đích ích kỷ, hoặc tưới nó lên mầm sống duy nhất giữa vực sâu sau khi tìm đủ Lõi Khóa Hư Vô và trang Cuộn Da Dê IX trong thư viện...”`}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================
+          MODAL 3: ĐÀI CỘNG HƯỞNG ([H]) WITH AFFINITIES, STAT NODES, LIMB REGROWTH & 3-FLOOR PORTAL
       ======================================================================== */}
       {activeModal === 'hexen' && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
@@ -8597,7 +8995,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <Flame className="w-4 h-4 text-[#8b0000]" />
                 <h2 className="text-base font-bold uppercase tracking-wider text-[#c5a059]">
-                  Bàn Thờ Hexen – Thần Lực &amp; Kỹ Năng (Đá NL: {player.energyStones})
+                  Đài Cộng Hưởng – Thần Lực &amp; Kỹ Năng (Đá LH: {player.energyStones})
                 </h2>
               </div>
               <button
@@ -8625,21 +9023,21 @@ export default function App() {
                     'holyMother',
                     '✝ Thánh Mẫu (Trật Tự)',
                     player.affinities?.holyMother || 0,
-                    'Tăng qua hành động: Khắc ấn Vòng Tròn Cổ Đại (khi giữ mình thuần khiết), cứu Giáo Sĩ Mù hoặc giải thoát Thánh Tử 12.',
+                    'Tín ngưỡng qua hành động thuần khiết (cấm khi Tha Hóa ≥ 25, Nuốt Xác hoặc học Huyết Quỷ).',
                     'text-[#c5a059]',
                   ],
                   [
                     'primordialVoid',
                     '🌌 Hư Vô Nguyên Thủy',
                     player.affinities?.primordialVoid || 0,
-                    'Tăng qua hành động: Thiền định Khe Nứt Chướng Khí Hư Vô hoặc giải mã Cổ Thư cùng Kẻ Chép Sử.',
+                    '-10 Lý Trí tối đa mỗi bậc; đổi lại tăng kháng Chướng Khí Vực Sao Tầng 3 (bậc 3 miễn nhiễm).',
                     'text-[#a889b8]',
                   ],
                   [
                     'demonicPact',
-                    '🩸 Giao Kèo Ác Quỷ',
+                    '🩸 Huyết Quỷ',
                     player.affinities?.demonicPact || 0,
-                    'Tăng qua hành động: Huyết tế Vòng Tròn Máu, Nuốt Xác Quái, Huyết Rèn hoặc rút máu Thánh Tử 12.',
+                    '+15 Tha Hóa mỗi bậc; đạt bậc ≥ 2 khóa phép Thánh Mẫu bậc cao.',
                     'text-[#c96b6b]',
                   ],
                 ] as const
@@ -8650,7 +9048,7 @@ export default function App() {
                 >
                   <div className={`flex justify-between font-bold ${col}`}>
                     <span>{label}</span>
-                    <span className="font-mono">Thiện cảm {lv}</span>
+                    <span className="font-mono">Tín Ngưỡng {lv}/3</span>
                   </div>
                   <p className="text-[11px] text-[#d3d3d3]/85 leading-snug">{desc}</p>
                 </div>
@@ -8661,7 +9059,7 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 df-well p-3 text-xs">
               <div className="md:col-span-6 space-y-2">
                 <div className="font-bold uppercase text-[#c5a059]">
-                  Cung Thấp: Cường Hóa Chỉ Số Nội Tại (1 Đá Năng Lượng / Nốt)
+                  Cung Thấp: Cường Hóa Chỉ Số Nội Tại (1 Đá Linh Hồn / Nốt)
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {(
@@ -8669,7 +9067,7 @@ export default function App() {
                       ['agility_1', '⚡ Nhanh Nhẹn +1 (+5% Né)'],
                       ['atk_1', '⚔️ Cường Lực (+15% ST)'],
                       ['def_1', '🛡️ Da Thép (+10% Kháng Vật Lý)'],
-                      ['san_1', '🧠 Ý Chí (+25 Tâm Trí Tối Đa)'],
+                      ['san_1', '🧠 Ý Chí (+25 Lý Trí Tối Đa)'],
                     ] as const
                   ).map(([nodeId, label]) => {
                     const owned = player.hexenStatNodes?.includes(nodeId);
@@ -8713,7 +9111,7 @@ export default function App() {
                       }}
                       className="df-btn-bronze px-2.5 py-1.5 font-bold text-[11px] cursor-pointer"
                     >
-                      ✝ Trục Xuất Vũ Khí Nguyền (-1 Đá NL)
+                      ✝ Trục Xuất Vũ Khí Nguyền (-1 Đá LH)
                     </button>
                   )}
                   {(
@@ -8737,7 +9135,7 @@ export default function App() {
                         }}
                         className="df-btn-bronze px-2.5 py-1.5 font-bold text-[11px] cursor-pointer"
                       >
-                        🌟 Tái Tạo [{lbl}] (-2 Đá NL, -25 Tâm Trí)
+                        🌟 Tái Tạo [{lbl}] (-2 Đá LH, -25 Lý Trí)
                       </button>
                     ))}
                   {(
@@ -8781,14 +9179,14 @@ export default function App() {
 
             {/* 4 Skill Branches with Vertical SVG Connector Lines between Nodes */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {(['Chiến Kỹ', 'Thánh Mẫu', 'Ác Quỷ', 'Hư Vô'] as const).map((branchName) => {
+              {(['Chiến Kỹ', 'Thánh Mẫu', 'Huyết Quỷ', 'Hư Vô'] as const).map((branchName) => {
                 const branchSkills = CONFIG.SKILLS.filter((s) => s.branch === branchName);
                 const branchColor =
                   branchName === 'Chiến Kỹ'
                     ? 'border-[#c5a059] text-[#c5a059]'
                     : branchName === 'Thánh Mẫu'
                     ? 'border-[#c5a059] text-[#dfd2b4]'
-                    : branchName === 'Ác Quỷ'
+                    : branchName === 'Huyết Quỷ'
                     ? 'border-[#8b0000] text-[#c96b6b]'
                     : 'border-[#8e6ca3] text-[#a889b8]';
 
@@ -8804,15 +9202,18 @@ export default function App() {
                       <div className="text-[10px] text-[#9b8f82] mt-0.5">
                         {branchName === 'Chiến Kỹ'
                           ? 'Mở Cấp 1 qua Cuộn Bí Kíp (Kệ Sách)'
-                          : 'Học & nâng bằng Thiện cảm + Đá NL'}
+                          : 'Học & nâng bằng Tín Ngưỡng + Đá LH'}
                       </div>
                     </div>
 
                     <div className="space-y-4 relative">
                       {branchSkills.map((sk, sIdx) => {
                         const curLv = player.skillLevels[sk.id] || 0;
-                        const lockedByDevour =
-                          sk.branch === 'Thánh Mẫu' && player.holyMagicLocked;
+                        const lockedByBan =
+                          sk.branch === 'Thánh Mẫu' && isHolyMotherBanned(player);
+                        const lockedByDemonic =
+                          sk.branch === 'Thánh Mẫu' && !lockedByBan && !canUseHolySkill(player, sk).allowed;
+                        const lockedHoly = lockedByBan || lockedByDemonic;
                         const reqAff = sk.requiredAffinity;
                         const curAff = reqAff ? player.affinities?.[reqAff.pillar] || 0 : 0;
                         const affMet = !reqAff || curAff >= reqAff.level;
@@ -8888,18 +9289,23 @@ export default function App() {
                                     affMet ? 'text-[#9ab08e]' : 'text-[#c96b6b]'
                                   }`}
                                 >
-                                  {affMet ? '✓' : '•'} Yêu cầu Thiện cảm {branchName} ≥ {reqAff.level} (Hiện có: {curAff})
+                                  {affMet ? '✓' : '•'} Yêu cầu Tín Ngưỡng {branchName} ≥ {reqAff.level} (Hiện có: {curAff}/3)
                                 </div>
                               )}
 
-                              {lockedByDevour && (
+                              {lockedByBan && (
                                 <div className="text-[10px] text-[#c96b6b] mt-1">
-                                  * Khóa do Nuốt Chửng Xác Quái!
+                                  * Bị Thánh Mẫu khước từ (Tha Hóa/Huyết Quỷ/Nuốt Xác)!
+                                </div>
+                              )}
+                              {lockedByDemonic && (
+                                <div className="text-[10px] text-[#c96b6b] mt-1">
+                                  * Khóa phép Thánh Mẫu bậc cao do Huyết Quỷ ≥ 2!
                                 </div>
                               )}
 
                               <div className="mt-2 pt-1.5 border-t border-[#3a3a3a]/60 flex items-center justify-between gap-1">
-                                <span className="text-[10px] text-[#c5a059]">-{sk.mindCost} Tâm Trí</span>
+                                <span className="text-[10px] text-[#c5a059]">-{sk.mindCost} Lý Trí</span>
                                 {curLv >= 3 ? (
                                   <span className="text-[10px] text-[#c5a059] font-bold">TỐI ĐA</span>
                                 ) : curLv === 0 && !reqAff ? (
@@ -8909,15 +9315,15 @@ export default function App() {
                                   >
                                     🔒 Đọc Cuộn Bí Kíp (Túi [I])
                                   </span>
-                                ) : curLv === 0 && reqAff && (!affMet || lockedByDevour) ? (
+                                ) : curLv === 0 && reqAff && (!affMet || lockedHoly) ? (
                                   <span className="text-[10px] text-[#9b8f82] italic text-right">
-                                    {lockedByDevour
+                                    {lockedHoly
                                       ? '🔒 Đã bị Thánh Mẫu khước từ'
-                                      : `🔒 Cần Thiện cảm ≥ ${reqAff.level}`}
+                                      : `🔒 Cần Tín Ngưỡng ≥ ${reqAff.level}`}
                                   </span>
                                 ) : (
                                   <button
-                                    disabled={player.energyStones < 1 || lockedByDevour}
+                                    disabled={player.energyStones < 1 || lockedHoly}
                                     onClick={() => {
                                       const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
                                       const res = learnOrUpgradeHexenSkill(pCopy, sk.id);
@@ -8930,8 +9336,8 @@ export default function App() {
                                     className="df-btn-blood px-2.5 py-1 disabled:opacity-35 font-bold text-[10px] cursor-pointer"
                                   >
                                     {curLv === 0
-                                      ? 'Học Cấp 1 (-1 Đá NL)'
-                                      : `Nâng Cấp ${curLv + 1} (-1 Đá NL)`}
+                                      ? 'Học Cấp 1 (-1 Đá LH)'
+                                      : `Nâng Cấp ${curLv + 1} (-1 Đá LH)`}
                                   </button>
                                 )}
                               </div>
@@ -9105,8 +9511,8 @@ export default function App() {
 
                 <div className="p-2.5 df-card space-y-1">
                   <div className="font-bold text-[#c5a059] uppercase">Các Thế Lực Cổ Xưa</div>
-                  <p>• <b>Thánh Mẫu:</b> Đức tin cũ kỹ còn sót lại trên những bàn thờ rỉ máu.</p>
-                  <p>• <b>Hư Vô &amp; Ác Quỷ:</b> Nguồn sức mạnh cấm kỵ bào mòn lý trí và tâm hồn.</p>
+                  <p>• <b>Thánh Mẫu:</b> Đức tin cũ kỹ còn sót lại trên những Đài Cộng Hưởng rỉ máu.</p>
+                  <p>• <b>Hư Vô &amp; Huyết Quỷ:</b> Nguồn sức mạnh cấm kỵ bào mòn Lý Trí và tâm hồn.</p>
                   <p>• <b>Bản Ghi Cổ:</b> Lục tìm trang da dê trên kệ sách để ghép nối sự thật.</p>
                 </div>
 
@@ -9128,7 +9534,7 @@ export default function App() {
 
                 <div className="p-2.5 df-card">
                   <div className="font-bold text-[#dfd2b4] uppercase mb-0.5">[F] • Cạy Đồ &amp; NPC</div>
-                  <p>Nhấn <b>[F]</b> để tương tác Thùng, Rương, Kệ Sách, Bàn Thờ Hexen, xác quái hoặc đồng đội tiềm năng.</p>
+                  <p>Nhấn <b>[F]</b> để tương tác Thùng, Rương, Kệ Sách, Đài Cộng Hưởng, xác quái hoặc đồng đội tiềm năng.</p>
                 </div>
 
                 <div className="p-2.5 df-card">
@@ -9137,8 +9543,8 @@ export default function App() {
                 </div>
 
                 <div className="p-2.5 df-card">
-                  <div className="font-bold text-[#9ab08e] uppercase mb-0.5">Giường Lưu &amp; Đồng Xu</div>
-                  <p>Đoán đúng xu để hồi phục &amp; Lưu game (<b>Đồng Xu May Mắn</b> tung 2 xu; <b>Tâm Trí &lt; 30</b> mất quyền chọn xu!).</p>
+                  <div className="font-bold text-[#9ab08e] uppercase mb-0.5">Giường Lưu &amp; Thẻ Bài Bạc</div>
+                  <p>Đoán đúng xu để hồi phục &amp; Lưu game (<b>Thẻ Bài Bạc</b> tung 2 xu; <b>Lý Trí &lt; 30</b> mất quyền chọn xu!).</p>
                 </div>
               </div>
             )}
@@ -9163,7 +9569,7 @@ export default function App() {
 
                 <div className="p-2.5 df-card">
                   <div className="font-bold text-[#c5a059] uppercase mb-0.5">3. Thủ &amp; Vũ Khí Nguyền</div>
-                  <p>Dùng <b>[Phòng Thủ] / Thế Thủ</b> khi Boss tụ lực đỏ. <b>Vũ khí Nguyền</b> khóa tay &amp; phản chủ khi <b>Tâm Trí &lt; 40</b>.</p>
+                  <p>Dùng <b>[Phòng Thủ] / Thế Thủ</b> khi Boss tụ lực đỏ. <b>Vũ khí Nguyền</b> khóa tay &amp; phản chủ khi <b>Lý Trí &lt; 40</b>.</p>
                 </div>
               </div>
             )}
@@ -9173,7 +9579,7 @@ export default function App() {
               <div className="df-well p-3 space-y-2.5 text-[11px] leading-snug text-[#d3d3d3]">
                 <div className="p-2.5 df-card flex flex-wrap gap-x-4 gap-y-0.5">
                   <span>• <b>Đói ≥ 50%:</b> -25% Sát Thương; <b>≥ 90%:</b> Né &amp; Chí mạng = 0.</span>
-                  <span>• <b>Tâm Trí &lt; 30:</b> Hoảng Loạn / Cuồng Loạn.</span>
+                  <span>• <b>Lý Trí &lt; 30:</b> Hoảng Loạn / Cuồng Loạn.</span>
                   <span>• <b>Nuốt xác:</b> -45% Đói, +20% Tha Hóa.</span>
                 </div>
 
@@ -9197,16 +9603,16 @@ export default function App() {
                   <div className="p-2 df-card flex items-center gap-2">
                     <ItemArtworkCanvas itemOrWeaponId="blue_vial" size={30} />
                     <div>
-                      <div className="font-bold text-[#a3b2c4]">Lọ Thuốc Xanh &amp; Lọ Trắng</div>
-                      <p className="text-[10.5px] text-[#9b8f82]"><b>Xanh:</b> +50% Sinh Lực. <b>Trắng:</b> Xóa Độc, Nhiễm Trùng, Ký Sinh.</p>
+                      <div className="font-bold text-[#a3b2c4]">Thuốc Hồi Huyết &amp; Thuốc Giải Độc</div>
+                      <p className="text-[10.5px] text-[#9b8f82]"><b>Hồi Huyết:</b> +50% Sinh Lực. <b>Giải Độc:</b> Xóa Độc, Nhiễm Trùng, Ký Sinh.</p>
                     </div>
                   </div>
 
                   <div className="p-2 df-card flex items-center gap-2">
                     <ItemArtworkCanvas itemOrWeaponId="purple_vial" size={30} />
                     <div>
-                      <div className="font-bold text-[#a889b8]">Lọ Tím &amp; Nhựa Cây Ngủ Say</div>
-                      <p className="text-[10.5px] text-[#9b8f82]"><b>Tím:</b> Dễ cháy (<b>x2.5 Lửa/Thánh</b>) hoặc trốn 100%. <b>Nhựa Cây:</b> +30 Tâm Trí.</p>
+                      <div className="font-bold text-[#a889b8]">Thuốc An Thần &amp; Nhựa Cây Ngủ Say</div>
+                      <p className="text-[10.5px] text-[#9b8f82]"><b>An Thần:</b> -80% áp lực Lý Trí / trốn 100%. <b>Nhựa Cây:</b> +30 Lý Trí.</p>
                     </div>
                   </div>
                 </div>

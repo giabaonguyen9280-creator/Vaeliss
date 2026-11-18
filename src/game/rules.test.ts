@@ -69,13 +69,18 @@ import {
   banHolyMother,
   isHolyMotherBanned,
   grantAffinityOnce,
+  applyAffinityChange,
+  canUseHolySkill,
+  getFloor3MiasmaMultiplier,
+  dissectEnemyCorpseCleanly,
+  useEmergencyAmputationScroll,
   HOLY_MOTHER_REFUSAL_MSG,
   getFleeChancePct,
 } from './combat';
 import { CombatEngine } from './combatEngine';
 import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './narrative';
 
-test('CONFIG contains all 26 enemies (15 normal, 8 minibosses, 3 floor bosses), 24 weapons, 8 shields, 14 skills (incl. en_garde & necromancy), and 20 lore books', () => {
+test('CONFIG contains all 26 enemies (15 normal, 8 minibosses, 3 floor bosses), 24 weapons, 8 shields, 14 skills (incl. en_garde & necromancy), and 13 canon lore books', () => {
   const enemies = Object.values(CONFIG.ENEMIES);
   assert.equal(enemies.filter((e) => e.tier === 'normal').length, 15);
   assert.equal(enemies.filter((e) => e.tier === 'miniboss').length, 8);
@@ -85,7 +90,7 @@ test('CONFIG contains all 26 enemies (15 normal, 8 minibosses, 3 floor bosses), 
   assert.equal(CONFIG.SKILLS.length, 14);
   assert.equal(CONFIG.SKILLS.some((s) => s.id === 'en_garde'), true);
   assert.equal(CONFIG.SKILLS.some((s) => s.id === 'necromancy'), true);
-  assert.equal(CONFIG.BOOKS.length, 20);
+  assert.equal(CONFIG.BOOKS.length, 13);
 });
 
 test('Seeded world generation starts at F2_EXTERIOR, includes tutorial enemy & 3 Floor 2 NPCs, and is deterministic', () => {
@@ -768,14 +773,20 @@ test('Herb tiles map deterministically to 4 color variants and Lucky Coins only 
   }
 });
 
-test('Only Chien Ky skills have Scroll items; God spells require Affinity at Hexen Altar', () => {
-  const scrollItems = Object.values(CONFIG.ITEMS).filter((it) => it.id.startsWith('scroll_'));
+test('Only Chien Ky skills have skill Scroll items; Survival Scrolls exist; God spells require Affinity at Resonance Altar', () => {
+  const scrollItems = Object.values(CONFIG.ITEMS).filter(
+    (it) => it.id.startsWith('scroll_') && Boolean(it.unlockSkillId)
+  );
   assert.equal(scrollItems.length, 3);
   for (const sc of scrollItems) {
     const sk = CONFIG.SKILLS.find((s) => s.id === sc.unlockSkillId);
     assert.ok(sk);
     assert.equal(sk.branch, 'Chiến Kỹ');
   }
+  assert.ok(CONFIG.ITEMS.scroll_shadow_step);
+  assert.ok(CONFIG.ITEMS.scroll_distract_ash);
+  assert.ok(CONFIG.ITEMS.scroll_field_dissection);
+  assert.ok(CONFIG.ITEMS.scroll_emergency_amputation);
 
   const godSkills = CONFIG.SKILLS.filter((s) => s.branch !== 'Chiến Kỹ');
   assert.equal(godSkills.length, 11);
@@ -1045,3 +1056,155 @@ test('Tactical items (ancient_ash, poison_powder, poison_herb, lamp_oil), 2 floo
   p.limbs.rightLeg = false;
   assert.equal(getAmputationSanityMultiplier(p), 1.5);
 });
+
+test('Canon Deity Coupling, 0..3 Clamp, Miasma Immunity, Stealth Steps, Clean Dissection, Emergency Scroll, Distract Ash, and Order Ending Lock', () => {
+  const p = createInitialPlayer('forsaken_nun');
+  p.energyStones = 10;
+
+  // 1. Demonic Pact clamps 0..3, adds +15 Corruption per rank, and COR >= 25 bans Holy Mother
+  assert.equal(applyAffinityChange(p, 'demonicPact', 1), 1);
+  assert.equal(p.corruption, 15);
+  assert.equal(isHolyMotherBanned(p), false);
+
+  // Demonic Pact rank 1 still allows Tier 1 Holy Mother spell if not banned, rank 2 locks Tier 2 (>= 2)
+  const tier2Holy = CONFIG.SKILLS.find((s) => s.id === 'holy_light')!;
+  const tier1Holy = CONFIG.SKILLS.find((s) => s.id === 'blessed_heal')!;
+  assert.equal(canUseHolySkill(p, tier1Holy).allowed, true);
+  applyAffinityChange(p, 'demonicPact', 1, { skipDemonicCorruption: true });
+  assert.equal(p.affinities.demonicPact, 2);
+  assert.equal(canUseHolySkill(p, tier2Holy).allowed, false);
+
+  // Increasing past max 3 clamps strictly at 3
+  applyAffinityChange(p, 'demonicPact', 5);
+  assert.equal(p.affinities.demonicPact, 3);
+  assert.equal(isHolyMotherBanned(p), true);
+
+  // ORDER_ENDING is blocked when holyMotherBanned is true even with 0 corruption
+  const blockedOrder = evaluateCanonEnding({
+    classId: 'forsaken_nun',
+    corruption: 0,
+    holyMotherBanned: true,
+    readBookIds: ['book_1'],
+    inventory: { void_core: 1, reconstruction_scroll: 1 },
+    learnedSkillIds: [],
+    vaelisTalked: false,
+    vaelisDefeated: true,
+    curedPetrification: false,
+    child13Rescued: true,
+    child13InParty: true,
+    endingAction: 'SACRIFICE_CHILD13_RIFT',
+  });
+  assert.notEqual(blockedOrder.id, 'ORDER_ENDING');
+
+  // 2. Primordial Void reduces maxMind by -10 per rank, scales Floor 3 Miasma resistance, and does NOT ban Holy Mother
+  const v = createInitialPlayer('fallen_knight');
+  const startMaxMind = v.maxMind;
+  assert.equal(getFloor3MiasmaMultiplier(v), 1);
+  applyAffinityChange(v, 'primordialVoid', 1);
+  assert.equal(v.maxMind, startMaxMind - 10);
+  assert.equal(getFloor3MiasmaMultiplier(v), 0.65);
+  assert.equal(isHolyMotherBanned(v), false);
+  applyAffinityChange(v, 'primordialVoid', 2);
+  assert.equal(v.affinities.primordialVoid, 3);
+  assert.equal(v.maxMind, startMaxMind - 30);
+  assert.equal(getFloor3MiasmaMultiplier(v), 0);
+
+  // 3. Learning a Huyết Quỷ skill bans Holy Mother
+  const cult = createInitialPlayer('forsaken_nun');
+  cult.energyStones = 3;
+  cult.affinities.demonicPact = 1;
+  assert.equal(learnOrUpgradeHexenSkill(cult, 'blood_pact').success, true);
+  assert.equal(isHolyMotherBanned(cult), true);
+
+  // 4. Clean Dissection grants loot without Corruption or Holy Mother ban
+  const world = generateWorld('CLEAN-DISSECT-STEALTH');
+  const corpse = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  corpse.defeated = true;
+  const nurse = createInitialPlayer('forsaken_nun');
+  nurse.inventory.scroll_field_dissection = 1;
+  const dissectRes = dissectEnemyCorpseCleanly(nurse, corpse, new SeededRNG('DISSECT-1'));
+  assert.equal(dissectRes.success, true);
+  assert.equal(nurse.corruption, 0);
+  assert.equal(isHolyMotherBanned(nurse), false);
+  assert.equal(nurse.inventory.scroll_field_dissection, 0);
+
+  // 5. Emergency Amputation Scroll cuts infected limb for -12 HP without bone_saw
+  nurse.limbs.infected.leftArm = true;
+  nurse.hp = 100;
+  nurse.inventory.scroll_emergency_amputation = 1;
+  const empRes = useEmergencyAmputationScroll(nurse, 'leftArm');
+  assert.equal(empRes.success, true);
+  assert.equal(nurse.limbs.leftArm, false);
+  assert.equal(nurse.hp, 88);
+  assert.equal(nurse.inventory.scroll_emergency_amputation, 0);
+
+  // 6. Stealth suppresses enemy detection in advanceRoomEnemiesOneTurn
+  const roomCopy: RoomData = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR));
+  const targetEnemy = roomCopy.enemies.find((e) => !e.defeated && !e.isTutorialGatekeeper) || roomCopy.enemies[0];
+  targetEnemy.aiState = 'patrol';
+  const stealthTick = advanceRoomEnemiesOneTurn(
+    roomCopy,
+    { x: targetEnemy.x + 1, y: targetEnemy.y },
+    null,
+    true
+  );
+  const trackedAfterStealth = stealthTick.enemies.find((e) => e.uid === targetEnemy.uid)!;
+  assert.notEqual(trackedAfterStealth.aiState, 'chase');
+
+  // 7. scroll_distract_ash guarantees flee from normal mobs
+  const ashUser = createInitialPlayer('night_hunter');
+  ashUser.inventory.scroll_distract_ash = 1;
+  const mob = createMapEnemyInstance('e_mob_ash', 'fanatic_zealot', 4, 4);
+  const ashOutcome = executeCombatItem(ashUser, mob, 'scroll_distract_ash', new SeededRNG('ASH-FLEE'));
+  assert.equal(ashOutcome.fledSuccess, true);
+  assert.equal((mob.blindTurns || 0) >= 1, true);
+});
+
+test('Map Generation checks occupiedTiles so all story/survival NPCs, Đài Cộng Hưởng, Stairs, and Enemies never overlap', () => {
+  const seeds = ['SEED-COLLISION-1', 'SEED-COLLISION-2', 'VAELIS-CANON'];
+  const requiredTiles = [
+    TILE.NPC_PRIEST,
+    TILE.NPC_SMUGGLER,
+    TILE.NPC_PRISONER,
+    TILE.NPC_CHILD_12,
+    TILE.NPC_BROKEN_KNIGHT,
+    TILE.NPC_SMITH,
+    TILE.NPC_GLASS_LADY,
+    TILE.NPC_PHYSICIAN,
+    TILE.NPC_CHRONICLER,
+    TILE.NPC_RECRUIT_KNIGHT,
+    TILE.NPC_RECRUIT_NUN,
+    TILE.NPC_RECRUIT_HUNTER,
+    TILE.VOID_RIFT,
+    TILE.HEXEN_ALTAR,
+    TILE.STAIRS_UP,
+    TILE.STAIRS_DOWN,
+  ];
+
+  for (const s of seeds) {
+    const w = generateWorld(s);
+    const presentCounts: Record<string, number> = {};
+    for (const room of Object.values(w.rooms)) {
+      const entityCoords = new Set<string>();
+      for (let y = 0; y < room.grid.length; y++) {
+        for (let x = 0; x < room.grid[y].length; x++) {
+          const t = room.grid[y][x];
+          if (requiredTiles.includes(t)) {
+            presentCounts[t] = (presentCounts[t] || 0) + 1;
+            const key = `${x},${y}`;
+            assert.equal(entityCoords.has(key), false);
+            entityCoords.add(key);
+          }
+        }
+      }
+      // Verify no enemy spawns directly on top of a stair/NPC/altar/portal
+      for (const en of room.enemies) {
+        assert.equal(entityCoords.has(`${en.x},${en.y}`), false);
+      }
+    }
+    for (const rt of requiredTiles) {
+      assert.equal((presentCounts[rt] || 0) >= 1, true);
+    }
+  }
+});
+

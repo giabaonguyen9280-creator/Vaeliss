@@ -7,6 +7,8 @@ export interface IntroChoiceOption {
   equipWeapon?: string;
   shields?: string[];
   equipShield?: string;
+  gear?: string[];
+  equipGear?: string;
   skills?: string[];
   recipes?: string[];
   books?: string[];
@@ -39,27 +41,29 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
   fallen_knight: [
     {
       stepNumber: 1,
-      prompt: '1. Cuộc sống sau khi giải ngũ khỏi Kỵ Đoàn:',
+      prompt: '1. Những năm tháng sau khi giải ngũ khỏi Kỵ Đoàn:',
       options: [
         {
           id: 'fk_s1_smith',
-          label: 'Rèn kiếm cô độc nơi lò rèn cũ',
-          effectText: 'Nhận [Trường Kiếm Thép Tốt] + Kỹ năng [Thế Thủ Phản Kích]',
+          label: 'A. Rèn kiếm cô độc nơi lò rèn cũ',
+          effectText: 'Kỹ năng [Chém Phủ Đầu] + [Trường Kiếm Thép Tốt]',
           weapons: ['fine_steel_longsword'],
           equipWeapon: 'fine_steel_longsword',
           skills: ['en_garde'],
         },
         {
           id: 'fk_s1_merc',
-          label: 'Làm lính đánh thuê bảo vệ thương đoàn',
-          effectText: 'Nhận +15 Đồng Bạc, [Giáp Da Đánh Thuê] & 2 Băng Gạc Y Tế',
+          label: 'B. Làm lính đánh thuê bảo vệ thương đoàn',
+          effectText: '+15 Đồng Bạc + [Giáp Ngực Da Cứng] + 2 Băng Gạc',
           silverDelta: 15,
+          gear: ['hardened_leather_cuirass'],
+          equipGear: 'hardened_leather_cuirass',
           items: { bandage: 2 },
         },
         {
           id: 'fk_s1_drink',
-          label: 'Uống rượu giải sầu quên đi ác mộng chiến trường',
-          effectText: 'Tâm Trí khởi đầu = 80, +3 Rượu Mạnh & Kháng trạng thái Hoảng Loạn',
+          label: 'C. Uống rượu giải sầu quên ác mộng chiến trường',
+          effectText: '80 Lý Trí + 3 Rượu Mạnh + Kháng Hoảng Loạn',
           mindSet: 80,
           items: { strong_alcohol: 3 },
           panicImmune: true,
@@ -68,27 +72,27 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
     },
     {
       stepNumber: 2,
-      prompt: '2. Cạy rương quân trang đóng bụi tại nhà:',
+      prompt: '2. Cạy rương quân trang đóng bụi trước giờ khởi hành:',
       options: [
         {
           id: 'fk_s2_manual',
-          label: 'Cuốn sổ tay chiến thuật của đội trưởng',
-          effectText: 'Học kỹ năng [Trói Gân (Chặt Khớp)] & +2 Nhanh Nhẹn',
+          label: 'A. Sổ tay Phá Khớp của đội trưởng',
+          effectText: 'Kỹ năng [Trói Gân] +1 Nhanh Nhẹn',
           skills: ['hamstring_bind'],
-          agilityBonus: 2,
+          agilityBonus: 1,
         },
         {
           id: 'fk_s2_shield',
-          label: 'Chiếc khiên sắt móp méo in huy hiệu kỵ đoàn',
-          effectText: 'Nhận [Khiên Sắt Giáo Đường] & Kỹ năng [Hộ Thể]',
-          shields: ['cathedral_iron_shield'],
-          equipShield: 'cathedral_iron_shield',
+          label: 'B. Chiếc khiên khắc huy hiệu kỵ đoàn',
+          effectText: '[Khiên Gỗ Bọc Sắt] + Kỹ năng [Thế Thủ Kỵ Đoàn]',
+          shields: ['rimmed_shield'],
+          equipShield: 'rimmed_shield',
           skills: ['divine_aegis'],
         },
         {
           id: 'fk_s2_cursed',
-          label: 'Cờ hiệu thấm máu & đoản kiếm gãy bị nguyền',
-          effectText: '+10 Tha Hóa, +1 Cộng Hưởng Ác Quỷ, nhận [Gươm Gãy Kỵ Đoàn Bị Nguyền]',
+          label: 'C. Lá cờ rách & đoản kiếm gãy Bị Nguyền Sơ Cấp',
+          effectText: '[Đoản Kiếm Gãy Bị Nguyền Sơ Cấp] (khóa tay không tháo được), +10 Tha Hóa, +1 Tín Ngưỡng Huyết Quỷ',
           corruptionDelta: 10,
           affinityDelta: { demonicPact: 1 },
           weapons: ['cursed_broken_bannerblade'],
@@ -99,24 +103,24 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
     },
     {
       stepNumber: 3,
-      prompt: '3. Hành trang cuối trước khi bước vào Thung Lũng:',
+      prompt: '3. Hành trang cuối cùng mang vào Thung Lũng:',
       options: [
         {
           id: 'fk_s3_rations',
-          label: 'Túi lương khô hành quân',
-          effectText: 'Nhận +3 Thịt Khô Muối & +2 Bánh Mì Mốc',
+          label: 'A. Túi lương khô hành quân',
+          effectText: '3 Thịt Khô + 2 Bánh Mì Cứng',
           items: { dried_meat: 3, moldy_bread: 2 },
         },
         {
           id: 'fk_s3_meds',
-          label: 'Hộp sơ cứu dã chiến',
-          effectText: 'Nhận +2 Lọ Thuốc Xanh (Hồi 50% Sinh Lực) & +2 Băng Gạc',
+          label: 'B. Hộp thuốc sơ cứu chiến trường',
+          effectText: '2 Thuốc Hồi Huyết + 2 Băng Gạc',
           items: { blue_vial: 2, bandage: 2 },
         },
         {
           id: 'fk_s3_coins',
-          label: 'Hai đồng xu vàng kỷ niệm của đồng đội',
-          effectText: 'Nhận +2 Đồng Xu May Mắn (Tung 2 xu cùng lúc khi gặp vận rủi)',
+          label: 'C. Hai thẻ bài bạc kỷ niệm của đồng đội',
+          effectText: '2 Thẻ Bài Bạc',
           items: { lucky_coin: 2 },
         },
       ],
@@ -129,22 +133,22 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
       options: [
         {
           id: 'fn_s1_scribe',
-          label: 'Chép kinh trong thư viện cấm Goethe',
-          effectText: '+25 Tâm Trí tối đa & mở khóa Cuộn Cổ Thư #1 (Thấu Thị Cổ Ngữ)',
+          label: 'A. Thấu Thị Cổ Ngữ trong thư viện cấm',
+          effectText: 'Thấu Thị Cổ Ngữ (+25 Lý Trí tối đa) + Cuộn Da Dê I',
           maxMindDelta: 25,
           books: ['book_1'],
         },
         {
           id: 'fn_s1_apothecary',
-          label: 'Bào chế thuốc cứu thương cho bệnh xá',
-          effectText: 'Mở công thức Giả Kim Viễn Chinh, +2 Thảo Dược Đỏ & +2 Băng Gạc',
+          label: 'B. Bào chế thảo dược tại bệnh xá',
+          effectText: '[Thảo Dược Chí Viễn Chinh] + 2 Cỏ Huyết Dụ + 2 Vải Băng',
           recipes: ['recipe_herbal_salve', 'recipe_bandage_poultice'],
-          items: { red_herb: 2, bandage: 2 },
+          items: { recipe_book_expedition: 1, red_herb: 2, bandage: 2 },
         },
         {
           id: 'fn_s1_crypt',
-          label: 'Dọn dẹp hầm mộ dưới chân tượng Thánh Mẫu',
-          effectText: 'Học phép [Chiêu Hồn Thuật] & +1 Đá Năng Lượng',
+          label: 'C. Canh giữ hầm mộ dưới tượng Thánh Mẫu',
+          effectText: 'Thao Túng Thi Thể [Chiêu Hồn Thuật] + 1 Đá Linh Hồn Rỗng',
           skills: ['necromancy'],
           energyStonesDelta: 1,
         },
@@ -156,14 +160,14 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
       options: [
         {
           id: 'fn_s2_silence',
-          label: 'Giữ im lặng, bí mật ghi chép bằng chứng',
-          effectText: 'Giữ vững 0% Tha Hóa, nhận [Chìa Khóa Hầm Mộ] & +1 Đèn Dầu',
+          label: 'A. Giữ im lặng, bí mật cất giữ chìa khóa hầm',
+          effectText: '0 Tha Hóa + [Chìa Khóa Hầm Nhỏ] + 1 Đèn Dầu',
           items: { crypt_key_f2: 1, oil_lamp: 1 },
         },
         {
           id: 'fn_s2_flagellate',
-          label: 'Quỳ xuống tự hành xác cầu xin tha thứ',
-          effectText: '+1 Cộng Hưởng Thánh Mẫu, học [Phép Lành] & nhận [Roi Gai]',
+          label: 'B. Quỳ xuống hành xác cầu xin Thánh Mẫu',
+          effectText: '+1 Tín Ngưỡng Thánh Mẫu + [Khổ Hạnh] + [Roi Gai]',
           affinityDelta: { holyMother: 1 },
           skills: ['blessed_heal'],
           weapons: ['thorns_whip'],
@@ -171,11 +175,12 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
         },
         {
           id: 'fn_s2_curse',
-          label: 'Nguyền rủa sự giả dối của Giáo hội',
-          effectText: '+1 Cộng Hưởng Ác Quỷ, học [Xé Xác], +15 Tha Hóa',
+          label: 'C. Nguyền rủa sự giả dối của Giáo hội',
+          effectText: '+1 Tín Ngưỡng Huyết Quỷ + [Huyết Hỏa] + 15 Tha Hóa (khóa sẵn Order Ending)',
           affinityDelta: { demonicPact: 1 },
           skills: ['flesh_rend'],
           corruptionDelta: 15,
+          holyMagicLocked: true,
         },
       ],
     },
@@ -185,21 +190,22 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
       options: [
         {
           id: 'fn_s3_amulet',
-          label: 'Bùa bạc cầu bình an',
-          effectText: 'Tăng +15% Kháng Phép & giảm tụt Tâm Trí khi gặp quái kinh dị',
+          label: 'A. Bùa hộ mệnh bạc',
+          effectText: 'Bùa hộ mệnh bạc (+15% Kháng Phép & giảm tụt Lý Trí)',
           magicResistBonus: 0.15,
         },
         {
           id: 'fn_s3_dagger',
-          label: 'Dao găm khắc gỗ của hai chị em',
-          effectText: 'Nhận [Dao Găm Cong], +1 Thảo Dược Xanh & +1 Cưa Xương',
-          weapons: ['curved_dagger'],
-          items: { green_herb: 1, bone_saw: 1 },
+          label: 'B. Con dao găm rỉ & kỹ thuật giải phẫu',
+          effectText: '[Dao Găm Rỉ] + [Thu Hoạch Nội Tạng (Cuộn Giải Phẫu)] + 1 Thảo Dược Xanh',
+          weapons: ['rusty_knife'],
+          equipWeapon: 'rusty_knife',
+          items: { scroll_field_dissection: 1, green_herb: 1, bone_saw: 1 },
         },
         {
           id: 'fn_s3_coins',
-          label: 'Hai đồng xu cầu nguyện trong tay áo',
-          effectText: 'Nhận +2 Đồng Xu May Mắn',
+          label: 'C. Hai thẻ bài bạc cầu nguyện',
+          effectText: '2 Thẻ Bài Bạc',
           items: { lucky_coin: 2 },
         },
       ],
@@ -208,57 +214,58 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
   night_hunter: [
     {
       stepNumber: 1,
-      prompt: '1. Nghề cũ trước khi nhiễm độc tố hóa đá dị giới:',
+      prompt: '1. Nghề cũ trước khi trúng kịch độc hóa đá dị giới:',
       options: [
         {
           id: 'nh_s1_bounty',
-          label: 'Thợ săn tiền thưởng vùng biên',
-          effectText: 'Nhận [Dao Găm Cong], +2 Nhanh Nhẹn & Kỹ năng [Trói Gân]',
+          label: 'A. Kẻ săn lùng di vật vùng biên',
+          effectText: '[Lướt Bóng] + [Dao Găm Cong] + 1 Nhanh Nhẹn + [Trói Gân]',
           weapons: ['curved_dagger'],
           equipWeapon: 'curved_dagger',
-          agilityBonus: 2,
+          agilityBonus: 1,
           skills: ['hamstring_bind'],
+          items: { scroll_shadow_step: 1 },
         },
         {
           id: 'nh_s1_thief',
-          label: 'Đạo tặc chuyên phá khóa hầm ngục',
-          effectText: 'Nhận +3 Chìa Khóa Vạn Năng & +2 Đồng Xu May Mắn',
+          label: 'B. Đạo Chích chuyên phá khóa hầm ngục',
+          effectText: 'Đạo Chích (3 Chìa Khóa Vạn Năng + 2 Thẻ Bài Bạc)',
           items: { lockpick: 3, lucky_coin: 2 },
         },
         {
           id: 'nh_s1_ranger',
-          label: 'Thợ săn biên ải sống sót bằng bẫy thú',
-          effectText: 'Nhận [Cung Ngắn Biên Ải] & +2 Bẫy Dây Thép',
+          label: 'C. Xạ thủ săn thú rừng biên ải',
+          effectText: '[Cung Ngắn] + 10 Mũi Tên + [Bẫy Dây Thép]',
           weapons: ['hunter_shortbow'],
           equipWeapon: 'hunter_shortbow',
-          items: { steel_trap: 2, dried_meat: 1 },
+          items: { hunter_arrows: 10, steel_trap: 2, dried_meat: 1 },
         },
       ],
     },
     {
       stepNumber: 2,
-      prompt: '2. Cách bạn đối mặt với độc tố hóa đá đang lan trên cánh tay:',
+      prompt: '2. Cách kìm hãm lớp vảy hóa đá lan trên cánh tay:',
       options: [
         {
           id: 'nh_s2_splint',
-          label: 'Nẹp sắt chặt lên cánh tay ngăn độc chạy vào tim',
-          effectText: 'Kháng Chảy Máu / Choáng tốt hơn & nhận +2 Lọ Thuốc Tím',
+          label: 'A. Nẹp sắt khóa mạch máu',
+          effectText: 'Nẹp sắt (Kháng Chảy Máu/Choáng + 2 Thuốc An Thần)',
           bleedStunResist: true,
           items: { opium_vial: 2 },
         },
         {
           id: 'nh_s2_void',
-          label: 'Thực hiện nghi thức Hư Vô kìm hãm hóa đá',
-          effectText: '+1 Cộng Hưởng Hư Vô, học [Che Mắt], +12 Tha Hóa',
+          label: 'B. Lĩnh hội Hơi Thở Phân Rã từ khe nứt',
+          effectText: '[Hơi Thở Phân Rã] + 1 Tín Ngưỡng Hư Vô + 12 Tha Hóa',
           affinityDelta: { primordialVoid: 1 },
           skills: ['veil_of_blindness'],
           corruptionDelta: 12,
         },
         {
           id: 'nh_s2_herbs',
-          label: 'Tích trữ thật nhiều thảo dược và thuốc giải',
-          effectText: 'Nhận +2 Lọ Trắng, +2 Rượu Mạnh & +1 Lọ Thuốc Xanh',
-          items: { white_vial: 2, strong_alcohol: 2, blue_vial: 1 },
+          label: 'C. Lóc Thịt Sinh Tồn & tích trữ thuốc giải',
+          effectText: '[Lóc Thịt Sinh Tồn] + 2 Thuốc Giải Độc + 2 Rượu Mạnh + 1 Thuốc Hồi Huyết',
+          items: { scroll_field_dissection: 1, white_vial: 2, strong_alcohol: 2, blue_vial: 1 },
         },
       ],
     },
@@ -268,22 +275,22 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
       options: [
         {
           id: 'nh_s3_vial',
-          label: 'Bình thuốc chưa dán nhãn',
-          effectText: 'Nhận +1 Lọ Axit Hư Vô & +1 Huyết Thanh Kích Thích',
+          label: 'A. Bình thuốc chưa dán nhãn',
+          effectText: '1 Lọ Axit Hư Vô + 1 Huyết Thanh Kích Thích',
           items: { void_acid_vial: 1, stimulant_serum: 1 },
         },
         {
           id: 'nh_s3_map',
-          label: 'Tấm bản đồ vẽ tay đường lên Lâu Đài Tầng 1',
-          effectText: 'Nhận +1 Chìa Khóa Huyết Ngục Tầng 1 & mở lộ thông tin Tầng 1',
+          label: 'B. Bản đồ Tầng 1 & chìa khóa ngục',
+          effectText: 'Bản đồ Tầng 1 + Chìa Khóa Huyết Ngục Tầng 1',
           items: { castle_key_f1: 1 },
           revealFloor1Map: true,
         },
         {
           id: 'nh_s3_ash',
-          label: 'Túi bột tro mù mắt & đá lửa',
-          effectText: 'Nhận +3 Đuốc Sáng & +2 Lọ Đỏ (Axit & Tro Mù Mắt)',
-          items: { torch: 3, red_vial: 2 },
+          label: 'C. Túi tro mù & đá lửa',
+          effectText: 'Ném Tro Mù (3 Đuốc + 2 Lọ Đỏ + Cuộn Đánh Lạc Hướng)',
+          items: { torch: 3, red_vial: 2, scroll_distract_ash: 1 },
         },
       ],
     },
@@ -300,6 +307,7 @@ export interface EndingResult {
 export interface EndingEvalInput {
   classId: string;
   corruption: number;
+  holyMotherBanned?: boolean;
   readBookIds: string[];
   inventory: Record<string, number>;
   learnedSkillIds: string[];
@@ -321,6 +329,7 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
   const hasVoidCore = (input.inventory.void_core || 0) > 0;
   const hasReconstruction = (input.inventory.reconstruction_scroll || 0) > 0;
   const hasElixir = (input.inventory.elixir_of_ancients || 0) > 0;
+  const hasSeedScroll = input.readBookIds.includes('book_9') || input.readBookIds.length >= 4;
 
   // 2. Dark Ending: Tha Hóa >= 100 & sit on Blood Throne
   if (input.endingAction === 'SIT_THRONE' && input.corruption >= 100) {
@@ -333,9 +342,10 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     };
   }
 
-  // 3. Order Ending: Tha Hóa === 0, Void Core + 3 Mảnh Thần Chú Tái Thiết, sacrifice Child 13 at Rift
+  // 3. Order Ending: Không bị cấm Thánh Mẫu, Tha Hóa === 0, Void Core + 3 Mảnh Thần Chú Tái Thiết, sacrifice Child 13 at Rift
   if (
     input.endingAction === 'SACRIFICE_CHILD13_RIFT' &&
+    !input.holyMotherBanned &&
     input.corruption === 0 &&
     hasVoidCore &&
     hasReconstruction
@@ -349,23 +359,23 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     };
   }
 
-  // 4. Secret / True Ending: Elixir + Void Core poured on Child 13 at Rift + alchemy lore
+  // 4. Secret / True Ending: Elixir + Void Core poured on Child 13 at Rift + Cuộn Da Dê IX alchemy lore
   if (
     input.endingAction === 'POUR_ELIXIR_CHILD13_RIFT' &&
     hasVoidCore &&
     hasElixir &&
-    input.readBookIds.length >= 4
+    hasSeedScroll
   ) {
     return {
       id: 'TRUE_ENDING',
       title: 'KẾT CỤC IV: THÁNH THỤ KHAI SÁNG',
       subtitle: 'Khai Sinh Thần Ý Chí • Thuần Hóa Hư Vô',
       epilogue:
-        'Thay vì uống Tiên Dược Cổ Đại hay hiến tế đứa trẻ, bạn dùng Lõi Khóa Hư Vô làm mỏ neo và đổ cạn bình Tiên Dược lên lòng bàn tay Thánh Tử Thứ 13 ngay bên mép Vết Rách Tầng 3. Từ máu và mầm cổ thụ, Thánh Thụ — Thần Ý Chí — vươn rễ xuyên suốt ba tầng hầm ngục, dung hợp Khuôn Khổ của Trật Tự và Khát Vọng của Ác Quỷ để vá kín không gian. Nhân loại lần đầu giành lại quyền tự quyết vận mệnh của chính mình.',
+        'Thay vì uống Tiên Dược Nguyên Sơ hay hiến tế đứa trẻ, bạn dùng Lõi Khóa Hư Vô làm mỏ neo và đổ cạn bình Tiên Dược lên lòng bàn tay Thánh Tử Thứ 13 ngay bên mép Vết Rách Tầng 3. Từ máu và mầm cổ thụ, Thánh Thụ — Thần Ý Chí — vươn rễ xuyên suốt ba tầng hầm ngục, dung hợp Khuôn Khổ của Trật Tự và Khát Vọng Phản Kháng để vá kín không gian. Nhân loại lần đầu giành lại quyền tự quyết vận mệnh của chính mình.',
     };
   }
 
-  // 5. S-Ending Hiệp Sĩ
+  // 5. S-Ending Hiệp Sĩ (Kẻ Gác Mộ Vô Danh)
   if (
     input.endingAction === 'STAY_BUILD_GRAVES' &&
     input.classId === 'fallen_knight' &&
@@ -376,14 +386,14 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
   ) {
     return {
       id: 'S_ENDING_KNIGHT',
-      title: 'KẾT CỤC V (S-ENDING HIỆP SĨ): GÁNH NẶNG CỦA KẺ SÓT LẠI',
+      title: 'KẾT CỤC V (S-ENDING KẺ GÁC MỘ): GÁNH NẶNG CỦA KẺ SÓT LẠI',
       subtitle: 'Lời Thề Kỵ Đoàn Không Phản Bội',
       epilogue:
         'Bạn đã lắng nghe lời trăn trối bi tráng của Hiệp Sĩ Trưởng Vaelis trước khi vung nhát kiếm kết liễu để giải thoát ông khỏi Ngai Vàng Xương Sắt. Khi Vết Rách được vá lại, bạn từ chối rời khỏi thung lũng. Trong màn sương tan dần, người ta thấy bóng dáng vị cựu phó tướng lặng lẽ dựng từng tấm bia đá cho anh em kỵ đoàn đã ngã xuống và dẫn đường cho những lữ khách lạc lối.',
     };
   }
 
-  // 6. S-Ending Nữ Tu
+  // 6. S-Ending Nữ Tu (Kẻ Dị Giáo Mang Dấu Ấn)
   if (
     input.endingAction === 'ESCAPE_EXTERIOR_GATE' &&
     input.classId === 'forsaken_nun' &&
@@ -394,14 +404,14 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
   ) {
     return {
       id: 'S_ENDING_NUN',
-      title: 'KẾT CỤC VI (S-ENDING NỮ TU): TRO TÀN CỦA ĐỨC TIN',
+      title: 'KẾT CỤC VI (S-ENDING KẺ DỊ GIÁO): TRO TÀN CỦA ĐỨC TIN',
       subtitle: 'Bằng Chứng Máu Đen & Giải Cứu Em Trai',
       epilogue:
-        'Không khuất phục trước quyền năng giả tạo của Thánh Mẫu hay Ác Quỷ, bạn ôm theo toàn bộ Sổ Kiểm Kê Tế Lễ và dắt tay người em trai — Thánh Tử Thứ 13 — bước qua Cổng Sắt Răng Cưa trở về thế giới thực. Trước hàng ngàn tín đồ bàng hoàng ngoài cổng Đại Giáo Đường Goethe, bạn ném thẳng những trang giấy thấm máu đen xuống chân các Giám Mục, châm ngòi cho sự sụp đổ của một đức tin mục nát.',
+        'Không khuất phục trước quyền năng giả tạo của Thánh Mẫu hay Huyết Quỷ, bạn ôm theo toàn bộ Sổ Kiểm Kê Tế Lễ và dắt tay người em trai — Thánh Tử Thứ 13 — bước qua Cổng Sắt Răng Cưa trở về thế giới thực. Trước hàng ngàn tín đồ bàng hoàng ngoài cổng Đại Giáo Đường Goethe, bạn ném thẳng những trang giấy thấm máu đen xuống chân các Giám Mục, châm ngòi cho sự sụp đổ của một đức tin mục nát.',
     };
   }
 
-  // 7. S-Ending Thợ Săn
+  // 7. S-Ending Thợ Săn (Gã Săn Di Vật)
   if (
     input.endingAction === 'ESCAPE_EXTERIOR_GATE' &&
     input.classId === 'night_hunter' &&
@@ -410,10 +420,10 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
   ) {
     return {
       id: 'S_ENDING_HUNTER',
-      title: 'KẾT CỤC VII (S-ENDING THỢ SĂN): KẺ SỐNG SÓT NGOÀI VÒNG PHÁP LUẬT',
+      title: 'KẾT CỤC VII (S-ENDING GÃ SĂN DI VẬT): KẺ SỐNG SÓT NGOÀI VÒNG PHÁP LUẬT',
       subtitle: 'Tự Chữa Độc Hóa Đá • Thoát Khỏi Kết Giới Chướng Khí',
       epilogue:
-        'Bạn đã uống cạn bình Tiên Dược Cổ Đại tìm thấy nơi đáy Vực Sao để đánh tan lớp vảy đá chết chóc trên cánh tay, rồi quay ngược lên chém đứt xiềng xích của Vaelis để phá tan Kết Giới Chướng Khí. Không ngoái đầu nhìn lại khi Hư Vô trào lên nuốt chửng Đại Giáo Đường Goethe, bạn lao qua Cổng Sắt trước lúc bầu trời sụp xuống — một kẻ sống sót cô độc ngoài mọi luật lệ.',
+        'Bạn đã uống cạn bình Tiên Dược Nguyên Sơ tìm thấy nơi đáy Vực Sao để đánh tan lớp vảy đá chết chóc trên cánh tay, rồi quay ngược lên chém đứt xiềng xích của Vaelis để phá tan Kết Giới Chướng Khí. Không ngoái đầu nhìn lại khi Hư Vô trào lên nuốt chửng Đại Giáo Đường Goethe, bạn lao qua Cổng Sắt trước lúc bầu trời sụp xuống — một kẻ sống sót cô độc ngoài mọi luật lệ.',
     };
   }
 

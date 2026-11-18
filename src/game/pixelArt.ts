@@ -4491,14 +4491,45 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-  } else if (itemId === 'ancient_parchment' || itemId === 'reconstruction_scroll' || itemId.startsWith('scroll_')) {
-    ctx.fillStyle = itemId === 'reconstruction_scroll' ? '#fde68a' : '#d6be96';
+  } else if (
+    itemId === 'ancient_parchment' ||
+    itemId === 'reconstruction_scroll' ||
+    itemId === 'crumpled_hunter_note' ||
+    itemId.startsWith('scroll_') ||
+    itemId.startsWith('recipe_book_')
+  ) {
+    ctx.fillStyle =
+      itemId === 'reconstruction_scroll'
+        ? '#fde68a'
+        : itemId.startsWith('recipe_book_')
+        ? '#93c5fd'
+        : itemId === 'crumpled_hunter_note'
+        ? '#cbd5e1'
+        : '#d6be96';
     ctx.fillRect(size * 0.2, size * 0.14, size * 0.6, size * 0.72);
     ctx.strokeRect(size * 0.2, size * 0.14, size * 0.6, size * 0.72);
-    ctx.strokeStyle = itemId === 'reconstruction_scroll' ? '#b45309' : '#7f1d1d';
+    ctx.strokeStyle =
+      itemId === 'reconstruction_scroll'
+        ? '#b45309'
+        : itemId.startsWith('recipe_book_')
+        ? '#1d4ed8'
+        : '#7f1d1d';
     ctx.beginPath();
     ctx.arc(cx, cy, size * 0.16, 0, Math.PI * 2);
     ctx.stroke();
+  } else if (itemId === 'hunter_arrows') {
+    ctx.strokeStyle = '#a16207';
+    ctx.lineWidth = Math.max(2, size * 0.05);
+    for (const off of [-0.14, 0, 0.14]) {
+      ctx.beginPath();
+      ctx.moveTo(size * (0.22 + off), size * 0.78);
+      ctx.lineTo(size * (0.74 + off), size * 0.24);
+      ctx.stroke();
+      ctx.fillStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.arc(size * (0.74 + off), size * 0.24, size * 0.055, 0, Math.PI * 2);
+      ctx.fill();
+    }
   } else if (itemId.includes('mace') || itemId.includes('sledge') || itemId.includes('bell')) {
     // Heavy Mace / Sledgehammer / Blood Bell
     ctx.strokeStyle = '#78350f';

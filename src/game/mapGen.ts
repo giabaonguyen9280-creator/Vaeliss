@@ -501,48 +501,32 @@ export function generateWorld(seed: string): WorldMapState {
         }
       }
 
-      // Inter-floor stairs
-      if (fc.floor === 2 && idx === 1) {
-        grid[4][Math.floor(roomW / 2)] = TILE.STAIRS_UP;
-        grid[5][Math.floor(roomW / 2)] = TILE.FLOOR;
-      }
-      if (fc.floor === 2 && idx === 3) {
-        grid[roomH - 3][Math.floor(roomW / 2)] = TILE.STAIRS_DOWN;
-        grid[roomH - 4][Math.floor(roomW / 2)] = TILE.FLOOR;
-      }
-      if (fc.floor === 1 && idx === 0) {
-        grid[roomH - 3][4] = TILE.STAIRS_DOWN;
-        grid[roomH - 4][4] = TILE.FLOOR;
-      }
-      if (fc.floor === 3 && idx === 0) {
-        grid[4][4] = TILE.STAIRS_UP;
-        grid[5][4] = TILE.FLOOR;
-      }
-
-      // 1. Build reservedMask to prevent ANY overlapping props/gates/NPCs
+      // 1. Build occupiedTiles & reservedMask to prevent ANY overlapping stairs, altars, NPCs, props, or chasms
       const reservedMask = new Set<string>();
+      const occupiedTiles = new Set<string>();
       const reserveArea = (cx: number, cy: number, radius: number) => {
         for (let dy = -radius; dy <= radius; dy++) {
           for (let dx = -radius; dx <= radius; dx++) {
-            reservedMask.add(`${cx + dx},${cy + dy}`);
+            const key = `${cx + dx},${cy + dy}`;
+            reservedMask.add(key);
+            occupiedTiles.add(key);
           }
         }
       };
 
-      // Reserve all non-floor structural tiles and 1-tile buffer around gates/portals/stairs/bars
+      // Reserve all non-floor structural tiles and 1-tile buffer around gates/portals/bars/cracked walls/bridges
       for (let y = 0; y < roomH; y++) {
         for (let x = 0; x < roomW; x++) {
           const t = grid[y][x];
           if (t !== TILE.FLOOR) {
             reservedMask.add(`${x},${y}`);
+            occupiedTiles.add(`${x},${y}`);
           }
           if (
             t === TILE.SHORTCUT_GATE ||
             t === TILE.BARS ||
             t === TILE.PORTAL_PREV ||
             t === TILE.PORTAL_NEXT ||
-            t === TILE.STAIRS_UP ||
-            t === TILE.STAIRS_DOWN ||
             t === TILE.CRACKED_WALL ||
             t === TILE.BRIDGE
           ) {
@@ -553,47 +537,118 @@ export function generateWorld(seed: string): WorldMapState {
       // Reserve secret chamber and entrance tile
       for (const coord of secretChamberCoords) {
         reservedMask.add(coord);
+        occupiedTiles.add(coord);
       }
       reserveArea(secretX, secretY + 1, 1);
-      // Reserve 5x5 spawn safety zone
+      // Reserve 5x5 spawn & exit safety zones
       reserveArea(spawnX, spawnY, 2);
       reserveArea(exitX, exitY, 2);
 
-      // If Throne Room (F1_R3), reserve the 3-tile-wide Royal Red Carpet & Gothic Pillar aisles
+      // If Throne Room (F1_R3), reserve the 3-tile-wide Royal Red Carpet & Gothic Pillar aisles + Boss zone
       if (isThroneRoom) {
         for (let x = 2; x < roomW - 2; x++) {
           for (let y = spawnY - 3; y <= spawnY + 3; y++) {
             reservedMask.add(`${x},${y}`);
+            occupiedTiles.add(`${x},${y}`);
           }
         }
       }
 
-      // Helper to place multi-tile landmarks & NPCs with guaranteed walkable clearance + reservedMask lock
+      const isAreaFreeInOccupied = (cx: number, cy: number, checkRadius = 1): boolean => {
+        if (cx < 3 || cx > roomW - 4 || cy < 4 || cy > roomH - 3) return false;
+        for (let dy = -checkRadius; dy <= checkRadius; dy++) {
+          for (let dx = -checkRadius; dx <= checkRadius; dx++) {
+            const key = `${cx + dx},${cy + dy}`;
+            if (occupiedTiles.has(key) || reservedMask.has(key)) return false;
+            const t = grid[cy + dy]?.[cx + dx];
+            if (
+              t === TILE.PORTAL_PREV ||
+              t === TILE.PORTAL_NEXT ||
+              t === TILE.STAIRS_UP ||
+              t === TILE.STAIRS_DOWN ||
+              t === TILE.CRACKED_WALL ||
+              t === TILE.SHORTCUT_GATE ||
+              t === TILE.BARS ||
+              t === TILE.BRIDGE ||
+              t === TILE.CHASM ||
+              t === TILE.VOID
+            ) {
+              return false;
+            }
+          }
+        }
+        return true;
+      };
+
+      const findUnoccupiedSpot = (prefX: number, prefY: number, checkRadius = 1): [number, number] | null => {
+        const startX = Math.max(3, Math.min(roomW - 4, prefX));
+        const startY = Math.max(4, Math.min(roomH - 3, prefY));
+        if (isAreaFreeInOccupied(startX, startY, checkRadius)) {
+          return [startX, startY];
+        }
+        const maxDist = roomW + roomH;
+        for (let dist = 1; dist <= maxDist; dist++) {
+          for (let dy = -dist; dy <= dist; dy++) {
+            const rem = dist - Math.abs(dy);
+            const dxList = rem === 0 ? [0] : [-rem, rem];
+            for (const dx of dxList) {
+              const nx = startX + dx;
+              const ny = startY + dy;
+              if (isAreaFreeInOccupied(nx, ny, checkRadius)) {
+                return [nx, ny];
+              }
+            }
+          }
+        }
+        if (checkRadius > 0) {
+          return findUnoccupiedSpot(startX, startY, 0);
+        }
+        return null;
+      };
+
+      // Helper to place landmarks, stairs & NPCs checking occupiedTiles first + guaranteed walkable clearance
       const placeLandmark = (cx: number, cy: number, tileType: TILE, clearRadius = 1, reserveRadius = 2) => {
+        const spot = findUnoccupiedSpot(cx, cy, Math.min(1, clearRadius));
+        if (!spot) return;
+        const [sx, sy] = spot;
         for (let dy = -clearRadius; dy <= clearRadius; dy++) {
           for (let dx = -clearRadius; dx <= clearRadius; dx++) {
-            const ny = cy + dy;
-            const nx = cx + dx;
+            const ny = sy + dy;
+            const nx = sx + dx;
             if (ny >= 3 && ny < roomH - 2 && nx >= 2 && nx < roomW - 2) {
               const cur = grid[ny][nx];
-              if (cur === TILE.WALL || cur === TILE.CHASM) {
+              if (cur === TILE.WALL) {
                 grid[ny][nx] = TILE.FLOOR;
               }
             }
           }
         }
-        grid[cy][cx] = tileType;
-        reserveArea(cx, cy, reserveRadius);
+        grid[sy][sx] = tileType;
+        reserveArea(sx, sy, reserveRadius);
       };
 
-      // Guarantee Hexen Altar in Room 0 and Room 2 of each floor (away from SPLIT_SHORTCUT bars)
+      // Inter-floor stairs (checked against occupiedTiles before placement)
+      if (fc.floor === 2 && idx === 1) {
+        placeLandmark(Math.floor(roomW / 2) - 3, 4, TILE.STAIRS_UP, 1, 2);
+      }
+      if (fc.floor === 2 && idx === 3) {
+        placeLandmark(Math.floor(roomW / 2), roomH - 4, TILE.STAIRS_DOWN, 1, 2);
+      }
+      if (fc.floor === 1 && idx === 0) {
+        placeLandmark(4, roomH - 4, TILE.STAIRS_DOWN, 1, 2);
+      }
+      if (fc.floor === 3 && idx === 0) {
+        placeLandmark(4, 4, TILE.STAIRS_UP, 1, 2);
+      }
+
+      // Guarantee Đài Cộng Hưởng (HEXEN_ALTAR) in Room 0 and Room 2 of each floor (checks occupiedTiles)
       if (!isThroneRoom && (idx === 0 || idx === 2)) {
         const hx = Math.floor(roomW / 2);
         const hy = tpl === 'SPLIT_SHORTCUT' ? spawnY + 2 : spawnY;
         placeLandmark(hx, hy, TILE.HEXEN_ALTAR, 1, 2);
       }
 
-      // Place Canon NPCs across Floors 1, 2, 3
+      // Place Canon Story & Survival NPCs across Floors 1, 2, 3 (each checks occupiedTiles first)
       // FLOOR 1: Lâu Đài Hắc Ám
       if (fc.floor === 1 && idx === 1) {
         placeLandmark(Math.floor(roomW / 2) + 2, 5, TILE.NPC_SMITH, 1, 2);
@@ -605,7 +660,7 @@ export function generateWorld(seed: string): WorldMapState {
       // FLOOR 2: Đại Giáo Đường Goethe Đổ Nát
       if (fc.floor === 2 && idx === 0) {
         placeLandmark(6, roomH - 4, TILE.NPC_SMUGGLER, 1, 2);
-        // Recruitable Fallen Knight (if player is not fallen_knight)
+        // Recruitable Kẻ Gác Mộ (if player is not fallen_knight)
         placeLandmark(roomW - 7, 5, TILE.NPC_RECRUIT_KNIGHT, 1, 2);
       }
       if (fc.floor === 2 && idx === 1) {
@@ -613,7 +668,7 @@ export function generateWorld(seed: string): WorldMapState {
       }
       if (fc.floor === 2 && idx === 2) {
         placeLandmark(6, 5, TILE.NPC_PRIEST, 1, 2);
-        // Recruitable Forsaken Nun (if player is not forsaken_nun)
+        // Recruitable Kẻ Dị Giáo (if player is not forsaken_nun)
         placeLandmark(roomW - 7, roomH - 4, TILE.NPC_RECRUIT_NUN, 1, 2);
       }
       if (fc.floor === 2 && idx === 3) {
@@ -623,7 +678,7 @@ export function generateWorld(seed: string): WorldMapState {
 
       // FLOOR 3: Vực Sao Dị Giới
       if (fc.floor === 3 && idx === 0) {
-        // Recruitable Night Hunter (if player is not night_hunter)
+        // Recruitable Gã Săn Di Vật (if player is not night_hunter)
         placeLandmark(roomW - 7, roomH - 4, TILE.NPC_RECRUIT_HUNTER, 1, 2);
       }
       if (fc.floor === 3 && idx === 1) {
@@ -915,7 +970,7 @@ export function generateWorld(seed: string): WorldMapState {
         F3_R3: {
           name: 'Tầng 3 – Khu 4: Tâm Điểm Vết Rách & Thánh Tử Thứ 13',
           sensory:
-            'Khe nứt không gian tím thẫm gầm rú phía trên lồng sắt mở hé của Thánh Tử Thứ 13 và bệ đá đặt bình Tiên Dược Cổ Đại. Sứ Giả Của Vết Rách lơ lửng trấn giữ đáy vực.',
+            'Khe nứt không gian tím thẫm gầm rú phía trên lồng sắt mở hé của Thánh Tử Thứ 13 và bệ đá đặt bình Tiên Dược Nguyên Sơ. Sứ Giả Của Vết Rách lơ lửng trấn giữ đáy vực.',
         },
       };
       const meta = canonRoomMeta[roomId];
@@ -1154,7 +1209,8 @@ export interface AdvanceEnemiesResult {
 export function advanceRoomEnemiesOneTurn(
   room: RoomData,
   playerPos: { x: number; y: number },
-  equippedBody: string | null
+  equippedBody: string | null,
+  stealthActive = false
 ): AdvanceEnemiesResult {
   const roomW = room.width || room.grid[0]?.length || CONFIG.GRID_W;
   const roomH = room.height || room.grid.length || CONFIG.GRID_H;
@@ -1244,6 +1300,7 @@ export function advanceRoomEnemiesOneTurn(
       Math.abs(playerPos.x - enemy.x) + Math.abs(playerPos.y - enemy.y);
     const hasLOS = hasLineOfSight(room.grid, enemy.x, enemy.y, playerPos.x, playerPos.y);
     const detected =
+      !stealthActive &&
       manhattanToPlayer <= sightRange &&
       hasLOS &&
       isDetectedByEnemy(

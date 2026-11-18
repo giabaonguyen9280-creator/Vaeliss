@@ -471,9 +471,9 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             [TILE.NPC_GLASS_LADY]: { sprite: 'npc_glass_lady', label: 'Quý Cô Lồng Kính' },
             [TILE.NPC_PHYSICIAN]: { sprite: 'npc_physician', label: 'Lão Thần Y' },
             [TILE.NPC_CHRONICLER]: { sprite: 'npc_chronicler', label: 'Kẻ Chép Sử' },
-            [TILE.NPC_RECRUIT_KNIGHT]: { sprite: 'fallen_knight', label: 'Hiệp Sĩ Marcus' },
-            [TILE.NPC_RECRUIT_NUN]: { sprite: 'forsaken_nun', label: 'Nữ Tu Elena' },
-            [TILE.NPC_RECRUIT_HUNTER]: { sprite: 'night_hunter', label: 'Thợ Săn Lyra' },
+            [TILE.NPC_RECRUIT_KNIGHT]: { sprite: 'fallen_knight', label: 'Kẻ Gác Mộ Garrick' },
+            [TILE.NPC_RECRUIT_NUN]: { sprite: 'forsaken_nun', label: 'Kẻ Dị Giáo Agnes' },
+            [TILE.NPC_RECRUIT_HUNTER]: { sprite: 'night_hunter', label: 'Gã Săn Di Vật Crow' },
           };
 
           for (let y = 0; y < roomH; y++) {
@@ -1033,7 +1033,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
             else if (t === TILE.CHEST && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Mở Rương';
             else if (t === TILE.BOOKSHELF && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Lục Kệ Sách';
-            else if (t === TILE.HEXEN_ALTAR) promptLabel = '[F] Bàn Thờ Hexen';
+            else if (t === TILE.HEXEN_ALTAR) promptLabel = '[F] Đài Cộng Hưởng';
             else if (t === TILE.BED_SAVE) promptLabel = '[F] Ngủ & Lưu';
             else if (t === TILE.SHORTCUT_GATE && !room.shortcutOpened) promptLabel = '[F] Mở Cổng Tắt';
             else if (t === TILE.NPC_PRIEST) promptLabel = '[F] Giáo Sĩ Mù';
@@ -1046,11 +1046,11 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             else if (t === TILE.NPC_PHYSICIAN) promptLabel = '[F] Lão Thần Y';
             else if (t === TILE.NPC_CHRONICLER) promptLabel = '[F] Kẻ Chép Sử';
             else if (t === TILE.NPC_RECRUIT_KNIGHT && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
-              promptLabel = '[F] Hiệp Sĩ Marcus';
+              promptLabel = '[F] Kẻ Gác Mộ Garrick';
             else if (t === TILE.NPC_RECRUIT_NUN && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
-              promptLabel = '[F] Nữ Tu Elena';
+              promptLabel = '[F] Kẻ Dị Giáo Agnes';
             else if (t === TILE.NPC_RECRUIT_HUNTER && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
-              promptLabel = '[F] Thợ Săn Lyra';
+              promptLabel = '[F] Gã Săn Di Vật Crow';
             else if (t === TILE.VOID_RIFT) promptLabel = '[F] Vết Rách & Thánh Tử 13';
             else if (t === TILE.MIASMA_VENT && !room.lootedCoords.includes(cKey))
               promptLabel = '[F] Hấp Thụ Khí';
