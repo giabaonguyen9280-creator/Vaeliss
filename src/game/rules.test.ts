@@ -62,6 +62,10 @@ import {
   canMemberEquipWeapon,
   handlePlayerArmLoss,
   leaveOrDismissPartyMember,
+  recallDismissedCompanion,
+  getAmputationSanityMultiplier,
+  resolveCombatCoinFlipOutcome,
+  computeLimbHitChance,
   banHolyMother,
   isHolyMotherBanned,
   grantAffinityOnce,
@@ -908,7 +912,136 @@ test('Holy Mother Ban, one-time completedAffinityActions anti-farm, 4 distinct r
   assert.equal(p2.affinities.holyMother, 1);
 });
 
+test('Head Hit-Lock, 2-Beat Telegraphed Coin-Flip Combat, Guard 100% Block, and AI Helpless Skip work accurately', () => {
+  const p = createInitialPlayer('fallen_knight');
+  const rng = new SeededRNG('HEADLOCK-COINFLIP');
+  const tpl = CONFIG.ENEMIES.executioner_paladin;
+  const enemy = createMapEnemyInstance('e_pal', 'executioner_paladin', 5, 5);
 
+  const headLimb = enemy.limbs.find((l) => l.id === 'head')!;
+  const supportLegs = enemy.limbs.filter((l) => l.isSupportLeg);
+  assert.equal(supportLegs.length >= 1, true);
 
+  // 1. Standing enemy with intact support legs -> head Hit% locked at 15%-25%
+  const standingHeadChance = computeLimbHitChance(p, enemy, tpl, headLimb);
+  assert.equal(standingHeadChance >= 0.15 && standingHeadChance <= 0.25, true);
 
+  // 2. Severing support legs unlocks head Hit% to 85%-95%
+  for (const sl of supportLegs) sl.hp = 0;
+  const downedHeadChance = computeLimbHitChance(p, enemy, tpl, headLimb);
+  assert.equal(downedHeadChance >= 0.85 && downedHeadChance <= 0.95, true);
 
+  // 3. Blinding or Stunning standing enemy also unlocks head Hit% to 85%-95%
+  for (const sl of supportLegs) sl.hp = sl.maxHp;
+  enemy.blindTurns = 2;
+  const blindedHeadChance = computeLimbHitChance(p, enemy, tpl, headLimb);
+  assert.equal(blindedHeadChance >= 0.85 && blindedHeadChance <= 0.95, true);
+  enemy.blindTurns = 0;
+
+  // 4. Beat 2 Guard blocks Telegraphed Coin-Flip 100% with zero damage
+  enemy.telegraphing = true;
+  enemy.telegraphCoinFlip = true;
+  p.statuses.guarding = true;
+  const guardedRound = resolveEnemyCombatRound(p, enemy, rng);
+  assert.equal(guardedRound.pendingCoinFlip, undefined);
+  assert.equal(guardedRound.lastTakenDmg || 0, 0);
+  assert.equal(guardedRound.logs.some((l) => l.includes('chặn đứng hoàn toàn')), true);
+
+  // 5. Beat 2 without Guard triggers pendingCoinFlip, and resolveCombatCoinFlipOutcome handles Win vs Lose
+  enemy.telegraphing = true;
+  enemy.telegraphCoinFlip = true;
+  p.statuses.guarding = false;
+  const unguardedRound = resolveEnemyCombatRound(p, enemy, rng);
+  assert.ok(unguardedRound.pendingCoinFlip);
+  const cf = unguardedRound.pendingCoinFlip!;
+  const hpBeforeWin = p.hp;
+  const winOutcome = resolveCombatCoinFlipOutcome(p, enemy, tpl, true, cf.penaltyType, cf.damageMultiplier, rng);
+  assert.equal(winOutcome.lastTakenDmg, 0);
+  assert.equal(p.hp, hpBeforeWin);
+
+  const loseOutcome = resolveCombatCoinFlipOutcome(p, enemy, tpl, false, 'sever_limb', 1.4, rng);
+  assert.equal((loseOutcome.lastTakenDmg || 0) > 0, true);
+  const totalIntactLimbs = (['leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as const).filter((k) => p.limbs[k]).length;
+  assert.equal(totalIntactLimbs, 3);
+
+  // 6. Severing all non-vital/weapon limbs renders enemy Helpless and skips enemy attack
+  const helplessEnemy = createMapEnemyInstance('e_helpless', 'fanatic_zealot', 5, 5);
+  for (const l of helplessEnemy.limbs) {
+    if (l.id !== 'torso' && l.id !== 'head') l.hp = 0;
+  }
+  const pClean = createInitialPlayer('fallen_knight');
+  const hpBeforeHelpless = pClean.hp;
+  const helplessRound = resolveEnemyCombatRound(pClean, helplessEnemy, rng);
+  assert.equal(pClean.hp, hpBeforeHelpless);
+  assert.equal(helplessRound.logs.some((l) => l.includes('bất lực')), true);
+});
+
+test('Tactical items (ancient_ash, poison_powder, poison_herb, lamp_oil), 2 floor traps per room, companion recall, and amputation sanity penalty work accurately', () => {
+  const p = createInitialPlayer('night_hunter');
+  p.inventory.ancient_ash = 1;
+  p.inventory.poison_powder = 1;
+  p.inventory.poison_herb = 1;
+  p.inventory.lamp_oil = 1;
+
+  const tpl = CONFIG.ENEMIES.orc_berserker;
+  const enemy = createMapEnemyInstance('e_orc', 'orc_berserker', 5, 5);
+  const headLimb = enemy.limbs.find((l) => l.id === 'head')!;
+  const rng = new SeededRNG('TACTICAL-ITEMS');
+
+  // ancient_ash blinds 3 turns (2 remaining after end-of-round tick) & unlocks head Hit%
+  const ashRes = executeCombatItem(p, enemy, 'ancient_ash', rng);
+  assert.equal(enemy.blindTurns >= 2, true);
+  assert.equal(computeLimbHitChance(p, enemy, tpl, headLimb) >= 0.85, true);
+  assert.equal(ashRes.logs.length > 0, true);
+
+  // poison_powder blinds, applies poison DoT & coats weapon (2 turns left after end-of-round tick)
+  executeCombatItem(p, enemy, 'poison_powder', rng);
+  assert.equal((enemy.poisonTurns || 0) >= 2, true);
+  assert.equal((p.poisonCoatTurns || 0) >= 2, true);
+
+  // poison_herb & lamp_oil coat player weapon for 3 hits
+  executeCombatItem(p, enemy, 'poison_herb', rng);
+  assert.equal(p.poisonCoatTurns, 3);
+  executeCombatItem(p, enemy, 'lamp_oil', rng);
+  assert.equal(p.fireCoatTurns, 3);
+
+  // Normal weapon attack consumes 1 charge of each coat and applies poison + burn DoT
+  const atkRes = executeSingleActorCombatAction(p, enemy, 0, 'ATTACK', 'torso', undefined, rng);
+  assert.equal(p.poisonCoatTurns, 2);
+  assert.equal(p.fireCoatTurns, 2);
+  assert.equal((enemy.burnTurns || 0) >= 2, true);
+  assert.equal((atkRes.lastDealtDmg || 0) > 0, true);
+
+  // Non-boss rooms spawn 2 FLOOR_TRAP tiles
+  const world = generateWorld('TRAP-SPAWN-CHECK');
+  const r1 = world.rooms.F2_R1;
+  let trapCount = 0;
+  for (const row of r1.grid) {
+    for (const t of row) {
+      if (t === TILE.FLOOR_TRAP) trapCount++;
+    }
+  }
+  assert.equal(trapCount, 2);
+
+  // Companion recall preserves wounds & returns companion to party
+  const kael = createRecruitedAlly('ally_kael');
+  kael.hp = 68;
+  kael.mind = 55;
+  kael.limbs.leftArm = false;
+  p.party = [kael];
+  const leaveOut = leaveOrDismissPartyMember(p, 0, 'leave');
+  assert.equal(leaveOut.success, true);
+  assert.equal((p.dismissedCompanions || []).length, 1);
+  const recallOut = recallDismissedCompanion(p, 'ally_kael');
+  assert.equal(recallOut.success, true);
+  assert.equal(p.party.length, 1);
+  assert.equal(p.party[0].hp, 68);
+  assert.equal(p.party[0].limbs.leftArm, false);
+
+  // >= 2 severed limbs triggers 1.5x (+50%) sanity drain speed
+  assert.equal(getAmputationSanityMultiplier(p), 1);
+  p.limbs.leftArm = false;
+  assert.equal(getAmputationSanityMultiplier(p), 1);
+  p.limbs.rightLeg = false;
+  assert.equal(getAmputationSanityMultiplier(p), 1.5);
+});

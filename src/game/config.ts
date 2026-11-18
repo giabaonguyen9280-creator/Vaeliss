@@ -42,6 +42,13 @@ export interface EnemyTemplate {
   dropLuckyCoins?: number;
   guaranteedDropItem?: string;
   guaranteedWeaponDrop?: string;
+  coinFlipSkill?: {
+    name: string;
+    telegraphText: string;
+    requiredLimb?: 'head' | 'leftArm' | 'rightArm';
+    penaltyType: 'sever_limb' | 'heavy_bleed' | 'execute_damage';
+    damageMultiplier: number;
+  };
   limbs: LimbConfig[];
 }
 
@@ -100,6 +107,10 @@ export interface UtilityItemDef {
   cureParasite?: boolean;
   cureHallucination?: boolean;
   hungerRestore?: number;
+  blindEnemy?: boolean;
+  blindTurns?: number;
+  weaponCoatType?: 'poison' | 'fire';
+  weaponCoatTurns?: number;
   combatUsable: boolean;
   mapUsable: boolean;
   unlockSkillId?: string;
@@ -1134,6 +1145,56 @@ export const CONFIG = {
       mapUsable: false,
       desc: 'Đồng bạc cổ lưu hành trong Thung Lũng Xương Tàn. Dùng để giao dịch mua vật phẩm với Kẻ Buôn Lậu.',
     },
+    ancient_ash: {
+      id: 'ancient_ash',
+      name: 'Tro Tàn Cổ',
+      category: 'tool',
+      weaponCategory: 'dagger',
+      vfxColor: '#cbd5e1',
+      blindEnemy: true,
+      blindTurns: 3,
+      combatUsable: true,
+      mapUsable: false,
+      desc: 'Ném thẳng vào mắt quái vật làm Mù lòa 3 lượt, mở khóa tỉ lệ đánh trúng Đầu (85%–95%) và vô hiệu hóa đòn Tung Xu từ Đầu.',
+    },
+    poison_powder: {
+      id: 'poison_powder',
+      name: 'Bột Độc',
+      category: 'vial',
+      weaponCategory: 'dagger',
+      vfxColor: '#22c55e',
+      blindEnemy: true,
+      blindTurns: 2,
+      weaponCoatType: 'poison',
+      weaponCoatTurns: 2,
+      combatUsable: true,
+      mapUsable: false,
+      desc: 'Ném làm Mù mắt & Nhiễm Độc (4% Sinh Lực/lượt), đồng thời tẩm độc lên vũ khí 2 đòn đánh tiếp theo.',
+    },
+    poison_herb: {
+      id: 'poison_herb',
+      name: 'Thảo Dược Độc',
+      category: 'herb',
+      weaponCategory: 'dagger',
+      vfxColor: '#4ade80',
+      weaponCoatType: 'poison',
+      weaponCoatTurns: 3,
+      combatUsable: true,
+      mapUsable: false,
+      desc: 'Nghiền nát bôi lên lưỡi vũ khí trong trận (3 đòn đánh): mỗi nhát trúng đích gây Nhiễm Độc rút 5% Sinh Lực tối đa/lượt.',
+    },
+    lamp_oil: {
+      id: 'lamp_oil',
+      name: 'Dầu Đèn',
+      category: 'tool',
+      weaponCategory: 'staff',
+      vfxColor: '#f97316',
+      weaponCoatType: 'fire',
+      weaponCoatTurns: 3,
+      combatUsable: true,
+      mapUsable: false,
+      desc: 'Tẩm Dầu Lửa lên vũ khí (3 đòn đánh): gây Thiêu Đốt 5% Sinh Lực tối đa/lượt và kích nổ 2.5x sát thương lên mục tiêu dính Dầu.',
+    },
   } as Record<string, UtilityItemDef>,
 
   // Crafting Recipes (Unlocked via Bookshelves / Default)
@@ -1513,6 +1574,13 @@ export const CONFIG = {
       telegraphDesc: 'Giơ cao liềm gặt rỉ máu và ngọn đuốc lửa cuồng tín nhắm vào chân bạn!',
       mechanicHint: 'Chặt Tay Phải cầm liềm để ngăn đòn cắt đứt chân.',
       dropEnergyStones: 0,
+      coinFlipSkill: {
+        name: 'Liềm Gặt Chặt Chi',
+        telegraphText: 'Giáo Dân Cuồng Tín giơ cao Liềm Gặt nhắm chặt đứt cánh tay bạn! Hãy Phòng Thủ hoặc chặt Tay Phải ngay!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.5,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Trùm Khăn', hp: 220, maxHp: 220, isVital: true, evasionBonus: 0.25, roleDesc: 'Điểm yếu chí mạng (Né +25%)' },
         { id: 'torso', name: 'Thân Áo Vải', hp: 620, maxHp: 620, isVital: true, roleDesc: 'Thân thể gầy gò cuồng tín' },
@@ -1654,6 +1722,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'holy_elixir',
       guaranteedWeaponDrop: 'estoc_rapier',
+      coinFlipSkill: {
+        name: 'Nghiến Bánh Xe Sáp Sôi',
+        telegraphText: 'Nữ Tu Khóc Ra Sáp nghiến bánh xe lao tới phun sáp sôi! Hãy Phòng Thủ hoặc chặt Tay Phải / làm Mù Đầu!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'heavy_bleed',
+        damageMultiplier: 1.65,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Phủ Mạng Sáp Trắng', hp: 950, maxHp: 950, isVital: true, evasionBonus: 0.25, roleDesc: 'Nửa mặt trên phủ sáp nến đông cứng, miệng phun sáp sôi' },
         { id: 'torso', name: 'Thân Trói Chặt Trên Bánh Xe', hp: 2450, maxHp: 2450, isVital: true, armor: 0.20, roleDesc: 'Thân thể già nua buộc chặt vào khung bánh xe tra tấn' },
@@ -1684,6 +1759,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'crypt_key_f2',
       guaranteedWeaponDrop: 'claymore_greatsword',
+      coinFlipSkill: {
+        name: 'Chùy Chiến Đập Nát Sọ',
+        telegraphText: 'Con mắt giữa Khiên Tháp khóa chặt mục tiêu! Chùy Chiến Bạch Kim sắp giáng xuống — Phòng Thủ hoặc chặt Chân Trái ngay!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.65,
+      },
       limbs: [
         { id: 'head', name: 'Mũ Giáp Bạch Kim Rỉ Máu Đen', hp: 980, maxHp: 980, isVital: true, armor: 0.25, evasionBonus: 0.45, roleDesc: 'Né cao khi đứng; lộ hoàn toàn khi đứt Chân Trái' },
         { id: 'torso', name: 'Giáp Ngực Bạch Kim (-60% Dmg)', hp: 2900, maxHp: 2900, isVital: true, armor: 0.60, roleDesc: 'Giáp hộ vệ cao 3 mét giảm 60% sát thương thường' },
@@ -1716,6 +1798,13 @@ export const CONFIG = {
       dropLuckyCoins: 2,
       guaranteedDropItem: 'knight_ring',
       guaranteedWeaponDrop: 'armor_breaker_mace',
+      coinFlipSkill: {
+        name: 'Phán Quyết Sáp Nến Tử Thần',
+        telegraphText: 'Hồng Y Sáp Trắng giơ Trượng Chuông Máu giáng đòn Phán Quyết chặt lìa chi thể! Hãy Phòng Thủ hoặc chặt Tay Phải!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.75,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Lư Hương Vàng Khổng Lồ', hp: 1050, maxHp: 1050, isVital: true, armor: 0.30, evasionBonus: 0.25, roleDesc: 'Lư hương vàng chạm khắc mặt Thánh Mẫu tỏa khói hương đỏ máu' },
         { id: 'torso', name: 'Thân Lễ Phục Sáp Nến Tan Chảy', hp: 3100, maxHp: 3100, isVital: true, armor: 0.35, roleDesc: 'In hằn những khuôn mặt trẻ con đang vùng vẫy dưới lớp sáp' },
@@ -1747,6 +1836,13 @@ export const CONFIG = {
       telegraphDesc: 'Sói Địa Ngục nhe hàm răng rực lửa chuẩn bị ngoạm đứt lìa chân bạn!',
       mechanicHint: 'Chạy 2 bước/lượt trên map! Ném Thịt Thối trong trận đấu khiến nó bận ăn và bỏ qua lượt cắn.',
       dropEnergyStones: 0,
+      coinFlipSkill: {
+        name: 'Hàm Lửa Xé Chi',
+        telegraphText: 'Sói Địa Ngục cúi thấp gầm gừ, chuẩn bị ngoạm đứt chi của bạn! Hãy Phòng Thủ hoặc làm Mù Đầu nó!',
+        requiredLimb: 'head',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.55,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Hàm Răng Lửa', hp: 850, maxHp: 850, isVital: true, isWeaponArm: true, evasionBonus: 0.25, roleDesc: 'Cắn đứt chân người chơi' },
         { id: 'torso', name: 'Thân Lông Đen Mạch Lửa', hp: 1850, maxHp: 1850, isVital: true, roleDesc: 'Tim lửa địa ngục' },
@@ -1802,6 +1898,13 @@ export const CONFIG = {
       mechanicHint: 'Ưu tiên chặt đứt Tay Phải cầm Rìu hoặc dùng Khiên Phòng Thủ ở lượt 2!',
       dropEnergyStones: 0,
       guaranteedWeaponDrop: 'butcher_cleaver',
+      coinFlipSkill: {
+        name: 'Đại Phủ Phay Thịt',
+        telegraphText: 'Orc Đồ Tể vung Rìu Phay Thịt bổ thẳng xuống! Phòng Thủ để chặn đứng hoặc chặt Tay Phải ngay!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.7,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Orc Nanh Sắt', hp: 920, maxHp: 920, isVital: true, evasionBonus: 0.15, roleDesc: 'Hàm răng nanh khổng lồ' },
         { id: 'torso', name: 'Thân Cơ Bắp Đẫm Máu', hp: 2400, maxHp: 2400, isVital: true, armor: 0.15, roleDesc: 'Lớp thịt dày cuồn cuộn' },
@@ -1858,6 +1961,13 @@ export const CONFIG = {
       mechanicHint: 'Gây cả Nhiễm Trùng lẫn Ký Sinh Trùng! Hãy chuẩn bị Lọ Trắng và vũ khí xuyên giáp.',
       dropEnergyStones: 0,
       guaranteedDropItem: 'castle_key_f1',
+      coinFlipSkill: {
+        name: 'Hàm Thép Truyền Ký Sinh',
+        telegraphText: 'Xác Sống Thiết Giáp há toác hàm thép lao vào ngoạm cổ! Hãy Phòng Thủ hoặc làm Mù Đầu nó!',
+        requiredLimb: 'head',
+        penaltyType: 'heavy_bleed',
+        damageMultiplier: 1.5,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Xác Sống Hàm Thép', hp: 960, maxHp: 960, isVital: true, isWeaponArm: true, armor: 0.30, evasionBonus: 0.15, roleDesc: 'Cắn truyền Ký Sinh Trùng + Nhiễm Trùng' },
         { id: 'torso', name: 'Thân Thiết Giáp Rỉ Sét', hp: 2650, maxHp: 2650, isVital: true, armor: 0.45, roleDesc: 'Giáp sắt hàn chặt vào thịt thối' },
@@ -1890,6 +2000,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'castle_key_f1',
       guaranteedWeaponDrop: 'blood_chainsaw',
+      coinFlipSkill: {
+        name: 'Đại Phủ Đoạn Đầu Đài',
+        telegraphText: 'Malakor kéo xích sắt và giơ Đại Phủ Chặt Đầu! Phải Phòng Thủ hoặc chặt Tay Phải ngay lập tức!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.8,
+      },
       limbs: [
         { id: 'right_arm', name: 'Tay Phải (Đại Phủ Chặt Đầu)', hp: 1200, maxHp: 1200, isWeaponArm: true, armor: 0.15, roleDesc: 'NGUY HIỂM: Bổ Đại Phủ Chặt Đầu gây Đứt Chi + Chảy máu nặng' },
         { id: 'left_arm', name: 'Tay Trái (Xích Móc Sắt)', hp: 980, maxHp: 980, isWeaponArm: true, roleDesc: 'Quăng Xích Móc Sắt kéo mục tiêu không thể bỏ chạy' },
@@ -1920,6 +2037,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'red_vial',
       guaranteedWeaponDrop: 'black_reaper_scythe',
+      coinFlipSkill: {
+        name: 'Trọng Kiếm Đen Chặt Đôi',
+        telegraphText: 'Vorath tụ hắc khí vào Trọng Kiếm Đen chuẩn bị bổ đôi giáp trụ! Hãy Phòng Thủ hoặc chặt Tay Phải ngay!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.75,
+      },
       limbs: [
         { id: 'right_arm', name: 'Tay Phải (Trọng Kiếm Đen)', hp: 1250, maxHp: 1250, isWeaponArm: true, armor: 0.30, roleDesc: 'Chém xuyên giáp bằng Trọng Kiếm Đen gây sát thương chí mạng' },
         { id: 'left_arm', name: 'Tay Trái (Khiên Tháp Rỉ Máu)', hp: 1150, maxHp: 1150, isVital: false, isShieldArm: true, isWeaponArm: true, armor: 0.25, roleDesc: 'KHIÊN CHE THÂN & ĐẦU: Giảm 80% sát thương vào Thân/Đầu cho tới khi bị phá vỡ!' },
@@ -1950,6 +2074,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'holy_elixir',
       guaranteedWeaponDrop: 'ancient_rune_holysword',
+      coinFlipSkill: {
+        name: 'Huyết Nghi Hút Cạn Sinh Mệnh',
+        telegraphText: 'Seraphina bóp nát Cụm Tim Huyết Tinh tung Huyết Nghi! Hãy Phòng Thủ hoặc chặt Tay Trái ngay!',
+        requiredLimb: 'leftArm',
+        penaltyType: 'heavy_bleed',
+        damageMultiplier: 1.65,
+      },
       limbs: [
         { id: 'right_arm', name: 'Tay Phải (Trượng Xương)', hp: 950, maxHp: 950, isWeaponArm: true, roleDesc: 'Phóng huyết thuật gây rách mạch máu và Chảy máu nặng' },
         { id: 'left_arm', name: 'Tay Trái (Cụm Tim Huyết Tinh)', hp: 900, maxHp: 900, isWeaponArm: true, roleDesc: 'Kích hoạt Huyết Nghi hồi 1.000 Sinh Lực nếu nạn nhân đang Chảy máu' },
@@ -1981,6 +2112,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'brown_vial',
       guaranteedWeaponDrop: 'demon_lord_sledge',
+      coinFlipSkill: {
+        name: 'Búa Thịt Nghiền Nát Xương',
+        telegraphText: 'Grendel phồng căng Bướu Chướng Khí giơ Càng Xương & Búa Thịt! Hãy Phòng Thủ hoặc chặt tay nó!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.75,
+      },
       limbs: [
         { id: 'left_arm', name: 'Càng Xương Khổng Lồ Trái', hp: 1100, maxHp: 1100, isWeaponArm: true, roleDesc: 'Đòn liên hoàn thứ nhất: Xé toạc giáp trụ' },
         { id: 'right_arm', name: 'Cánh Tay Búa Thịt Phải', hp: 1100, maxHp: 1100, isWeaponArm: true, roleDesc: 'Đòn liên hoàn thứ hai: Nghiền nát xương cốt' },
@@ -2015,6 +2153,13 @@ export const CONFIG = {
       dropLuckyCoins: 2,
       guaranteedDropItem: 'void_core',
       guaranteedWeaponDrop: 'vaelis_eclipse_blade',
+      coinFlipSkill: {
+        name: 'Thánh Quang Hắc Ám Đoạt Mệnh',
+        telegraphText: 'Hiệp Sĩ Trưởng Vaelis tụ năng lượng Bạo Chúa chuẩn bị tung đòn xử tử! Hãy dùng Phòng Thủ [GUARD] ngay!',
+        requiredLimb: 'head',
+        penaltyType: 'execute_damage',
+        damageMultiplier: 1.85,
+      },
       limbs: [
         {
           id: 'throne_claw_left',
@@ -2121,6 +2266,13 @@ export const CONFIG = {
       telegraphDesc: 'Cơ thể rách toạc lộ lõi sao tím biến mất vào hư không rồi vồ thẳng vào cổ họng bạn!',
       mechanicHint: 'Tốc độ nhanh; ném Thịt Thối để làm nó dừng lại ăn hoặc chặt Chân Sau.',
       dropEnergyStones: 0,
+      coinFlipSkill: {
+        name: 'Bước Nhảy Vồ Cổ Họng',
+        telegraphText: 'Hổ Báo Hư Vô Hóa biến mất vào hư không chuẩn bị vồ đứt cổ! Hãy Phòng Thủ hoặc làm Mù Đầu nó!',
+        requiredLimb: 'head',
+        penaltyType: 'heavy_bleed',
+        damageMultiplier: 1.55,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Báo Bốn Mắt Tím', hp: 620, maxHp: 620, isVital: true, isWeaponArm: true, evasionBonus: 0.30, roleDesc: 'Cắn đứt cổ họng' },
         { id: 'torso', name: 'Thân Rách Lộ Lõi Sao', hp: 1400, maxHp: 1400, isVital: true, roleDesc: 'Lõi năng lượng dị không gian' },
@@ -2229,6 +2381,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'void_key_f3',
       guaranteedWeaponDrop: 'void_shortblade',
+      coinFlipSkill: {
+        name: 'Rễ Máu Nuốt Chửng',
+        telegraphText: 'Tán Cây Quả Tim Thịt há toác chuẩn bị nuốt chửng bạn! Hãy Phòng Thủ hoặc chặt Bộ Rễ / làm Mù Đầu!',
+        requiredLimb: 'head',
+        penaltyType: 'execute_damage',
+        damageMultiplier: 1.65,
+      },
       limbs: [
         { id: 'head', name: 'Tán Cây Quả Tim Thịt (Đầu)', hp: 1350, maxHp: 1350, isVital: true, isWeaponArm: true, evasionBonus: 0.25, roleDesc: 'Treo lủng lẳng những khối cầu thịt hình trái tim (Ném Lọ Nâu/Thịt Thối vào đây!)' },
         { id: 'torso', name: 'Lồng Ngực Banh Rộng Mọc Thân Cây', hp: 3150, maxHp: 3150, isVital: true, armor: 0.20, roleDesc: 'Thân cây trắng bệch mọc thẳng từ tim phổi' },
@@ -2258,6 +2417,13 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'elixir_of_ancients',
       guaranteedWeaponDrop: 'heavy_lumber_axe',
+      coinFlipSkill: {
+        name: 'Đại Kiếm Đá Vôi Nghiền Xác',
+        telegraphText: 'Kẻ Gác Đền Hóa Thạch giơ Đại Kiếm Đá Vôi tụ bụi hóa thạch! Hãy Phòng Thủ hoặc chặt Tay Phải ngay!',
+        requiredLimb: 'rightArm',
+        penaltyType: 'sever_limb',
+        damageMultiplier: 1.75,
+      },
       limbs: [
         { id: 'head', name: 'Đầu Nửa Đá Vôi Nửa Thịt Đỏ (Đầu)', hp: 1600, maxHp: 1600, isVital: true, evasionBonus: 0.15, roleDesc: 'ĐƯỢC CHE CHẮN: Phải chặt >= 2 bộ phận đá mới chạm tới!' },
         { id: 'torso', name: 'Lõi Ngực Đá Vôi Cổ Đại', hp: 2700, maxHp: 2700, isVital: true, armor: 0.25, roleDesc: '70% hóa đá vôi xám, 30% cơ bắp đỏ tươi rỉ máu' },
@@ -2292,6 +2458,13 @@ export const CONFIG = {
       dropLuckyCoins: 2,
       guaranteedDropItem: 'reconstruction_scroll',
       guaranteedWeaponDrop: 'ancient_rune_holysword',
+      coinFlipSkill: {
+        name: 'Tia Phân Rã Hư Vô',
+        telegraphText: 'Sứ Giả Của Vết Rách mở toác Khối Đầu Vô Diện tụ tia phân rã! Hãy Phòng Thủ hoặc làm Mù Đầu nó ngay!',
+        requiredLimb: 'head',
+        penaltyType: 'execute_damage',
+        damageMultiplier: 1.75,
+      },
       limbs: [
         { id: 'head', name: 'Khối Đầu Vô Diện & Hào Quang Thiên Thạch', hp: 1550, maxHp: 1550, isVital: true, isWeaponArm: true, evasionBonus: 0.28, roleDesc: 'Khối cầu đen sâu thẳm bao quanh bởi thiên thạch xoay tròn' },
         { id: 'torso', name: 'Mảng Bầu Trời Đêm & Chòm Sao Tím', hp: 3650, maxHp: 3650, isVital: true, armor: 0.25, roleDesc: 'Chứa đựng những chòm sao tím lạnh lẽo và hàng trăm con mắt' },

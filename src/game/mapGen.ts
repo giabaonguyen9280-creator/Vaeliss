@@ -75,12 +75,15 @@ export interface MapEnemyInstance {
   bleedPerTurn: number;
   burnPerTurn: number;
   burnTurns?: number;
+  poisonPerTurn?: number;
+  poisonTurns?: number;
   oilCovered: boolean;
   oilTurns?: number;
   acidTurns?: number;
   blindTurns: number;
   stunTurns: number;
   telegraphing: boolean;
+  telegraphCoinFlip?: boolean;
   turnCount: number;
   talked: boolean;
 }
@@ -838,8 +841,10 @@ export function generateWorld(seed: string): WorldMapState {
       }
 
       if (!isBossRoom) {
-        const trapSpot = popTileWithBuffer(extraRng, 1);
-        if (trapSpot) grid[trapSpot[1]][trapSpot[0]] = TILE.FLOOR_TRAP;
+        for (let tIdx = 0; tIdx < 2; tIdx++) {
+          const trapSpot = popTileWithBuffer(extraRng, 1);
+          if (trapSpot) grid[trapSpot[1]][trapSpot[0]] = TILE.FLOOR_TRAP;
+        }
         const miasmaSpot = popTileWithBuffer(extraRng, 1);
         if (miasmaSpot) grid[miasmaSpot[1]][miasmaSpot[0]] = TILE.MIASMA_VENT;
         const corpseSpot = popTileWithBuffer(extraRng, 1);

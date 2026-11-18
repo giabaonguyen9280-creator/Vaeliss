@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { CONFIG } from '../game/config';
-import { PlayerState } from '../game/combat';
+import { PlayerState, PartyAlly } from '../game/combat';
 import {
   getHerbTypeAtCoord,
   hasLineOfSight,
   herbTypeToVariant,
+  isWalkableTile,
   MapEnemyInstance,
   NPC_TILE_SET,
   RoomData,
@@ -29,6 +30,62 @@ interface DungeonMapViewportProps {
   filmGrainEnabled?: boolean;
   onTileClick: (worldTileX: number, worldTileY: number) => void;
   onEnemyCollidePlayer?: (enemy: MapEnemyInstance) => void;
+}
+
+export function getParkedCompanionSpots(
+  room: RoomData,
+  player: PlayerState
+): Array<{ ally: PartyAlly; x: number; y: number }> {
+  const dismissed = (player.dismissedCompanions || []).filter((a) => a.hp > 0);
+  if (dismissed.length === 0) return [];
+  const roomH = room.height || room.grid.length;
+  const roomW = room.width || room.grid[0]?.length || 0;
+  let altarX = -1;
+  let altarY = -1;
+  for (let y = 0; y < roomH && altarX === -1; y++) {
+    for (let x = 0; x < roomW; x++) {
+      if (room.grid[y]?.[x] === TILE.HEXEN_ALTAR) {
+        altarX = x;
+        altarY = y;
+        break;
+      }
+    }
+  }
+  if (altarX === -1) return [];
+
+  const candidateOffsets: Array<[number, number]> = [
+    [-2, 0],
+    [2, 0],
+    [0, 2],
+    [-1, 1],
+    [1, 1],
+    [-2, 1],
+    [2, 1],
+    [-1, 0],
+    [1, 0],
+    [0, 1],
+    [-2, -1],
+    [2, -1],
+  ];
+  const spots: Array<{ ally: PartyAlly; x: number; y: number }> = [];
+  const usedKeys = new Set<string>();
+  for (const ally of dismissed) {
+    for (const [ox, oy] of candidateOffsets) {
+      const sx = altarX + ox;
+      const sy = altarY + oy;
+      if (sx <= 0 || sx >= roomW - 1 || sy <= 0 || sy >= roomH - 1) continue;
+      const key = `${sx},${sy}`;
+      if (usedKeys.has(key)) continue;
+      const tile = room.grid[sy]?.[sx];
+      if (!isWalkableTile(tile)) continue;
+      if (tile === TILE.FLOOR_TRAP) continue;
+      if (room.enemies.some((e) => !e.defeated && e.x === sx && e.y === sy)) continue;
+      usedKeys.add(key);
+      spots.push({ ally, x: sx, y: sy });
+      break;
+    }
+  }
+  return spots;
 }
 
 function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): boolean {
@@ -486,6 +543,43 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               }
             }
           }
+
+          // Parked Dismissed Companions waiting near Hexen Altar
+          const parkedCompanions = getParkedCompanionSpots(room, player);
+          parkedCompanions.forEach(({ ally, x: cxPos, y: cyPos }, pIdx) => {
+            entities.push({
+              footY: cyPos,
+              draw: () => {
+                const px = cxPos * tileW;
+                const allyBob = Math.sin(now * 0.0018 + (pIdx + 3) * 1.1) * 1.4;
+                const py = (cyPos - 1) * tileH + allyBob;
+                ctx.fillStyle = 'rgba(0,0,0,0.42)';
+                ctx.beginPath();
+                ctx.ellipse(px + tileW / 2, cyPos * tileH + tileH - 6, tileW * 0.31, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                drawPixelSprite(
+                  ctx,
+                  ally.spriteKey || ally.classId,
+                  px,
+                  py,
+                  tileW,
+                  tileH * 2,
+                  new Set(),
+                  false,
+                  false,
+                  false,
+                  false,
+                  now * 0.0022 + pIdx
+                );
+                ctx.fillStyle = 'rgba(0,0,0,0.82)';
+                ctx.fillRect(px - 14, py - 12, tileW + 28, 15);
+                ctx.fillStyle = '#c5a059';
+                ctx.font = 'bold 11px "Noto Serif", serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(ally.name, px + tileW / 2, py - 1);
+              },
+            });
+          });
 
           // Recruited Party Follower(s)
           player.party.forEach((ally, idx) => {
@@ -977,6 +1071,12 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             else if (t === TILE.CORPSE_LOOT && !room.lootedCoords.includes(cKey))
               promptLabel = '[F] Lục Xác Kỵ Sĩ';
             else if (t === TILE.CRACKED_WALL) promptLabel = '[F] Nổ Tường';
+            else {
+              const parkedHere = parkedCompanions.find((p) => p.x === ix && p.y === iy);
+              if (parkedHere) {
+                promptLabel = `[F] Gọi Lại ${parkedHere.ally.name}`;
+              }
+            }
 
             if (promptLabel) {
               const px = ix * tileW;
@@ -986,20 +1086,20 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               ctx.lineWidth = 2.5;
               ctx.strokeRect(px + 2, py + 2, tileW - 4, tileH - 4);
 
-              const tagW = 136;
-              const tagH = 18;
+              const tagW = 176;
+              const tagH = 22;
               const tagX = Math.max(4, Math.min(worldPxW - tagW - 4, px + tileW / 2 - tagW / 2));
-              const tagY = Math.max(4, py - 20);
-              ctx.fillStyle = 'rgba(12, 9, 16, 0.92)';
+              const tagY = Math.max(4, py - 24);
+              ctx.fillStyle = 'rgba(12, 9, 16, 0.94)';
               ctx.fillRect(tagX, tagY, tagW, tagH);
               ctx.strokeStyle = '#fbbf24';
-              ctx.lineWidth = 1.2;
+              ctx.lineWidth = 1.3;
               ctx.strokeRect(tagX, tagY, tagW, tagH);
 
               ctx.fillStyle = '#fef08a';
-              ctx.font = 'bold 10px "Noto Serif", serif';
+              ctx.font = 'bold 12px "Noto Serif", serif';
               ctx.textAlign = 'center';
-              ctx.fillText(promptLabel, tagX + tagW / 2, tagY + 13);
+              ctx.fillText(promptLabel, tagX + tagW / 2, tagY + 15);
               ctx.restore();
               drewPrompt = true;
               break;

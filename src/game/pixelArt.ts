@@ -3864,7 +3864,108 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
   ctx.strokeStyle = '#070608';
   ctx.lineWidth = Math.max(1.4, size * 0.032);
 
-  if (
+  if (itemId === 'ancient_ash') {
+    // Pile of glowing gray-silver sacred ash with tiny rune embers
+    ctx.fillStyle = '#334155';
+    ctx.beginPath();
+    ctx.ellipse(cx, size * 0.68, size * 0.34, size * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    const ashGrad = ctx.createRadialGradient(cx, size * 0.5, 2, cx, size * 0.56, size * 0.34);
+    ashGrad.addColorStop(0, '#f1f5f9');
+    ashGrad.addColorStop(0.55, '#94a3b8');
+    ashGrad.addColorStop(1, '#475569');
+    ctx.fillStyle = ashGrad;
+    ctx.beginPath();
+    ctx.moveTo(size * 0.2, size * 0.68);
+    ctx.quadraticCurveTo(size * 0.34, size * 0.32, cx, size * 0.28);
+    ctx.quadraticCurveTo(size * 0.68, size * 0.34, size * 0.8, size * 0.68);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Floating ember/ash motes
+    ctx.fillStyle = '#e2e8f0';
+    for (const [mx, my, mr] of [
+      [0.34, 0.26, 0.03],
+      [0.62, 0.22, 0.025],
+      [0.5, 0.16, 0.035],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(size * mx, size * my, size * mr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (itemId === 'poison_powder') {
+    // Leather toxin pouch spilling noxious green-violet powder
+    ctx.fillStyle = '#14532d';
+    ctx.beginPath();
+    ctx.ellipse(cx, size * 0.58, size * 0.28, size * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Tied pouch neck
+    ctx.fillStyle = '#5c3d28';
+    ctx.fillRect(cx - size * 0.1, size * 0.24, size * 0.2, size * 0.12);
+    ctx.strokeRect(cx - size * 0.1, size * 0.24, size * 0.2, size * 0.12);
+    ctx.fillStyle = '#78350f';
+    ctx.beginPath();
+    ctx.moveTo(cx - size * 0.14, size * 0.16);
+    ctx.lineTo(cx + size * 0.14, size * 0.16);
+    ctx.lineTo(cx + size * 0.08, size * 0.26);
+    ctx.lineTo(cx - size * 0.08, size * 0.26);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Toxic emerald-purple cloud & skull mark
+    ctx.fillStyle = '#4ade80';
+    for (const [px, py, pr] of [
+      [0.36, 0.62, 0.055],
+      [0.54, 0.54, 0.065],
+      [0.66, 0.64, 0.045],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(size * px, size * py, size * pr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#c084fc';
+    ctx.beginPath();
+    ctx.arc(size * 0.45, size * 0.48, size * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (itemId === 'lamp_oil') {
+    // Brass Lantern Oil Can with Curved Spout & Amber Oil Glow
+    ctx.fillStyle = '#92400e';
+    ctx.beginPath();
+    ctx.moveTo(size * 0.24, size * 0.42);
+    ctx.lineTo(size * 0.64, size * 0.42);
+    ctx.lineTo(size * 0.7, size * 0.8);
+    ctx.lineTo(size * 0.18, size * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Brass handle & curved pouring spout
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = Math.max(2.5, size * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.64, size * 0.48);
+    ctx.quadraticCurveTo(size * 0.86, size * 0.36, size * 0.84, size * 0.22);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(size * 0.22, size * 0.58, size * 0.11, Math.PI * 0.5, Math.PI * 1.5);
+    ctx.stroke();
+
+    // Amber drop at spout tip & oil level band
+    ctx.lineWidth = Math.max(1.4, size * 0.032);
+    ctx.strokeStyle = '#070608';
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(size * 0.25, size * 0.56, size * 0.38, size * 0.14);
+    ctx.beginPath();
+    ctx.arc(size * 0.84, size * 0.22, size * 0.055, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else if (
     itemId.includes('vial') ||
     itemId.includes('oil') ||
     itemId === 'holy_water' ||
@@ -3973,6 +4074,33 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
       ctx.ellipse(cx, size * 0.36, size * 0.26, size * 0.09, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+    } else if (itemId === 'poison_herb') {
+      // Venomous Serrated Dark-Emerald & Violet Herb with dripping toxin droplets
+      ctx.fillStyle = '#15803d';
+      ctx.beginPath();
+      ctx.moveTo(cx, size * 0.14);
+      ctx.lineTo(size * 0.72, size * 0.36);
+      ctx.lineTo(size * 0.62, size * 0.44);
+      ctx.lineTo(size * 0.78, size * 0.58);
+      ctx.lineTo(cx, size * 0.84);
+      ctx.lineTo(size * 0.22, size * 0.58);
+      ctx.lineTo(size * 0.38, size * 0.44);
+      ctx.lineTo(size * 0.28, size * 0.36);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = '#a855f7';
+      ctx.beginPath();
+      ctx.moveTo(cx, size * 0.2);
+      ctx.lineTo(cx, size * 0.8);
+      ctx.stroke();
+
+      ctx.fillStyle = '#4ade80';
+      ctx.beginPath();
+      ctx.arc(size * 0.76, size * 0.68, size * 0.045, 0, Math.PI * 2);
+      ctx.arc(size * 0.26, size * 0.7, size * 0.04, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       // Botanical Herb Leaf / Calm Flower
       const leafCol = itemId.includes('red')
@@ -5477,15 +5605,45 @@ export function getFloorTileTexture(
     ctx.fillStyle = '#7f1d1d';
     ctx.fillRect(10, 20, 28, 17);
   } else if (tileType === 'FLOOR_TRAP') {
-    // Rusty Bear-Trap / Spike Plate on Floor
-    ctx.strokeStyle = '#64748b';
+    // Rusted Serrated Iron Bear-Trap with recessed stone crack & bloodied pressure pan
+    ctx.strokeStyle = '#18141c';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(24, 24, 12, 0, Math.PI * 2);
+    ctx.moveTo(8, 22);
+    ctx.lineTo(16, 26);
+    ctx.moveTo(33, 21);
+    ctx.lineTo(40, 27);
     ctx.stroke();
-    ctx.fillStyle = '#991b1b';
-    for (const [sx, sy] of [[18, 20], [24, 18], [30, 20], [20, 28], [28, 28]]) {
-      ctx.fillRect(sx - 1.5, sy - 3, 3, 6);
+
+    // Rusted iron outer jaw ring
+    ctx.fillStyle = 'rgba(15, 11, 14, 0.75)';
+    ctx.beginPath();
+    ctx.arc(24, 24, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#78716c';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.arc(24, 24, 13, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Central crimson-stained pressure plate
+    ctx.fillStyle = '#450a0a';
+    ctx.beginPath();
+    ctx.arc(24, 24, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#991b1b';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // Sharp serrated metallic jaw teeth
+    ctx.fillStyle = '#cbd5e1';
+    for (const [sx, sy] of [[15, 19], [20, 15], [28, 15], [33, 19], [16, 29], [24, 32], [32, 29]]) {
+      ctx.beginPath();
+      ctx.moveTo(sx - 2, sy + 2);
+      ctx.lineTo(sx, sy - 4);
+      ctx.lineTo(sx + 2, sy + 2);
+      ctx.closePath();
+      ctx.fill();
     }
   } else if (tileType === 'MIASMA_VENT') {
     // Glowing Purple Miasma Fissure Vent

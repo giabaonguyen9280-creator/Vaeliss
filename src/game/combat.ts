@@ -471,6 +471,8 @@ export interface PlayerState {
   bloodForgedWeapons: string[];
   cursedLockedWeapon: string | null;
   silverOilTurns: number;
+  poisonCoatTurns?: number;
+  fireCoatTurns?: number;
   stimulantBonusPct: number;
   affinities: {
     holyMother: number;
@@ -484,6 +486,7 @@ export interface PlayerState {
   unlockedRecipes: string[];
   readBookIds: string[]; // Only books actually looted from bookshelves!
   party: PartyAlly[];
+  dismissedCompanions?: PartyAlly[];
   npcLifecycle?: Record<string, 'map' | 'recruited' | 'dead'>;
   npcFlags: {
     priestHelped: boolean;
@@ -612,6 +615,8 @@ export function createInitialPlayer(classId: string, customName?: string): Playe
     bloodForgedWeapons: [],
     cursedLockedWeapon: null,
     silverOilTurns: 0,
+    poisonCoatTurns: 0,
+    fireCoatTurns: 0,
     stimulantBonusPct: 0,
     affinities: {
       holyMother: 0,
@@ -627,6 +632,7 @@ export function createInitialPlayer(classId: string, customName?: string): Playe
     unlockedRecipes: ['recipe_herbal_salve'],
     readBookIds: [], // Start with 0 books read so all 12 are locked until found on bookshelves!
     party: [],
+    dismissedCompanions: [],
     npcLifecycle: {},
     npcFlags: {
       priestHelped: false,
@@ -1610,8 +1616,14 @@ export function leaveOrDismissPartyMember(
         player.npcFlags = player.npcFlags || { priestHelped: false, smugglerClosed: false, prisonerRecruited: false };
         player.npcFlags.prisonerRecruited = false;
       }
+      if (ally.hp > 0) {
+        const snapshot: PartyAlly = JSON.parse(JSON.stringify(ally));
+        player.dismissedCompanions = (player.dismissedCompanions || []).filter((c) => c.id !== ally.id);
+        player.dismissedCompanions.push(snapshot);
+      }
     } else if (mode === 'dead') {
       player.npcLifecycle[npcKey] = 'dead';
+      player.dismissedCompanions = (player.dismissedCompanions || []).filter((c) => c.id !== ally.id);
     }
   }
 
@@ -1625,8 +1637,52 @@ export function leaveOrDismissPartyMember(
         ? `💀 Đã giải tán [${ally.name}] trở về tro bụi.${gearNotice}`
         : mode === 'dead'
         ? `💀 [${ally.name}] đã vĩnh viễn ngã xuống.${gearNotice}`
-        : `👋 [${ally.name}] đã rời nhóm và quay lại vị trí cũ trên bản đồ.${gearNotice}`,
+        : `👋 [${ally.name}] đã rời nhóm (giữ nguyên thương tích) và chờ tại khu vực Bàn Thờ Hexen / vị trí cũ.${gearNotice}`,
   };
+}
+
+export function recallDismissedCompanion(
+  player: PlayerState,
+  allyId: string
+): { success: boolean; message: string } {
+  if (player.party.length >= 3) {
+    return { success: false, message: 'Tổ đội đã đầy tối đa 4 người (1 Chính + 3 Đồng Hành)!' };
+  }
+  const pool = player.dismissedCompanions || [];
+  const idx = pool.findIndex((c) => c.id === allyId);
+  if (idx === -1) {
+    return { success: false, message: 'Không tìm thấy đồng hành này trong danh sách chờ.' };
+  }
+  const [restored] = pool.splice(idx, 1);
+  player.dismissedCompanions = pool;
+  if (!restored.weaponId) {
+    restored.weaponId = 'bite_headbutt';
+  }
+  player.party.push(restored);
+  const npcKey = ALLY_ID_TO_NPC_KEY[restored.id] || restored.id;
+  player.npcLifecycle = player.npcLifecycle || {};
+  player.npcLifecycle[npcKey] = 'recruited';
+  if (restored.id === 'ally_kael') {
+    player.npcFlags = player.npcFlags || { priestHelped: false, smugglerClosed: false, prisonerRecruited: false };
+    player.npcFlags.prisonerRecruited = true;
+  }
+  return {
+    success: true,
+    message: `🤝 [${restored.name}] đã tái gia nhập tổ đội (Sinh Lực ${restored.hp}/${restored.maxHp}, Tâm Trí ${restored.mind}/${restored.maxMind})!`,
+  };
+}
+
+export function countTotalLostLimbs(p: PlayerState): number {
+  let lost = 0;
+  if (!p.limbs.leftArm) lost += 1;
+  if (!p.limbs.rightArm) lost += 1;
+  if (!p.limbs.leftLeg) lost += 1;
+  if (!p.limbs.rightLeg) lost += 1;
+  return lost;
+}
+
+export function getAmputationSanityMultiplier(p: PlayerState): number {
+  return countTotalLostLimbs(p) >= 2 ? 1.5 : 1.0;
 }
 
 export function getEffectiveWeapon(p: PlayerState) {
@@ -1999,18 +2055,20 @@ export function computeLimbHitChance(
   let base = 0.88 + wpn.hitBonus;
 
   if (limb.id === 'head') {
-    base += wpn.headHitBonus || 0;
-  }
+    const hasSupportLegDefined = enemy.limbs.some((l) => l.isSupportLeg);
+    const legsSevered = hasSupportLegDefined && enemy.limbs.every((l) => !l.isSupportLeg || l.hp <= 0);
+    const isHeadUnlocked = legsSevered || enemy.stunTurns > 0 || enemy.blindTurns > 0;
 
-  const supportLegsSevered = enemy.limbs.some((l) => l.isSupportLeg && l.hp <= 0);
-  let limbEva = limb.evasionBonus || 0;
-  if (limb.id === 'head' && supportLegsSevered) {
-    // Cutting legs unlocks 95% head hit accuracy!
-    limbEva = 0;
-    base = Math.max(base, 0.95);
+    if (isHeadUnlocked) {
+      // Severed legs, Stun, or Blind unlocks 85%–95% head accuracy
+      base = Math.max(0.85, Math.min(0.95, 0.90 + wpn.hitBonus + (wpn.headHitBonus || 0)));
+    } else {
+      // Anti-Head-Spam Lock: while standing and alert, head hit chance is locked at 15%–25%
+      base = Math.max(0.15, Math.min(0.25, 0.20 + (wpn.headHitBonus || 0) * 0.25));
+    }
+  } else {
+    base -= limb.evasionBonus || 0;
   }
-
-  base -= limbEva;
 
   if (player.statuses.parasite) {
     base *= 1 - CONFIG.PARASITE_ACC_PENALTY;
@@ -2020,6 +2078,14 @@ export function computeLimbHitChance(
   }
 
   return Math.max(0.15, Math.min(0.98, base));
+}
+
+export interface CombatPendingCoinFlip {
+  enemyName: string;
+  skillName: string;
+  telegraphText: string;
+  penaltyType: 'sever_limb' | 'heavy_bleed' | 'execute_damage';
+  damageMultiplier: number;
 }
 
 export interface CombatTurnResult {
@@ -2036,6 +2102,7 @@ export interface CombatTurnResult {
   weaponCategory?: WeaponCategory;
   vfxColor?: string;
   actorIdx?: number;
+  pendingCoinFlip?: CombatPendingCoinFlip;
 }
 
 const DEFAULT_VFX_COLOR_BY_CATEGORY: Record<WeaponCategory, string> = {
@@ -2241,7 +2308,7 @@ export function computeLimbDamagePreview(
 }
 
 export interface LimbDebuffBadge {
-  type: 'acid' | 'oil' | 'locked' | 'blind' | 'burn';
+  type: 'acid' | 'oil' | 'locked' | 'blind' | 'burn' | 'poison';
   label: string;
   turns: number;
   color: string;
@@ -2295,6 +2362,14 @@ export function getLimbDebuffBadges(
       label: 'CHÁY',
       turns: enemy.burnTurns || 3,
       color: '#fb923c',
+    });
+  }
+  if (limbId === 'torso' && (enemy.poisonPerTurn || 0) > 0 && (enemy.poisonTurns || 0) > 0) {
+    badges.push({
+      type: 'poison',
+      label: 'ĐỘC',
+      turns: enemy.poisonTurns || 3,
+      color: '#4ade80',
     });
   }
   return badges;
@@ -2496,8 +2571,10 @@ export function executePlayerWeaponAttack(
     }
 
     // Elemental Reaction: Fire / Holy attack against Oil-covered target -> 2.5x Damage + 150 Burn/turn for 3 turns!
+    const hasFireCoat = (player.fireCoatTurns || 0) > 0;
+    const hasPoisonCoat = (player.poisonCoatTurns || 0) > 0;
     const isFireOrHoly = Boolean(
-      wpn.burnDmg || wpn.undeadDemonBonus || wpn.id === 'holy_mother_mace'
+      wpn.burnDmg || wpn.undeadDemonBonus || wpn.id === 'holy_mother_mace' || hasFireCoat
     );
     if (enemy.oilCovered && isFireOrHoly) {
       dmg = Math.round(dmg * 2.5);
@@ -2559,6 +2636,21 @@ export function executePlayerWeaponAttack(
       enemy.burnPerTurn = Math.max(enemy.burnPerTurn, wpn.burnDmg);
       enemy.burnTurns = Math.max(enemy.burnTurns || 0, 2);
       particleType = 'fire';
+    }
+    if (hasPoisonCoat) {
+      player.poisonCoatTurns = Math.max(0, (player.poisonCoatTurns || 0) - 1);
+      const pDot = Math.max(65, Math.round(getEnemyMaxTotalHp(enemy) * 0.05));
+      enemy.poisonPerTurn = Math.max(enemy.poisonPerTurn || 0, pDot);
+      enemy.poisonTurns = Math.max(enemy.poisonTurns || 0, 3);
+      logs.push(`☠️ Độc tẩm trên vũ khí ngấm vào máu, rút ${pDot} Sinh Lực mỗi lượt (3 lượt)!`);
+    }
+    if (hasFireCoat) {
+      player.fireCoatTurns = Math.max(0, (player.fireCoatTurns || 0) - 1);
+      const fDot = Math.max(70, Math.round(getEnemyMaxTotalHp(enemy) * 0.05));
+      enemy.burnPerTurn = Math.max(enemy.burnPerTurn || 0, fDot);
+      enemy.burnTurns = Math.max(enemy.burnTurns || 0, 3);
+      particleType = 'fire';
+      logs.push(`🔥 Dầu Lửa trên vũ khí bùng cháy, thiêu đốt ${fDot} Sinh Lực mỗi lượt!`);
     }
 
     // Elemental/Physical Reaction: Blunt weapon hitting an Armor-Shredded (Red Vial) target gains +30% Stun chance (1 turn)
@@ -2999,6 +3091,30 @@ export function executeCombatItem(
     dealt += sub.actualDmg;
     if (sub.severedNow) severedAny = true;
     logs.push(`🪤 Bạn gài [Bẫy Dây Thép] kẹp chặt [${leg.name}] gây ${sub.actualDmg} sát thương và khóa cứng chi!`);
+  } else if (itemId === 'ancient_ash') {
+    enemy.blindTurns = Math.max(enemy.blindTurns, 3);
+    if (tpl.coinFlipSkill?.requiredLimb === 'head' || tpl.id === 'grand_abbess') {
+      enemy.telegraphing = false;
+      enemy.telegraphCoinFlip = false;
+    }
+    logs.push(`🌫️ Bạn tung [Tro Tàn Cổ] thẳng vào mắt ${tpl.name}: MÙ LÒA 3 lượt, mở khóa điểm yếu Đầu!`);
+  } else if (itemId === 'poison_powder') {
+    enemy.blindTurns = Math.max(enemy.blindTurns, 2);
+    const pDot = Math.max(55, Math.round(getEnemyMaxTotalHp(enemy) * 0.04));
+    enemy.poisonPerTurn = Math.max(enemy.poisonPerTurn || 0, pDot);
+    enemy.poisonTurns = Math.max(enemy.poisonTurns || 0, 3);
+    player.poisonCoatTurns = Math.max(player.poisonCoatTurns || 0, 2);
+    if (tpl.coinFlipSkill?.requiredLimb === 'head') {
+      enemy.telegraphing = false;
+      enemy.telegraphCoinFlip = false;
+    }
+    logs.push(`☠️ Bạn rắc [Bột Độc] gây Mù & Nhiễm Độc (${pDot} dmg/lượt), đồng thời tẩm độc lên vũ khí!`);
+  } else if (itemId === 'poison_herb') {
+    player.poisonCoatTurns = 3;
+    logs.push('🌿☠️ Bạn nghiền [Thảo Dược Độc] bôi lên lưỡi vũ khí (3 đòn đánh tẩm độc 5% Sinh Lực/lượt)!');
+  } else if (itemId === 'lamp_oil') {
+    player.fireCoatTurns = 3;
+    logs.push('🪔🔥 Bạn tẩm [Dầu Đèn] lên vũ khí (3 đòn đánh bùng lửa thiêu đốt 5% Sinh Lực/lượt)!');
   } else {
     applySupportItemEffects(player, itemId, logs);
   }
@@ -3172,6 +3288,14 @@ function finishCombatRoundWithEnemyTurn(
       }
     }
   }
+  if ((enemy.poisonPerTurn || 0) > 0 && (enemy.poisonTurns || 0) > 0 && torso) {
+    torso.hp = Math.max(0, torso.hp - (enemy.poisonPerTurn || 0));
+    logs.push(`☠️ ${enemy.customName || tpl.name} mất ${enemy.poisonPerTurn} Sinh Lực vì Nhiễm Độc.`);
+    enemy.poisonTurns = Math.max(0, (enemy.poisonTurns || 0) - 1);
+    if (enemy.poisonTurns <= 0) {
+      enemy.poisonPerTurn = 0;
+    }
+  }
 
   if (isEnemyDead(enemy)) {
     return handleEnemyDeath(player, enemy, tpl, logs, severedAnyLimb, wasCrit);
@@ -3179,6 +3303,7 @@ function finishCombatRoundWithEnemyTurn(
 
   enemy.turnCount += 1;
   let lastTakenDmg = 0;
+  let pendingCoinFlip: CombatPendingCoinFlip | undefined = undefined;
 
   const lockedMap = enemy.lockedLimbIds || {};
   enemy.lockedLimbIds = lockedMap;
@@ -3196,9 +3321,28 @@ function finishCombatRoundWithEnemyTurn(
       ? player.evasionBonus * 0.5
       : player.evasionBonus;
 
+  const isCoinSkillLimbReady = (req?: 'head' | 'leftArm' | 'rightArm'): boolean => {
+    if (!req) return true;
+    if (req === 'head') {
+      const h = enemy.limbs.find((l) => l.id === 'head');
+      return Boolean(h && h.hp > 0 && !lockedMap[h.id] && enemy.blindTurns <= 0);
+    }
+    if (req === 'leftArm') {
+      const la = enemy.limbs.find(
+        (l) => l.id === 'left_arm' || l.id === 'throne_claw_left' || l.id === 'tentacle_2' || l.id === 'coiling_body'
+      );
+      return Boolean(la && la.hp > 0 && !lockedMap[la.id]);
+    }
+    const ra = enemy.limbs.find(
+      (l) => l.id === 'right_arm' || l.id === 'throne_ensor_right' || l.id === 'tentacle_1'
+    );
+    return Boolean(ra && ra.hp > 0 && !lockedMap[ra.id]);
+  };
+
   if (enemy.stunTurns > 0) {
     enemy.stunTurns -= 1;
     enemy.telegraphing = false;
+    enemy.telegraphCoinFlip = false;
     logs.push(`💫 ${enemy.customName || tpl.name} đang bị Choáng / Mất lượt hành động!`);
   } else if (tpl.id === 'demon_lord_vaelis' || tpl.id === 'vaelis') {
     const clawLeft = enemy.limbs.find((l) => l.id === 'throne_claw_left' && l.hp > 0 && !lockedMap[l.id]);
@@ -3207,26 +3351,45 @@ function finishCombatRoundWithEnemyTurn(
     const conduit = enemy.limbs.find((l) => l.id === 'void_conduit' && l.hp > 0 && !lockedMap[l.id]);
     const vaelisHead = enemy.limbs.find((l) => l.id === 'head' && l.hp > 0 && !lockedMap[l.id]);
 
-    // 1. Telegraph Attack every 3rd turn (Thánh Quang Hắc Ám)
+    // 1. Telegraph Attack every 3rd turn (Thánh Quang Hắc Ám — hỗ trợ Tung Xu nếu không Phòng Thủ)
     if (enemy.telegraphing) {
       enemy.telegraphing = false;
-      const rawDmg = rng.int(tpl.telegraphDmg[0], tpl.telegraphDmg[1]);
-      logs.push(`⚠️💥 NGAI VÀNG XƯƠNG SẮT PHÓNG THÍCH [${tpl.telegraphName}] QUÉT TOÀN BỘ TỔ ĐỘI!`);
-      player.mind = Math.max(0, player.mind - 16);
-      lastTakenDmg += applyDamageToPlayer(player, enemy, tpl, rawDmg, true, logs, rng);
-      for (const ally of player.party) {
-        if (ally.hp > 0) {
-          const allyStats = getAllyComputedStats(ally, player);
-          const physRed = allyStats.physDefPct / 100;
-          const guardMult = ally.guarding || (ally.divineAegisTurns || 0) > 0 ? 0.45 : 0.8;
-          const allyDmg = Math.max(3, Math.round(rawDmg * guardMult * (1 - physRed * 0.5)));
-          ally.hp = Math.max(0, ally.hp - allyDmg);
-          ally.mind = Math.max(0, ally.mind - 12);
-          logs.push(`🌑 Thánh Quang Hắc Ám quét trúng [${ally.name}] (-${allyDmg} Sinh Lực, -12 Tâm Trí)!`);
-          if (ally.hp <= 0) {
-            logs.push(`💀 [${ally.name}] đã ngã xuống trước Thánh Quang Hắc Ám!`);
-            reclaimUndeadSummonGear(player, ally, logs);
-            markLivingAllyDead(player, ally);
+      const wasCoinTelegraph = Boolean(enemy.telegraphCoinFlip);
+      enemy.telegraphCoinFlip = false;
+      if (wasCoinTelegraph && tpl.coinFlipSkill) {
+        if (!isCoinSkillLimbReady(tpl.coinFlipSkill.requiredLimb)) {
+          logs.push(`✅ Bộ phận phát chiêu của Vaelis đã bị kiềm chế, đòn [${tpl.coinFlipSkill.name}] bị phá vỡ!`);
+        } else if (player.statuses.guarding || player.statuses.divineAegisTurns > 0) {
+          logs.push(`🛡️✨ Ngươi thủ thế vững vàng, chặn đứng hoàn toàn đòn xử tử [${tpl.coinFlipSkill.name}] của Vaelis!`);
+        } else {
+          pendingCoinFlip = {
+            enemyName: enemy.customName || tpl.name,
+            skillName: tpl.coinFlipSkill.name,
+            telegraphText: tpl.coinFlipSkill.telegraphText,
+            penaltyType: tpl.coinFlipSkill.penaltyType,
+            damageMultiplier: tpl.coinFlipSkill.damageMultiplier,
+          };
+          logs.push(`🎲⚠️ [TUNG XU ĐOẠT MỆNH] Vaelis tung [${tpl.coinFlipSkill.name}]!`);
+        }
+      } else {
+        const rawDmg = rng.int(tpl.telegraphDmg[0], tpl.telegraphDmg[1]);
+        logs.push(`⚠️💥 NGAI VÀNG XƯƠNG SẮT PHÓNG THÍCH [${tpl.telegraphName}] QUÉT TOÀN BỘ TỔ ĐỘI!`);
+        player.mind = Math.max(0, player.mind - 16);
+        lastTakenDmg += applyDamageToPlayer(player, enemy, tpl, rawDmg, true, logs, rng);
+        for (const ally of player.party) {
+          if (ally.hp > 0) {
+            const allyStats = getAllyComputedStats(ally, player);
+            const physRed = allyStats.physDefPct / 100;
+            const guardMult = ally.guarding || (ally.divineAegisTurns || 0) > 0 ? 0.45 : 0.8;
+            const allyDmg = Math.max(3, Math.round(rawDmg * guardMult * (1 - physRed * 0.5)));
+            ally.hp = Math.max(0, ally.hp - allyDmg);
+            ally.mind = Math.max(0, ally.mind - 12);
+            logs.push(`🌑 Thánh Quang Hắc Ám quét trúng [${ally.name}] (-${allyDmg} Sinh Lực, -12 Tâm Trí)!`);
+            if (ally.hp <= 0) {
+              logs.push(`💀 [${ally.name}] đã ngã xuống trước Thánh Quang Hắc Ám!`);
+              reclaimUndeadSummonGear(player, ally, logs);
+              markLivingAllyDead(player, ally);
+            }
           }
         }
       }
@@ -3315,7 +3478,13 @@ function finishCombatRoundWithEnemyTurn(
 
       if (enemy.turnCount % 2 === 0) {
         enemy.telegraphing = true;
-        logs.push(`⚠️ CẢNH BÁO ĐỎ: ${tpl.telegraphDesc}`);
+        if (tpl.coinFlipSkill && isCoinSkillLimbReady(tpl.coinFlipSkill.requiredLimb)) {
+          enemy.telegraphCoinFlip = true;
+          logs.push(`⚠️💀 CẢNH BÁO TỬ THẦN (TUNG XU): ${tpl.coinFlipSkill.telegraphText}`);
+        } else {
+          enemy.telegraphCoinFlip = false;
+          logs.push(`⚠️ CẢNH BÁO ĐỎ: ${tpl.telegraphDesc}`);
+        }
       }
     }
 
@@ -3328,37 +3497,66 @@ function finishCombatRoundWithEnemyTurn(
     const intactWeaponLimbs = enemy.limbs.filter(
       (l) => l.isWeaponArm && l.hp > 0 && !lockedMap[l.id]
     );
+    const intactNonVitalLimbs = enemy.limbs.filter(
+      (l) => !l.isVital && l.hp > 0 && !lockedMap[l.id]
+    );
+    const allLimbsSeveredHelpless = intactWeaponLimbs.length === 0 && intactNonVitalLimbs.length === 0;
 
-    if (intactWeaponLimbs.length === 0) {
+    if (allLimbsSeveredHelpless) {
+      enemy.telegraphing = false;
+      enemy.telegraphCoinFlip = false;
+      logs.push(`💢 ${enemy.customName || tpl.name} đã mất sạch tay chân, nằm quằn quại bất lực trên nền đá!`);
+    } else if (intactWeaponLimbs.length === 0) {
       const tackleDmg = Math.max(3, Math.round(tpl.normalDmg[0] * 0.35));
       lastTakenDmg += applyDamageToPlayer(player, enemy, tpl, tackleDmg, false, logs, rng);
       logs.push(`💢 ${enemy.customName || tpl.name} đã mất hết tay vũ khí, chỉ có thể húc yếu ớt!`);
       enemy.telegraphing = false;
+      enemy.telegraphCoinFlip = false;
     } else if (enemy.telegraphing) {
       enemy.telegraphing = false;
-      let hitProb = 0.90 - effectivePlayerEvasion;
-      if (enemy.blindTurns > 0) {
-        hitProb *= 1 - CONFIG.RED_VIAL_BLIND_ACC_PENALTY;
-      }
+      const wasCoinTelegraph = Boolean(enemy.telegraphCoinFlip);
+      enemy.telegraphCoinFlip = false;
 
-      if (!rng.chance(Math.max(0.10, hitProb))) {
-        logs.push(`👁️‍🗨️ Đòn chí mạng [${tpl.telegraphName}] của ${enemy.customName || tpl.name} ĐÁNH TRƯỢT!`);
+      if (wasCoinTelegraph && tpl.coinFlipSkill) {
+        if (!isCoinSkillLimbReady(tpl.coinFlipSkill.requiredLimb)) {
+          logs.push(`✅ Bộ phận tung chiêu của [${enemy.customName || tpl.name}] đã bị phế/khóa! Đòn tử thần [${tpl.coinFlipSkill.name}] bị hủy bỏ hoàn toàn!`);
+        } else if (player.statuses.guarding || player.statuses.divineAegisTurns > 0) {
+          logs.push(`🛡️✨ Ngươi thủ thế vững chắc, chặn đứng hoàn toàn đòn tử thần tung xu [${tpl.coinFlipSkill.name}]!`);
+        } else {
+          pendingCoinFlip = {
+            enemyName: enemy.customName || tpl.name,
+            skillName: tpl.coinFlipSkill.name,
+            telegraphText: tpl.coinFlipSkill.telegraphText,
+            penaltyType: tpl.coinFlipSkill.penaltyType,
+            damageMultiplier: tpl.coinFlipSkill.damageMultiplier,
+          };
+          logs.push(`🎲⚠️ [ĐÒN TỬ THẦN TUNG XU] ${enemy.customName || tpl.name} phát động [${tpl.coinFlipSkill.name}]!`);
+        }
       } else {
-        const rawDmg = rng.int(tpl.telegraphDmg[0], tpl.telegraphDmg[1]);
-        logs.push(`⚠️💥 ${enemy.customName || tpl.name} tung đòn chí mạng báo trước: [${tpl.telegraphName}]!`);
-
-        if (tpl.id === 'grand_abbess') {
-          player.statuses.blindedTurns = Math.max(player.statuses.blindedTurns, 2);
-          logs.push('☀️ Ánh Sáng Phán Xét làm bạn bị MÙ MẮT 2 lượt!');
-        } else if (tpl.id === 'countess_carmilla' && player.statuses.bleeding && torso) {
-          torso.hp = Math.min(torso.maxHp, torso.hp + 1000);
-          logs.push('🦇 Huyết Nữ Carmilla hút dòng máu đang chảy của bạn và TỰ HỒI +1.000 Sinh Lực!');
-        } else if (tpl.id === 'void_leech_beast') {
-          player.mind = Math.max(0, player.mind - 18);
-          logs.push('🌀 Năng lượng Hư Vô hút cạn 18 Tâm Trí của bạn!');
+        let hitProb = 0.90 - effectivePlayerEvasion;
+        if (enemy.blindTurns > 0) {
+          hitProb *= 1 - CONFIG.RED_VIAL_BLIND_ACC_PENALTY;
         }
 
-        lastTakenDmg += applyDamageToPlayer(player, enemy, tpl, rawDmg, true, logs, rng);
+        if (!rng.chance(Math.max(0.10, hitProb))) {
+          logs.push(`👁️‍🗨️ Đòn chí mạng [${tpl.telegraphName}] của ${enemy.customName || tpl.name} ĐÁNH TRƯỢT!`);
+        } else {
+          const rawDmg = rng.int(tpl.telegraphDmg[0], tpl.telegraphDmg[1]);
+          logs.push(`⚠️💥 ${enemy.customName || tpl.name} tung đòn chí mạng báo trước: [${tpl.telegraphName}]!`);
+
+          if (tpl.id === 'grand_abbess') {
+            player.statuses.blindedTurns = Math.max(player.statuses.blindedTurns, 2);
+            logs.push('☀️ Ánh Sáng Phán Xét làm bạn bị MÙ MẮT 2 lượt!');
+          } else if (tpl.id === 'countess_carmilla' && player.statuses.bleeding && torso) {
+            torso.hp = Math.min(torso.maxHp, torso.hp + 1000);
+            logs.push('🦇 Huyết Nữ Carmilla hút dòng máu đang chảy của bạn và TỰ HỒI +1.000 Sinh Lực!');
+          } else if (tpl.id === 'void_leech_beast') {
+            player.mind = Math.max(0, player.mind - 18);
+            logs.push('🌀 Năng lượng Hư Vô hút cạn 18 Tâm Trí của bạn!');
+          }
+
+          lastTakenDmg += applyDamageToPlayer(player, enemy, tpl, rawDmg, true, logs, rng);
+        }
       }
     } else {
       const strikes = tpl.id === 'fenrir_kin' && intactWeaponLimbs.length >= 2 ? 2 : 1;
@@ -3396,7 +3594,13 @@ function finishCombatRoundWithEnemyTurn(
       }
 
       enemy.telegraphing = true;
-      logs.push(`⚠️ CẢNH BÁO ĐỎ: ${tpl.telegraphDesc}`);
+      if (tpl.coinFlipSkill && isCoinSkillLimbReady(tpl.coinFlipSkill.requiredLimb)) {
+        enemy.telegraphCoinFlip = true;
+        logs.push(`⚠️💀 CẢNH BÁO TỬ THẦN (TUNG XU): ${tpl.coinFlipSkill.telegraphText}`);
+      } else {
+        enemy.telegraphCoinFlip = false;
+        logs.push(`⚠️ CẢNH BÁO ĐỎ: ${tpl.telegraphDesc}`);
+      }
     }
   }
 
@@ -3508,6 +3712,78 @@ function finishCombatRoundWithEnemyTurn(
     lastTakenDmg,
     weaponCategory: enemyCat,
     vfxColor: enemyVfx.vfxColor,
+    pendingCoinFlip,
+  };
+}
+
+export function resolveCombatCoinFlipOutcome(
+  player: PlayerState,
+  enemy: MapEnemyInstance,
+  tpl: EnemyTemplate,
+  won: boolean,
+  penaltyType: 'sever_limb' | 'heavy_bleed' | 'execute_damage',
+  damageMultiplier: number,
+  rng: SeededRNG
+): CombatTurnResult {
+  const logs: string[] = [];
+  player.statuses.guarding = false;
+  if (won) {
+    logs.push(`⚡🎲 Lật ngửa định mệnh! Ngươi lộn người né tránh hoàn toàn đòn tử thần từ ${enemy.customName || tpl.name}!`);
+    return {
+      logs,
+      enemyDefeated: false,
+      playerDefeated: false,
+      lastTakenDmg: 0,
+    };
+  }
+
+  const baseRaw = rng.int(tpl.telegraphDmg[0], tpl.telegraphDmg[1]);
+  const scaledDmg = Math.max(15, Math.round(baseRaw * damageMultiplier));
+  let actualTaken = 0;
+
+  if (penaltyType === 'sever_limb') {
+    actualTaken = applyDamageToPlayer(player, enemy, tpl, scaledDmg, false, logs, rng);
+    const severCandidates: Array<{ key: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'; label: string }> = [
+      { key: 'leftArm', label: 'Tay Trái' },
+      { key: 'rightArm', label: 'Tay Phải' },
+      { key: 'leftLeg', label: 'Chân Trái' },
+      { key: 'rightLeg', label: 'Chân Phải' },
+    ];
+    const intact = severCandidates.filter((c) => player.limbs[c.key]);
+    if (intact.length > 0) {
+      const victim = rng.pick(intact);
+      player.limbs[victim.key] = false;
+      player.limbs.infected[victim.key] = false;
+      if ((player.statuses.bleedImmunityTurns || 0) <= 0) {
+        player.statuses.bleeding = true;
+      }
+      logs.push(`🩸😱 SẤP MẶT ĐỊNH MỆNH! Đòn tử thần chặt đứt lìa [${victim.label}] của bạn!`);
+      if (victim.key === 'leftArm' || victim.key === 'rightArm') {
+        handlePlayerArmLoss(player, victim.key, logs);
+      }
+    }
+  } else if (penaltyType === 'heavy_bleed') {
+    actualTaken = applyDamageToPlayer(player, enemy, tpl, scaledDmg, false, logs, rng);
+    if ((player.statuses.bleedImmunityTurns || 0) <= 0) {
+      player.statuses.bleeding = true;
+    }
+    player.mind = Math.max(0, player.mind - 15);
+    logs.push(`🩸💀 SẤP MẶT ĐỊNH MỆNH! Vết thương toác máu chảy không ngừng (-${actualTaken} Sinh Lực, -15 Tâm Trí, Chảy Máu Nặng)!`);
+  } else {
+    player.hp = Math.max(0, player.hp - scaledDmg);
+    actualTaken = scaledDmg;
+    player.mind = Math.max(0, player.mind - 12);
+    logs.push(`💀⚡ SẤP MẶT ĐỊNH MỆNH! Đòn xử tử xuyên thẳng qua giáp trụ (-${scaledDmg} Sinh Lực, -12 Tâm Trí)!`);
+  }
+
+  return {
+    logs,
+    enemyDefeated: false,
+    playerDefeated: player.hp <= 0 || player.headHp <= 0,
+    lastTakenDmg: actualTaken,
+    wasCrit: true,
+    weaponCategory: tpl.defaultWeaponCategory || 'heavy_axe',
+    vfxColor: '#dc2626',
   };
 }
 
@@ -3698,7 +3974,9 @@ export function executeSingleActorCombatAction(
         if (wpn.limbBonusDmg && limb.id !== 'torso' && limb.id !== 'head') dmg = Math.round(dmg * (1 + wpn.limbBonusDmg));
         if (tpl.slashResist && wpn.damageType === 'slash') dmg = Math.round(dmg * (1 - tpl.slashResist));
         if (tpl.bluntWeakness && wpn.damageType === 'blunt') dmg = Math.round(dmg * (1 + tpl.bluntWeakness));
-        const isFireOrHoly = Boolean(wpn.burnDmg || wpn.undeadDemonBonus || wpn.id === 'holy_mother_mace');
+        const hasFireCoat = (player.fireCoatTurns || 0) > 0;
+        const hasPoisonCoat = (player.poisonCoatTurns || 0) > 0;
+        const isFireOrHoly = Boolean(wpn.burnDmg || wpn.undeadDemonBonus || wpn.id === 'holy_mother_mace' || hasFireCoat);
         if (enemy.oilCovered && isFireOrHoly) {
           dmg = Math.round(dmg * 2.5);
           enemy.oilCovered = false;
@@ -3739,6 +4017,21 @@ export function executeSingleActorCombatAction(
           enemy.burnPerTurn = Math.max(enemy.burnPerTurn, wpn.burnDmg);
           enemy.burnTurns = Math.max(enemy.burnTurns || 0, 2);
           particleType = 'fire';
+        }
+        if (hasPoisonCoat) {
+          player.poisonCoatTurns = Math.max(0, (player.poisonCoatTurns || 0) - 1);
+          const pDot = Math.max(65, Math.round(getEnemyMaxTotalHp(enemy) * 0.05));
+          enemy.poisonPerTurn = Math.max(enemy.poisonPerTurn || 0, pDot);
+          enemy.poisonTurns = Math.max(enemy.poisonTurns || 0, 3);
+          logs.push(`☠️ Độc tẩm trên vũ khí ngấm vào máu, rút ${pDot} Sinh Lực/lượt (3 lượt)!`);
+        }
+        if (hasFireCoat) {
+          player.fireCoatTurns = Math.max(0, (player.fireCoatTurns || 0) - 1);
+          const fDot = Math.max(70, Math.round(getEnemyMaxTotalHp(enemy) * 0.05));
+          enemy.burnPerTurn = Math.max(enemy.burnPerTurn || 0, fDot);
+          enemy.burnTurns = Math.max(enemy.burnTurns || 0, 3);
+          particleType = 'fire';
+          logs.push(`🔥 Dầu Lửa trên vũ khí bùng cháy, thiêu đốt ${fDot} Sinh Lực/lượt!`);
         }
         const isArmorShredded = (enemy.acidTurns || 0) > 0 || enemy.blindTurns > 0;
         const totalStun = (wpn.stunChance || 0) + (wpn.damageType === 'blunt' && isArmorShredded ? 0.3 : 0);
@@ -4100,6 +4393,30 @@ export function executeSingleActorCombatAction(
         dealt = sub.actualDmg;
         severedNow = sub.severedNow;
         logs.push(`🪤 [${player.name}] gài [Bẫy Dây Thép] khóa [${leg.name}]!`);
+      } else if (itemId === 'ancient_ash') {
+        enemy.blindTurns = Math.max(enemy.blindTurns, 3);
+        if (tpl.coinFlipSkill?.requiredLimb === 'head' || tpl.id === 'grand_abbess') {
+          enemy.telegraphing = false;
+          enemy.telegraphCoinFlip = false;
+        }
+        logs.push(`🌫️ [${player.name}] tung [Tro Tàn Cổ] làm Mù ${tpl.name} 3 lượt, mở khóa điểm yếu Đầu!`);
+      } else if (itemId === 'poison_powder') {
+        enemy.blindTurns = Math.max(enemy.blindTurns, 2);
+        const pDot = Math.max(55, Math.round(getEnemyMaxTotalHp(enemy) * 0.04));
+        enemy.poisonPerTurn = Math.max(enemy.poisonPerTurn || 0, pDot);
+        enemy.poisonTurns = Math.max(enemy.poisonTurns || 0, 3);
+        player.poisonCoatTurns = Math.max(player.poisonCoatTurns || 0, 2);
+        if (tpl.coinFlipSkill?.requiredLimb === 'head') {
+          enemy.telegraphing = false;
+          enemy.telegraphCoinFlip = false;
+        }
+        logs.push(`☠️ [${player.name}] rắc [Bột Độc] gây Mù & Nhiễm Độc (${pDot} dmg/lượt), tẩm độc vũ khí!`);
+      } else if (itemId === 'poison_herb') {
+        player.poisonCoatTurns = 3;
+        logs.push(`🌿☠️ [${player.name}] tẩm [Thảo Dược Độc] lên vũ khí (3 đòn đánh)!`);
+      } else if (itemId === 'lamp_oil') {
+        player.fireCoatTurns = 3;
+        logs.push(`🪔🔥 [${player.name}] tẩm [Dầu Đèn] lên vũ khí (3 đòn đánh)!`);
       } else {
         applySupportItemEffects(player, itemId, logs);
       }
@@ -4157,8 +4474,8 @@ export function executeSingleActorCombatAction(
     if ((player.inventory[itemId] || 0) <= 0 || !item || !item.combatUsable) {
       return { logs: ['Vật phẩm không khả dụng!'], enemyDefeated: false, playerDefeated: false };
     }
-    // Offensive tactical vials target enemy; healing/support items apply to this ally
-    if (['brown_vial', 'red_vial', 'purple_vial', 'rotten_meat', 'holy_fire_oil', 'void_acid_vial', 'steel_trap'].includes(itemId)) {
+    // Offensive tactical vials/throws target enemy or coat main weapon; healing/support items apply to this ally
+    if (['brown_vial', 'red_vial', 'purple_vial', 'rotten_meat', 'holy_fire_oil', 'void_acid_vial', 'steel_trap', 'ancient_ash', 'poison_powder', 'poison_herb', 'lamp_oil'].includes(itemId)) {
       return executeSingleActorCombatAction(player, enemy, 0, 'ITEM', effectiveLimbId, opts, rng);
     }
     applySupportItemToAlly(player, actorIndex - 1, itemId, logs);
