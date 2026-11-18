@@ -2,7 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONFIG } from './config';
 import { SeededRNG } from './prng';
-import { buildRoomLayout, generateWorld, RoomTemplateType, TILE } from './mapGen';
+import {
+  advanceRoomEnemiesOneTurn,
+  buildRoomLayout,
+  createMapEnemyInstance,
+  generateWorld,
+  getHerbTypeAtCoord,
+  hasLineOfSight,
+  herbTypeToVariant,
+  RoomData,
+  RoomTemplateType,
+  TILE,
+} from './mapGen';
 import {
   amputateInfectedLimbWithBoneSaw,
   applyDefaultIntroLoadoutForRemainingSteps,
@@ -31,6 +42,8 @@ import {
   executeSingleActorCombatAction,
   exorciseCursedWeapon,
   GEAR_ITEMS,
+  getAllyAvailableSkills,
+  getAllyComputedStats,
   getComputedPlayerStats,
   getEnemyMaxTotalHp,
   getEnemyRemainingTotalHp,
@@ -38,7 +51,10 @@ import {
   getLimbDebuffBadges,
   getPlayerStepCooldownMs,
   isPlayerPanicking,
+  isPureTankSummon,
+  learnOrUpgradeHexenSkill,
   prayAffinityAtHexen,
+  reclaimUndeadSummonGear,
   regrowLimbAtHexen,
   resolveEnemyCombatRound,
   unlockHexenStatNode,
@@ -186,6 +202,7 @@ test('Class-Specific HP/Mind, Custom Name, Consecutive Normal Attacks after Limb
   assert.equal(p.hunger, 15);
   assert.equal(p.corruption, 20);
   assert.equal(p.holyMagicLocked, true);
+  assert.equal(p.affinities.demonicPact, 1);
 });
 
 test('Diminishing Returns Armor Curve (ArmorFactor = 1 / (1 + Armor / 50)), Elemental Oil+Fire 2.5x + 150 Burn, Blunt+Acid Stun, and Reticle Badges operate accurately', () => {
@@ -510,26 +527,63 @@ test('4-person party recruitment, Necromancy summons, Vorath Shield Arm mechanic
   p.party.push(kael, child13);
   assert.equal(p.party.length, 2);
 
-  // Necromancy on defeated corpse raises 3rd party slot (4th member total) and locks gear
+  // Necromancy on defeated corpse raises 3rd party slot (4th member total) with starter gear and unlocked equip permissions for ghoul/skeleton
   const world = generateWorld('PARTY-NECRO-TEST');
   const corpse = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  corpse.templateId = 'fanatic_zealot';
   corpse.defeated = true;
   const necroRes = castNecromancyOnCorpse(p, corpse);
   assert.equal(necroRes.success, true);
   assert.equal(p.party.length, 3);
-  const undead = p.party[2];
-  assert.equal(undead.isUndeadSummon, true);
-  assert.equal(undead.hunger, 0);
-  assert.equal(canAllyEquipGear(undead, 'void_woven_robe').allowed, false);
-  assert.equal(canAllyEquipShield(undead, 'rotten_wood_shield').allowed, false);
+  const undeadGhoul = p.party[2];
+  assert.equal(undeadGhoul.isUndeadSummon, true);
+  assert.equal(undeadGhoul.classId, 'summon_ghoul');
+  assert.equal(undeadGhoul.hunger, 0);
+  assert.equal(Boolean(undeadGhoul.weaponId && undeadGhoul.equippedShield && undeadGhoul.equippedHead && undeadGhoul.equippedBody), true);
+  assert.equal(canAllyEquipGear(undeadGhoul, 'void_woven_robe').allowed, true);
+  assert.equal(canAllyEquipShield(undeadGhoul, 'rotten_wood_shield').allowed, true);
 
-  // Party cap of 3 allies blocks raising Child 12 until slot free; test Child 12 raise when slot available
+  // When ghoul/skeleton summon dies (hp <= 0), worn gear is reclaimed into player's unlocked pools with log notice
+  const deathLogs: string[] = [];
+  undeadGhoul.hp = 0;
+  const recovered = reclaimUndeadSummonGear(p, undeadGhoul, deathLogs);
+  assert.equal(recovered.length >= 4, true);
+  assert.equal(p.unlockedWeapons.includes('butcher_cleaver'), true);
+  assert.equal(p.unlockedGear.includes('boiled_cuirass'), true);
+  assert.equal(undeadGhoul.equippedBody, null);
+  assert.equal(undeadGhoul.equippedShield, null);
+  assert.equal(deathLogs.some((l) => l.includes('Xác sống tan rã thành tro bụi, nhưng') && l.includes('đã rơi lại và được thu hồi vào kho đồ!')), true);
+
+  // Party cap of 3 allies blocks raising Child 12 until slot free; Child 12 is Pure Tank (HP 160-190, high physDef, locked gear, shield behavior)
   p.questFlags.child12Resolved = true;
   assert.equal(castNecromancyOnChild12(p).success, false);
   p.party.pop();
   const c12Res = castNecromancyOnChild12(p);
   assert.equal(c12Res.success, true);
-  assert.equal(p.party[2].classId, 'summon_child_12');
+  const child12Summon = p.party[2];
+  assert.equal(child12Summon.classId, 'summon_child_12');
+  assert.equal(isPureTankSummon(child12Summon), true);
+  assert.equal(child12Summon.maxHp >= 160 && child12Summon.maxHp <= 190, true);
+  assert.equal(getAllyComputedStats(child12Summon, p).physDefPct >= 28, true);
+  assert.equal(canAllyEquipGear(child12Summon, 'void_woven_robe').allowed, false);
+  assert.equal(canAllyEquipShield(child12Summon, 'rotten_wood_shield').allowed, false);
+  assert.equal(getAllyAvailableSkills(child12Summon).includes('divine_aegis'), true);
+  assert.equal(getAllyAvailableSkills(child12Summon).includes('holy_light'), false);
+
+  // Wraith summon is also a Pure Tank (HP 160-190, high innate physDef, defensive skills only)
+  const priestCorpse = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  priestCorpse.templateId = 'rotting_priest';
+  priestCorpse.defeated = true;
+  p.party.pop();
+  const wraithRes = castNecromancyOnCorpse(p, priestCorpse);
+  assert.equal(wraithRes.success, true);
+  const wraith = p.party[2];
+  assert.equal(wraith.classId, 'summon_wraith');
+  assert.equal(isPureTankSummon(wraith), true);
+  assert.equal(wraith.maxHp >= 160 && wraith.maxHp <= 190, true);
+  assert.equal(getAllyComputedStats(wraith, p).physDefPct >= 34, true);
+  assert.equal(getAllyAvailableSkills(wraith).includes('divine_aegis'), true);
+  assert.equal(getAllyAvailableSkills(wraith).includes('void_bite'), false);
 
   // Support item heals ally & keeps undead hunger at 0
   p.party[0].hp = 30;
@@ -543,15 +597,203 @@ test('4-person party recruitment, Necromancy summons, Vorath Shield Arm mechanic
   const vorathTpl = CONFIG.ENEMIES.dullahan_knight;
   assert.equal(vorathTpl.limbs.some((l) => l.id === 'left_arm' && l.isShieldArm === true), true);
 
-  // Sequential combat actions for player + ally + enemy round resolve cleanly
+  // Sequential combat actions: Pure Tank locks ATTACK into defensive shield stance
   const targetEnemy = JSON.parse(JSON.stringify(world.rooms.F2_EXTERIOR.enemies[0]));
+  const enemyHpBefore = getEnemyRemainingTotalHp(targetEnemy);
   const rng = new SeededRNG('SEQ-COMBAT');
   const act0 = executeSingleActorCombatAction(p, targetEnemy, 0, 'ATTACK', 'right_arm', undefined, rng);
   assert.equal(act0.logs.length > 0, true);
   const act1 = executeSingleActorCombatAction(p, targetEnemy, 1, 'GUARD', 'right_arm', undefined, rng);
   assert.equal(p.party[0].guarding, true);
   assert.equal(act1.logs.length > 0, true);
+  const enemyHpBeforeTank = getEnemyRemainingTotalHp(targetEnemy);
+  const wraithAct = executeSingleActorCombatAction(p, targetEnemy, 3, 'ATTACK', 'torso', undefined, rng);
+  assert.equal(getEnemyRemainingTotalHp(targetEnemy), enemyHpBeforeTank);
+  assert.equal(wraith.guarding, true);
+  assert.equal(p.statuses.divineAegisTurns >= 1, true);
+  assert.equal(wraithAct.logs.some((l) => l.includes('Thuần Phòng Thủ')), true);
+  assert.equal(enemyHpBefore >= enemyHpBeforeTank, true);
   const roundEnd = resolveEnemyCombatRound(p, targetEnemy, rng);
   assert.equal(roundEnd.logs.length > 0, true);
 });
+
+test('Turn-based Sokoban enemy stepping uses narrow sightRange <= 3, blocks crate/wall LOS, drops chase > 3 to patrol, halts loop on <= 1 combat, and lures via <= 4 decoys', () => {
+  const w = 12;
+  const h = 10;
+  const grid: TILE[][] = Array.from({ length: h }, (_, y) =>
+    Array.from({ length: w }, (_, x) =>
+      x === 0 || y === 0 || x === w - 1 || y === h - 1 ? TILE.WALL : TILE.FLOOR
+    )
+  );
+
+  const enemy = createMapEnemyInstance('e1', 'fanatic_zealot', 8, 5, { facing: 'left' });
+  const bystander = createMapEnemyInstance('e_other', 'dire_wolf', 9, 7, { facing: 'left' });
+  const room: RoomData = {
+    id: 'SOKOBAN_TEST',
+    floor: 2,
+    roomIndex: 0,
+    name: 'Test Room',
+    sensoryLine: '...',
+    template: 'BRIDGE_CHASM',
+    width: w,
+    height: h,
+    grid,
+    spawnX: 2,
+    spawnY: 5,
+    secretX: 0,
+    secretY: 0,
+    secretChamberCoords: [],
+    enemies: [enemy, bystander],
+    lootedCoords: [],
+    shortcutOpened: false,
+    secretWallBlown: false,
+  };
+
+  // Turn 1: Player at (3, 5), distance 4 -> outside narrow sightRange <= 3 -> enemy stays in patrol and steps 8 -> 7
+  const t1 = advanceRoomEnemiesOneTurn(room, { x: 3, y: 5 }, null);
+  assert.equal(t1.enemies[0].x, 7);
+  assert.equal(t1.enemies[0].y, 5);
+  assert.equal(t1.enemies[0].aiState, 'patrol');
+  assert.equal(t1.collidedEnemy, null);
+
+  // Turn 2: Player steps to (4, 5) within sightRange 3 of (7, 5) -> enemy enters 'alert' (!) and pauses in place
+  room.enemies = t1.enemies;
+  const t2 = advanceRoomEnemiesOneTurn(room, { x: 4, y: 5 }, null);
+  assert.equal(t2.enemies[0].aiState, 'alert');
+  assert.equal(t2.enemies[0].x, 7);
+  assert.equal(t2.collidedEnemy, null);
+
+  // Turn 3: Player steps to (5, 5) (distance 2 <= 3) -> enemy transitions 'alert' -> 'chase' and steps to (6, 5), reaching distance 1 -> immediate combat lock + halts remaining enemy loop!
+  room.enemies = t2.enemies;
+  const bystanderBeforeX = t2.enemies[1].x;
+  const t3 = advanceRoomEnemiesOneTurn(room, { x: 5, y: 5 }, null);
+  assert.notEqual(t3.collidedEnemy, null);
+  assert.equal(Math.abs(t3.enemies[0].x - 5) + Math.abs(t3.enemies[0].y - 5) <= 1, true);
+  assert.equal(t3.enemies[1].x, bystanderBeforeX);
+
+  // Check distance > 3 or obstacle LOS drops chase back to patrol
+  const dropRoom: RoomData = {
+    ...room,
+    enemies: [{ ...createMapEnemyInstance('e_drop', 'fanatic_zealot', 7, 5, { facing: 'left' }), aiState: 'chase' }],
+  };
+  const outOfRange = advanceRoomEnemiesOneTurn(dropRoom, { x: 2, y: 5 }, null);
+  assert.equal(outOfRange.enemies[0].aiState, 'patrol');
+
+  // Check crate and diagonal wall corners block LOS
+  const obstacleGrid = grid.map((r) => [...r]);
+  obstacleGrid[5][5] = TILE.CRATE;
+  assert.equal(hasLineOfSight(obstacleGrid, 7, 5, 4, 5), false);
+  const occluded = advanceRoomEnemiesOneTurn({ ...dropRoom, grid: obstacleGrid }, { x: 4, y: 5 }, null);
+  assert.equal(occluded.enemies[0].aiState, 'patrol');
+
+  const cornerGrid = grid.map((r) => [...r]);
+  cornerGrid[4][5] = TILE.WALL;
+  cornerGrid[5][6] = TILE.WALL;
+  assert.equal(hasLineOfSight(cornerGrid, 5, 5, 6, 4), false);
+
+  // Check map decoy (Mồi Nhử) within <= 4 tiles lures chase/alert enemy away from player and locks eating for N ticks
+  const decoyRoom: RoomData = {
+    ...room,
+    enemies: [{ ...createMapEnemyInstance('e2', 'dire_wolf', 7, 5, { facing: 'left' }), aiState: 'chase' }],
+    decoys: [{ x: 5, y: 5, turnsLeft: 10 }],
+  };
+  const d1 = advanceRoomEnemiesOneTurn(decoyRoom, { x: 8, y: 3 }, null);
+  assert.equal(d1.enemies[0].x, 6);
+  assert.equal(d1.enemies[0].aiState, 'deagro');
+  assert.equal(d1.decoys[0].turnsLeft, 9);
+
+  // Next tick reaches decoy at (5, 5) -> locked eating (eatTicksRemaining = 6), ignores adjacent player at (5, 4)
+  const d2 = advanceRoomEnemiesOneTurn({ ...decoyRoom, enemies: d1.enemies, decoys: d1.decoys }, { x: 5, y: 4 }, null);
+  assert.equal(d2.enemies[0].x, 5);
+  assert.equal(d2.enemies[0].y, 5);
+  assert.equal(d2.enemies[0].eatTicksRemaining, 6);
+  assert.equal(d2.collidedEnemy, null);
+
+  // Subsequent eating tick ignores adjacent player and stays on decoy tile while decrementing eatTicksRemaining
+  const d3 = advanceRoomEnemiesOneTurn({ ...decoyRoom, enemies: d2.enemies, decoys: d2.decoys }, { x: 5, y: 4 }, null);
+  assert.equal(d3.enemies[0].x, 5);
+  assert.equal(d3.enemies[0].y, 5);
+  assert.equal(d3.enemies[0].eatTicksRemaining, 5);
+  assert.equal(d3.enemies[0].aiState, 'deagro');
+  assert.equal(d3.collidedEnemy, null);
+
+  // Patrol roaming turns perpendicularly (up/down) instead of endlessly oscillating on 1 axis
+  let roamRoom: RoomData = {
+    ...room,
+    enemies: [createMapEnemyInstance('roamer', 'fanatic_zealot', 6, 5, { facing: 'left' })],
+  };
+  const seenFacings = new Set<string>();
+  for (let step = 0; step < 18; step++) {
+    const res = advanceRoomEnemiesOneTurn(roamRoom, { x: 1, y: 1 }, null);
+    if (res.enemies[0].facing) seenFacings.add(res.enemies[0].facing);
+    roamRoom = { ...roamRoom, enemies: res.enemies };
+  }
+  assert.equal(seenFacings.has('up') || seenFacings.has('down'), true);
+});
+
+test('Herb tiles map deterministically to 4 color variants and Lucky Coins only drop from elite tiers (never normal mobs)', () => {
+  assert.equal(herbTypeToVariant('green_herb'), 0);
+  assert.equal(herbTypeToVariant('red_herb'), 1);
+  assert.equal(herbTypeToVariant('white_herb'), 2);
+  assert.equal(herbTypeToVariant('calm_flower'), 3);
+
+  const world = generateWorld('HERB_AND_COIN_SEED');
+  const extRoom = world.rooms.F2_EXTERIOR;
+  assert.equal(extRoom.grid[6][8], TILE.HERB);
+  const h1 = getHerbTypeAtCoord(extRoom, 8, 6, world.seed);
+  assert.equal(['green_herb', 'red_herb', 'white_herb', 'calm_flower'].includes(h1), true);
+  assert.equal(getHerbTypeAtCoord(extRoom, 8, 6, world.seed), h1);
+
+  for (const tpl of Object.values(CONFIG.ENEMIES)) {
+    if (tpl.tier === 'normal') {
+      assert.equal(tpl.dropLuckyCoins || 0, 0);
+    } else if (tpl.tier === 'miniboss') {
+      assert.equal(tpl.dropLuckyCoins, 1);
+    } else if (tpl.tier === 'boss') {
+      assert.equal(tpl.dropLuckyCoins, 2);
+    }
+  }
+});
+
+test('Only Chien Ky skills have Scroll items; God spells require Affinity at Hexen Altar', () => {
+  const scrollItems = Object.values(CONFIG.ITEMS).filter((it) => it.id.startsWith('scroll_'));
+  assert.equal(scrollItems.length, 3);
+  for (const sc of scrollItems) {
+    const sk = CONFIG.SKILLS.find((s) => s.id === sc.unlockSkillId);
+    assert.ok(sk);
+    assert.equal(sk.branch, 'Chiến Kỹ');
+  }
+
+  const godSkills = CONFIG.SKILLS.filter((s) => s.branch !== 'Chiến Kỹ');
+  assert.equal(godSkills.length, 11);
+  for (const gs of godSkills) {
+    assert.ok(gs.requiredAffinity);
+  }
+
+  const p = createInitialPlayer('fallen_knight');
+  p.energyStones = 5;
+
+  // Cannot learn Chien Ky Lv.1 at Hexen directly (must use Scroll)
+  assert.equal(learnOrUpgradeHexenSkill(p, 'en_garde').success, false);
+
+  // Cannot learn God spells with 0 affinity
+  assert.equal(learnOrUpgradeHexenSkill(p, 'blessed_heal').success, false);
+  assert.equal(learnOrUpgradeHexenSkill(p, 'void_bite').success, false);
+  assert.equal(learnOrUpgradeHexenSkill(p, 'necromancy').success, false);
+
+  // Raising Affinity unlocks Tier 1 (Affinity >= 1) and Tier 2 (Affinity >= 2)
+  p.affinities.primordialVoid = 1;
+  assert.equal(learnOrUpgradeHexenSkill(p, 'void_bite').success, true);
+  assert.equal(p.skillLevels.void_bite, 1);
+  assert.equal(learnOrUpgradeHexenSkill(p, 'obliterate').success, false); // Needs Affinity 2
+
+  p.affinities.primordialVoid = 2;
+  assert.equal(learnOrUpgradeHexenSkill(p, 'obliterate').success, true);
+  assert.equal(p.skillLevels.obliterate, 1);
+  assert.equal(learnOrUpgradeHexenSkill(p, 'obliterate').success, true); // Upgrade to Lv.2
+  assert.equal(p.skillLevels.obliterate, 2);
+});
+
+
+
 

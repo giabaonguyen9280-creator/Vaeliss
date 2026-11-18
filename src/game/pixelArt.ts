@@ -435,13 +435,13 @@ function drawDetailedWeapon(
   ctx.lineWidth = 1.8 * scale;
 
   if (spriteKey === 'night_hunter') {
-    // Serrated Curved Dagger (Dao Găm Cong lưỡi răng cưa)
+    // Curved Steel Hunting Dagger (Dao Săn Cong Thép Lạnh — khớp Khung III)
     ctx.fillStyle = '#451a03';
     ctx.fillRect(-3 * scale, -2 * scale, 6 * scale, 10 * scale);
     const bladeGrad = ctx.createLinearGradient(0, 0, 22 * scale, -34 * scale);
-    bladeGrad.addColorStop(0, '#94a3b8');
-    bladeGrad.addColorStop(0.6, '#f1f5f9');
-    bladeGrad.addColorStop(1, '#16a34a'); // Poisoned tip
+    bladeGrad.addColorStop(0, '#64748b');
+    bladeGrad.addColorStop(0.55, '#cbd5e1');
+    bladeGrad.addColorStop(1, '#f8fafc');
     ctx.fillStyle = bladeGrad;
     ctx.beginPath();
     ctx.moveTo(2 * scale, 0);
@@ -451,9 +451,9 @@ function drawDetailedWeapon(
     ctx.fill();
     ctx.stroke();
   } else if (spriteKey === 'forsaken_nun') {
-    // Holy Mother Mace with Engraved Cross (Chùy Thánh Mẫu đầu tròn khắc thập tự)
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = 3.6 * scale;
+    // Flanged Steel Holy Mother Mace (Chùy Thép Khía Thánh Mẫu — khớp Khung III)
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 3.4 * scale;
     ctx.beginPath();
     ctx.moveTo(0, 10 * scale);
     ctx.lineTo(12 * scale, -28 * scale);
@@ -461,26 +461,27 @@ function drawDetailedWeapon(
 
     const headX = 13 * scale;
     const headY = -32 * scale;
-    const maceGrad = ctx.createRadialGradient(headX - 3 * scale, headY - 3 * scale, 2, headX, headY, 11 * scale);
-    maceGrad.addColorStop(0, '#fef08a');
-    maceGrad.addColorStop(0.55, '#eab308');
-    maceGrad.addColorStop(1, '#713f12');
+    const maceGrad = ctx.createRadialGradient(headX - 2 * scale, headY - 2 * scale, 1.5, headX, headY, 10 * scale);
+    maceGrad.addColorStop(0, '#e2e8f0');
+    maceGrad.addColorStop(0.55, '#64748b');
+    maceGrad.addColorStop(1, '#1e293b');
     ctx.fillStyle = maceGrad;
     ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 1.8 * scale;
+    ctx.lineWidth = 1.6 * scale;
+    for (let f = 0; f < 6; f++) {
+      const ang = (f / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(headX + Math.cos(ang - 0.25) * 4 * scale, headY + Math.sin(ang - 0.25) * 4 * scale);
+      ctx.lineTo(headX + Math.cos(ang) * 11 * scale, headY + Math.sin(ang) * 11 * scale);
+      ctx.lineTo(headX + Math.cos(ang + 0.25) * 4 * scale, headY + Math.sin(ang + 0.25) * 4 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#c5a059';
     ctx.beginPath();
-    ctx.arc(headX, headY, 10.5 * scale, 0, Math.PI * 2);
+    ctx.arc(headX, headY, 3.2 * scale, 0, Math.PI * 2);
     ctx.fill();
-    ctx.stroke();
-
-    // Engraved Cross on Mace Head
-    ctx.strokeStyle = '#fffbeb';
-    ctx.lineWidth = 2.2 * scale;
-    ctx.beginPath();
-    ctx.moveTo(headX, headY - 7 * scale);
-    ctx.lineTo(headX, headY + 7 * scale);
-    ctx.moveTo(headX - 6 * scale, headY - 1 * scale);
-    ctx.lineTo(headX + 6 * scale, headY - 1 * scale);
     ctx.stroke();
   } else if (spriteKey === 'fanatic_zealot') {
     // Bloodied Reaper Sickle
@@ -727,8 +728,7 @@ export function drawPixelSprite(
   // Archetype classification for Multi-Tone Material Separation
   const isPriestOrNun =
     spriteKey === 'rotting_priest' ||
-    spriteKey === 'grand_abbess' ||
-    spriteKey === 'forsaken_nun';
+    spriteKey === 'grand_abbess';
   const isCrimsonInquisitor =
     spriteKey === 'weeping_inquisitor' ||
     spriteKey === 'countess_carmilla' ||
@@ -756,7 +756,16 @@ export function drawPixelSprite(
   let trimCol = '#c9a227';
   let eyeColor = '#ff3b30';
 
-  if (isPriestOrNun) {
+  if (spriteKey === 'forsaken_nun') {
+    fleshLight = '#dcc6b4';
+    fleshMid = '#a48774';
+    fleshDark = '#523d33';
+    garbLight = '#4c323d';
+    garbMid = '#2c1c23';
+    garbDark = '#140c10';
+    trimCol = '#c5a059';
+    eyeColor = '#cbd5e1';
+  } else if (isPriestOrNun) {
     garbLight = '#6d28d9';
     garbMid = '#3b0764';
     garbDark = '#170529';
@@ -772,14 +781,14 @@ export function drawPixelSprite(
     garbLight = '#94a3b8';
     garbMid = '#475569';
     garbDark = '#1e293b';
-    trimCol = '#d97706';
-    eyeColor = '#38bdf8';
+    trimCol = '#c5a059';
+    eyeColor = '#94a3b8';
   } else if (spriteKey === 'night_hunter') {
-    garbLight = '#3f4e44';
-    garbMid = '#222b25';
-    garbDark = '#0f1411';
-    trimCol = '#a16207';
-    eyeColor = '#4ade80';
+    garbLight = '#3c5641';
+    garbMid = '#243528';
+    garbDark = '#111a13';
+    trimCol = '#78350f';
+    eyeColor = '#e2e8f0';
   } else if (spriteKey === 'orc_berserker' || spriteKey === 'forge_goblin') {
     fleshLight = '#65a30d';
     fleshMid = '#3f6212';
@@ -2937,12 +2946,26 @@ export function drawPixelSprite(
   // (`fallen_knight`, `forsaken_nun`, `night_hunter`, `fanatic_zealot`, `rotting_priest`,
   //  `weeping_inquisitor`, `flagellant_monk`, `crypt_keybearer`, `armored_ghoul`, `orc_berserker`, `forge_goblin`)
   // =========================================================================
-  const torsoWidthMult = spriteKey === 'orc_berserker' || spriteKey === 'armored_ghoul' ? 1.25 : 1.15;
+  const torsoWidthMult =
+    spriteKey === 'orc_berserker' || spriteKey === 'armored_ghoul'
+      ? 1.25
+      : spriteKey === 'forsaken_nun'
+      ? 0.94
+      : 1.15;
 
-  // 1. Broad Multi-Layered Back Cloak Drapery with ragged Grimdark hem
+  // 1. Broad Multi-Layered Back Cloak / Tattered Nun Skirt / Hunter Trench Hem
   const capeGrad = ctx.createLinearGradient(cx, destH * 0.24, cx, destH * 0.88);
-  capeGrad.addColorStop(0, spriteKey === 'fallen_knight' ? '#7f1d1d' : garbMid);
-  capeGrad.addColorStop(1, '#070509');
+  capeGrad.addColorStop(
+    0,
+    spriteKey === 'fallen_knight'
+      ? '#991b1b'
+      : spriteKey === 'forsaken_nun'
+      ? '#38242d'
+      : spriteKey === 'night_hunter'
+      ? '#2e4232'
+      : garbMid
+  );
+  capeGrad.addColorStop(1, spriteKey === 'fallen_knight' ? '#450a0a' : '#09070b');
   ctx.fillStyle = capeGrad;
   ctx.beginPath();
   ctx.moveTo(cx - 26 * scale * torsoWidthMult, destH * 0.28);
@@ -2979,7 +3002,14 @@ export function drawPixelSprite(
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = isArmoredKnight ? '#475569' : '#1c1412';
+    ctx.fillStyle =
+      spriteKey === 'fallen_knight'
+        ? '#5c3018'
+        : isArmoredKnight
+        ? '#475569'
+        : spriteKey === 'night_hunter'
+        ? '#5c3018'
+        : '#1c1412';
     ctx.beginPath();
     ctx.moveTo(cx + dir * 6 * scale, destH * 0.75);
     ctx.lineTo(cx + dir * 20 * scale, destH * 0.75);
@@ -3059,6 +3089,7 @@ export function drawPixelSprite(
   }
 
   if (spriteKey === 'night_hunter') {
+    // Diagonal slung crossbow peeking over right shoulder + crossed leather chest straps + hip pouch
     ctx.strokeStyle = '#78350f';
     ctx.lineWidth = 4 * scale;
     ctx.beginPath();
@@ -3067,6 +3098,42 @@ export function drawPixelSprite(
     ctx.moveTo(cx + 18 * scale, destH * 0.31);
     ctx.lineTo(cx - 16 * scale, destH * 0.56);
     ctx.stroke();
+    // Slung crossbow prod behind shoulder
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2.6 * scale;
+    ctx.beginPath();
+    ctx.arc(cx + 20 * scale, destH * 0.25, 11 * scale, -Math.PI * 0.7, Math.PI * 0.25);
+    ctx.stroke();
+    // Hip leather pouch
+    ctx.fillStyle = '#854d0e';
+    ctx.fillRect(cx + 12 * scale, destH * 0.54, 8 * scale, 8 * scale);
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 1.4 * scale;
+    ctx.strokeRect(cx + 12 * scale, destH * 0.54, 8 * scale, 8 * scale);
+  } else if (spriteKey === 'forsaken_nun') {
+    // Cream ivory wimple collar over tattered dark nun habit
+    ctx.fillStyle = '#e6dcc0';
+    ctx.strokeStyle = '#c5a059';
+    ctx.lineWidth = 1.6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 14 * scale, destH * 0.30);
+    ctx.quadraticCurveTo(cx, destH * 0.40, cx + 14 * scale, destH * 0.30);
+    ctx.lineTo(cx + 9 * scale, destH * 0.28);
+    ctx.lineTo(cx - 9 * scale, destH * 0.28);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (spriteKey === 'fallen_knight') {
+    // Rounded Steel Shoulder Pauldrons
+    ctx.fillStyle = '#64748b';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 1.8 * scale;
+    for (const dir of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + dir * 23 * scale, destH * 0.33, 10 * scale, 7 * scale, dir * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   } else if (spriteKey === 'armored_ghoul') {
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 2.6 * scale;
@@ -3127,12 +3194,6 @@ export function drawPixelSprite(
   if (!severedLimbs.has('head')) {
     ctx.save();
     ctx.translate(headSwayX, headBobY);
-    if (spriteKey === 'night_hunter') {
-      ctx.fillStyle = '#78716c';
-      ctx.fillRect(cx - 38 * scale, destH * 0.36, 13 * scale, 22 * scale);
-      ctx.strokeStyle = '#070509';
-      ctx.strokeRect(cx - 38 * scale, destH * 0.36, 13 * scale, 22 * scale);
-    }
 
     const hoodGrad = ctx.createLinearGradient(cx, destH * 0.06, cx, destH * 0.32);
     hoodGrad.addColorStop(0, garbLight);
@@ -3143,22 +3204,34 @@ export function drawPixelSprite(
     ctx.lineWidth = 2 * scale;
 
     if (spriteKey === 'forsaken_nun') {
-      ctx.fillStyle = '#e5e7eb';
+      // Ivory-cream veil with antique gold trim & pale blonde hair peeking under edge
+      ctx.fillStyle = '#e6dcc0';
+      ctx.strokeStyle = '#c5a059';
       ctx.beginPath();
       ctx.moveTo(cx, destH * 0.05);
-      ctx.bezierCurveTo(cx + 25 * scale, destH * 0.08, cx + 28 * scale, destH * 0.28, cx + 24 * scale, destH * 0.36);
-      ctx.lineTo(cx - 24 * scale, destH * 0.36);
-      ctx.bezierCurveTo(cx - 28 * scale, destH * 0.28, cx - 25 * scale, destH * 0.08, cx, destH * 0.05);
+      ctx.bezierCurveTo(cx + 24 * scale, destH * 0.08, cx + 26 * scale, destH * 0.28, cx + 22 * scale, destH * 0.36);
+      ctx.lineTo(cx - 22 * scale, destH * 0.36);
+      ctx.bezierCurveTo(cx - 26 * scale, destH * 0.28, cx - 24 * scale, destH * 0.08, cx, destH * 0.05);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      // Subtle blonde hair locks framing the face
+      ctx.fillStyle = '#d4b475';
+      ctx.fillRect(cx - 14 * scale, destH * 0.14, 4 * scale, 16 * scale);
+      ctx.fillRect(cx + 10 * scale, destH * 0.14, 4 * scale, 16 * scale);
+      ctx.strokeStyle = '#070509';
     } else if (spriteKey === 'night_hunter') {
-      ctx.fillStyle = '#09090b';
+      // Pointed dark moss-green hunter hood (khớp Khung III)
+      ctx.fillStyle = '#2e4232';
       ctx.beginPath();
-      ctx.arc(cx, destH * 0.18, 15 * scale, 0, Math.PI * 2);
+      ctx.moveTo(cx, destH * 0.03);
+      ctx.bezierCurveTo(cx + 21 * scale, destH * 0.10, cx + 23 * scale, destH * 0.26, cx + 18 * scale, destH * 0.33);
+      ctx.quadraticCurveTo(cx, destH * 0.30, cx - 18 * scale, destH * 0.33);
+      ctx.bezierCurveTo(cx - 23 * scale, destH * 0.26, cx - 21 * scale, destH * 0.10, cx, destH * 0.03);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
-    } else {
+    } else if (spriteKey !== 'fallen_knight') {
       ctx.beginPath();
       ctx.moveTo(cx, destH * 0.06);
       ctx.bezierCurveTo(cx + 22 * scale, destH * 0.09, cx + 24 * scale, destH * 0.27, cx + 19 * scale, destH * 0.32);
@@ -3170,18 +3243,23 @@ export function drawPixelSprite(
     }
 
     if (spriteKey === 'fallen_knight') {
-      ctx.fillStyle = '#94a3b8';
+      // Clean rounded steel sallet/barbute knight helm matching Frame 3
+      const helmGrad = ctx.createLinearGradient(cx - 13 * scale, destH * 0.08, cx + 13 * scale, destH * 0.31);
+      helmGrad.addColorStop(0, '#94a3b8');
+      helmGrad.addColorStop(0.6, '#64748b');
+      helmGrad.addColorStop(1, '#334155');
+      ctx.fillStyle = helmGrad;
       ctx.beginPath();
-      ctx.ellipse(cx, destH * 0.20, 12.5 * scale, 13.5 * scale, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, destH * 0.195, 13 * scale, 14 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = '#070509';
-      ctx.fillRect(cx - 8.5 * scale, destH * 0.175, 17 * scale, 3.2 * scale);
+      ctx.fillRect(cx - 8.5 * scale, destH * 0.175, 17 * scale, 3 * scale);
       ctx.fillRect(cx - 1.8 * scale, destH * 0.175, 3.6 * scale, 11 * scale);
     } else {
-      ctx.fillStyle = fleshLight;
+      ctx.fillStyle = spriteKey === 'night_hunter' ? '#1c1816' : fleshLight;
       ctx.beginPath();
-      ctx.ellipse(cx, destH * 0.205, 12 * scale, 13 * scale, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, destH * 0.205, 11.5 * scale, 12.5 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
@@ -3199,21 +3277,21 @@ export function drawPixelSprite(
 
       ctx.fillStyle = '#070509';
       ctx.beginPath();
-      ctx.ellipse(cx - 4.8 * scale, destH * 0.19, 3.6 * scale, 2.8 * scale, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + 4.8 * scale, destH * 0.19, 3.6 * scale, 2.8 * scale, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx - 4.8 * scale, destH * 0.19, 3.4 * scale, 2.5 * scale, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 4.8 * scale, destH * 0.19, 3.4 * scale, 2.5 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = isBlinded ? '#5c1616' : eyeColor;
       ctx.beginPath();
-      ctx.arc(cx - 4.8 * scale, destH * 0.19, 1.9 * scale, 0, Math.PI * 2);
-      ctx.arc(cx + 4.8 * scale, destH * 0.19, 1.9 * scale, 0, Math.PI * 2);
+      ctx.arc(cx - 4.8 * scale, destH * 0.19, 1.7 * scale, 0, Math.PI * 2);
+      ctx.arc(cx + 4.8 * scale, destH * 0.19, 1.7 * scale, 0, Math.PI * 2);
       ctx.fill();
 
       if (spriteKey === 'forsaken_nun') {
         ctx.strokeStyle = '#991b1b';
         ctx.lineWidth = 1.6 * scale;
         ctx.beginPath();
-        ctx.moveTo(cx - 8 * scale, destH * 0.21);
+        ctx.moveTo(cx - 7 * scale, destH * 0.21);
         ctx.lineTo(cx - 2 * scale, destH * 0.26);
         ctx.stroke();
       }
@@ -3228,10 +3306,10 @@ export function drawPixelSprite(
 
 /**
  * Draws the First-Person Foreground Back-Sprite of a Party Member
- * Distinctly tailored for:
- * - fallen_knight (Broad Riveted Plate Pauldrons, Sallet Helm + Crimson Plume, Tattered Red Cape, Broadsword & Shield)
- * - forsaken_nun (Flowing Gold-Trimmed Veil, Multi-Pleated Violet Habit, Holy Mother Cross Mace)
- * - night_hunter (Wide-Brimmed Hunter Hat, Leather Trench Coat + Crossed Straps, Serrated Curved Dagger)
+ * Matching Frame 3 character silhouettes:
+ * - fallen_knight: Steel Plate Pauldrons, Smooth Rounded Steel Helm, Crimson Red Cape, Steel Broadsword
+ * - forsaken_nun: Ivory Gold-Trimmed Veil over Pale Hair, Tattered Dark Plum-Charcoal Habit, Flanged Steel Mace
+ * - night_hunter: Pointed Moss-Green Hood, Belted Trench Coat + Crossed Straps + Slung Crossbow, Curved Steel Dagger
  */
 export function drawPartyBackSprite(
   ctx: CanvasRenderingContext2D,
@@ -3375,13 +3453,13 @@ export function drawPartyBackSprite(
     : classId === 'broken_knight'
     ? '#475569'
     : classId === 'fallen_knight'
-    ? '#7f1d1d'
+    ? '#991b1b'
     : classId === 'forsaken_nun'
-    ? '#4c1d95'
-    : '#27382b';
-  const cloakDark = '#09070c';
+    ? '#3a252e'
+    : '#2e4232';
+  const cloakDark = classId === 'fallen_knight' ? '#450a0a' : '#09070c';
 
-  // 1. Broad, Voluminous Multi-Fold Back Cloak / Habit / Prison Tunic
+  // 1. Broad Back Cloak / Tattered Nun Habit / Belted Hunter Trench Coat
   const grad = ctx.createLinearGradient(0, h * 0.25, 0, h);
   grad.addColorStop(0, cloakLight);
   grad.addColorStop(1, cloakDark);
@@ -3389,36 +3467,84 @@ export function drawPartyBackSprite(
   ctx.strokeStyle = '#070608';
   ctx.lineWidth = 2.4;
 
-  ctx.beginPath();
-  ctx.moveTo(w * 0.08, h);
-  ctx.quadraticCurveTo(w * 0.06, h * 0.42, w * 0.24, h * 0.34);
-  ctx.lineTo(w * 0.76, h * 0.34);
-  ctx.quadraticCurveTo(w * 0.94, h * 0.42, w * 0.92, h);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  if (classId === 'forsaken_nun') {
+    // Slender habit flaring into jagged tattered skirt hem (matching Frame 3 Nun)
+    ctx.beginPath();
+    ctx.moveTo(w * 0.12, h);
+    ctx.lineTo(w * 0.23, h * 0.91);
+    ctx.lineTo(w * 0.33, h * 0.99);
+    ctx.lineTo(w * 0.45, h * 0.92);
+    ctx.lineTo(w * 0.56, h * 0.99);
+    ctx.lineTo(w * 0.68, h * 0.91);
+    ctx.lineTo(w * 0.78, h * 0.99);
+    ctx.lineTo(w * 0.86, h * 0.94);
+    ctx.quadraticCurveTo(w * 0.80, h * 0.46, w * 0.68, h * 0.35);
+    ctx.lineTo(w * 0.32, h * 0.35);
+    ctx.quadraticCurveTo(w * 0.20, h * 0.46, w * 0.12, h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(w * 0.08, h);
+    ctx.quadraticCurveTo(w * 0.06, h * 0.42, w * 0.24, h * 0.34);
+    ctx.lineTo(w * 0.76, h * 0.34);
+    ctx.quadraticCurveTo(w * 0.94, h * 0.42, w * 0.92, h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
 
   // Deep Cloak Drapery Folds
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-  ctx.lineWidth = 2.2;
-  for (const fx of [0.28, 0.43, 0.57, 0.72]) {
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.58)';
+  ctx.lineWidth = 2;
+  for (const fx of [0.30, 0.44, 0.56, 0.70]) {
     ctx.beginPath();
-    ctx.moveTo(w * fx, h * 0.40);
-    ctx.quadraticCurveTo(w * (fx + 0.03), h * 0.70, w * (fx - 0.02), h * 0.98);
+    ctx.moveTo(w * fx, h * 0.42);
+    ctx.quadraticCurveTo(w * (fx + 0.03), h * 0.70, w * (fx - 0.02), h * 0.94);
     ctx.stroke();
   }
 
   if (classId === 'night_hunter') {
+    // Leather waist belt + hip pouch + crossed back straps + slung crossbow
+    ctx.fillStyle = '#5c2b12';
+    ctx.strokeStyle = '#070608';
+    ctx.lineWidth = 2;
+    ctx.fillRect(w * 0.21, h * 0.64, w * 0.58, h * 0.065);
+    ctx.strokeRect(w * 0.21, h * 0.64, w * 0.58, h * 0.065);
+    ctx.fillStyle = '#854d0e';
+    ctx.fillRect(w * 0.64, h * 0.66, w * 0.14, h * 0.12);
+    ctx.strokeRect(w * 0.64, h * 0.66, w * 0.14, h * 0.12);
+
     ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.24, h * 0.36);
+    ctx.lineTo(w * 0.74, h * 0.66);
+    ctx.moveTo(w * 0.74, h * 0.36);
+    ctx.lineTo(w * 0.24, h * 0.66);
+    ctx.stroke();
+
+    // Diagonal Slung Crossbow across the back (matching Frame 3 Hunter)
+    ctx.strokeStyle = '#5c2b12';
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(w * 0.24, h * 0.38);
-    ctx.lineTo(w * 0.76, h * 0.86);
-    ctx.moveTo(w * 0.76, h * 0.38);
-    ctx.lineTo(w * 0.24, h * 0.86);
+    ctx.moveTo(w * 0.32, h * 0.62);
+    ctx.lineTo(w * 0.74, h * 0.22);
+    ctx.stroke();
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(w * 0.72, h * 0.24, w * 0.16, -Math.PI * 0.75, Math.PI * 0.28);
+    ctx.stroke();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.59, h * 0.13);
+    ctx.lineTo(w * 0.82, h * 0.36);
     ctx.stroke();
   } else if (classId === 'ally_kael') {
-    // Broken iron wrist shackles + dangling chain links on left/right wrists (NO shield)
+    // Broken iron wrist shackles + dangling chain links
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 3;
     ctx.strokeRect(w * 0.14, h * 0.56, 10, 6);
@@ -3428,22 +3554,33 @@ export function drawPartyBackSprite(
     ctx.stroke();
   }
 
-  // 2. Shoulder Pauldrons / Mantle (omitted on tattered ally_kael prisoner)
-  if (classId !== 'ally_kael') {
+  // 2. Shoulder Pauldrons / Wimple Collar
+  if (classId === 'forsaken_nun') {
+    // Slim cream ivory wimple collar (no chunky shoulder balls)
+    ctx.fillStyle = '#e6dcc0';
+    ctx.strokeStyle = '#c5a059';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.30, h * 0.34);
+    ctx.quadraticCurveTo(w * 0.50, h * 0.44, w * 0.70, h * 0.34);
+    ctx.lineTo(w * 0.62, h * 0.30);
+    ctx.lineTo(w * 0.38, h * 0.30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (classId !== 'ally_kael') {
     ctx.fillStyle =
-      classId === 'forsaken_nun'
-        ? '#f5ebd6'
-        : classId === 'night_hunter'
-        ? '#3f2e21'
+      classId === 'night_hunter'
+        ? '#243528'
         : classId === 'broken_knight'
         ? '#64748b'
         : '#64748b';
-    ctx.strokeStyle = classId === 'forsaken_nun' ? '#eab308' : '#070608';
+    ctx.strokeStyle = '#070608';
     ctx.lineWidth = 2.2;
     for (const dir of [-1, 1]) {
-      const px = w * (0.5 + dir * 0.28);
+      const px = w * (0.5 + dir * 0.27);
       ctx.beginPath();
-      ctx.ellipse(px, h * 0.40, w * 0.19, h * 0.095, dir * 0.22, 0, Math.PI * 2);
+      ctx.ellipse(px, h * 0.39, w * 0.17, h * 0.085, dir * 0.22, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
@@ -3451,7 +3588,6 @@ export function drawPartyBackSprite(
 
   // 3. Headgear from Behind
   if (classId === 'ally_kael') {
-    // Tousled wild dark black hair from behind, NO helmet!
     ctx.fillStyle = '#09090b';
     ctx.strokeStyle = '#070608';
     ctx.lineWidth = 2;
@@ -3459,7 +3595,6 @@ export function drawPartyBackSprite(
     ctx.arc(w * 0.50, h * 0.24, w * 0.18, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // Jagged spiky hair tufts
     ctx.beginPath();
     ctx.moveTo(w * 0.34, h * 0.20);
     ctx.lineTo(w * 0.38, h * 0.08);
@@ -3469,7 +3604,6 @@ export function drawPartyBackSprite(
     ctx.closePath();
     ctx.fill();
   } else if (classId === 'broken_knight') {
-    // Dented grey helm WITHOUT crimson plume
     ctx.fillStyle = '#475569';
     ctx.strokeStyle = '#070608';
     ctx.lineWidth = 2.2;
@@ -3478,66 +3612,83 @@ export function drawPartyBackSprite(
     ctx.fill();
     ctx.stroke();
   } else if (classId === 'forsaken_nun') {
-    ctx.fillStyle = '#f5ebd6';
-    ctx.strokeStyle = '#eab308';
+    // Pale golden-blonde hair glimpse at base + ivory-cream gold-trimmed flowing veil (matching Frame 3 Nun)
+    ctx.fillStyle = '#d4b475';
+    ctx.beginPath();
+    ctx.ellipse(w * 0.50, h * 0.30, w * 0.15, h * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#e6dcc0';
+    ctx.strokeStyle = '#c5a059';
     ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(w * 0.5, h * 0.07);
-    ctx.quadraticCurveTo(w * 0.78, h * 0.12, w * 0.72, h * 0.44);
-    ctx.lineTo(w * 0.28, h * 0.44);
-    ctx.quadraticCurveTo(w * 0.22, h * 0.12, w * 0.5, h * 0.07);
+    ctx.moveTo(w * 0.5, h * 0.08);
+    ctx.quadraticCurveTo(w * 0.74, h * 0.12, w * 0.68, h * 0.43);
+    ctx.lineTo(w * 0.32, h * 0.43);
+    ctx.quadraticCurveTo(w * 0.26, h * 0.12, w * 0.5, h * 0.08);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
   } else if (classId === 'night_hunter') {
-    ctx.fillStyle = '#1c1917';
+    // Pointed dark moss-green hunter hood seen from behind (matching Frame 3 Hunter)
+    ctx.fillStyle = '#2e4232';
     ctx.strokeStyle = '#070608';
     ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.ellipse(w * 0.5, h * 0.24, w * 0.28, h * 0.07, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(w * 0.5, h * 0.20, w * 0.15, Math.PI, 0);
+    ctx.moveTo(w * 0.50, h * 0.06);
+    ctx.quadraticCurveTo(w * 0.72, h * 0.14, w * 0.68, h * 0.36);
+    ctx.lineTo(w * 0.32, h * 0.36);
+    ctx.quadraticCurveTo(w * 0.28, h * 0.14, w * 0.50, h * 0.06);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
   } else {
-    ctx.fillStyle = '#475569';
+    // fallen_knight: Smooth rounded dark steel helm with central crest highlight (NO giant red plume, matching Frame 3 Knight)
+    const helmGrad = ctx.createLinearGradient(w * 0.32, h * 0.10, w * 0.68, h * 0.36);
+    helmGrad.addColorStop(0, '#94a3b8');
+    helmGrad.addColorStop(0.6, '#64748b');
+    helmGrad.addColorStop(1, '#334155');
+    ctx.fillStyle = helmGrad;
     ctx.strokeStyle = '#070608';
     ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.arc(w * 0.50, h * 0.24, w * 0.18, 0, Math.PI * 2);
+    ctx.arc(w * 0.50, h * 0.23, w * 0.175, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-
-    // Flowing Crimson Plume
-    ctx.fillStyle = '#b91c1c';
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(w * 0.50, h * 0.05);
-    ctx.quadraticCurveTo(w * 0.70, h * 0.03, w * 0.64, h * 0.30);
-    ctx.quadraticCurveTo(w * 0.48, h * 0.20, w * 0.50, h * 0.05);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(w * 0.50, h * 0.11);
+    ctx.lineTo(w * 0.50, h * 0.34);
     ctx.stroke();
   }
 
   // 4. Right Arm Class Weapon Raised in Foreground
   if (limbs.rightArm) {
     if (classId === 'forsaken_nun') {
-      ctx.strokeStyle = '#78350f';
-      ctx.lineWidth = 5;
+      // Flanged dark steel Holy Mother mace (matching Frame 3 Nun)
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 4.5;
       ctx.beginPath();
       ctx.moveTo(w * 0.75, h * 0.58);
-      ctx.lineTo(w * 0.90, h * 0.14);
+      ctx.lineTo(w * 0.90, h * 0.15);
       ctx.stroke();
 
-      ctx.fillStyle = '#eab308';
+      ctx.fillStyle = '#94a3b8';
       ctx.strokeStyle = '#070608';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(w * 0.90, h * 0.13, 14, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      ctx.lineWidth = 1.8;
+      for (let f = 0; f < 6; f++) {
+        const ang = (f / 6) * Math.PI * 2;
+        const hx = w * 0.90;
+        const hy = h * 0.14;
+        ctx.beginPath();
+        ctx.moveTo(hx + Math.cos(ang - 0.25) * 5, hy + Math.sin(ang - 0.25) * 5);
+        ctx.lineTo(hx + Math.cos(ang) * 14, hy + Math.sin(ang) * 14);
+        ctx.lineTo(hx + Math.cos(ang + 0.25) * 5, hy + Math.sin(ang + 0.25) * 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
     } else if (classId === 'night_hunter') {
       ctx.fillStyle = '#e2e8f0';
       ctx.strokeStyle = '#070608';
@@ -3550,7 +3701,6 @@ export function drawPartyBackSprite(
       ctx.fill();
       ctx.stroke();
     } else if (classId === 'ally_kael') {
-      // Rusted short prison knife / heavy iron bar
       ctx.fillStyle = '#94a3b8';
       ctx.strokeStyle = '#070608';
       ctx.lineWidth = 2;
@@ -3563,11 +3713,14 @@ export function drawPartyBackSprite(
       ctx.fill();
       ctx.stroke();
     } else {
+      // Cold steel knight longsword with steel/bronze crossguard (matching Frame 3 Knight)
       const bladeGrad = ctx.createLinearGradient(w * 0.74, h * 0.56, w * 0.96, h * 0.02);
-      bladeGrad.addColorStop(0, '#94a3b8');
-      bladeGrad.addColorStop(0.6, '#f8fafc');
-      bladeGrad.addColorStop(1, '#dc2626');
+      bladeGrad.addColorStop(0, '#64748b');
+      bladeGrad.addColorStop(0.55, '#cbd5e1');
+      bladeGrad.addColorStop(1, '#f8fafc');
       ctx.fillStyle = bladeGrad;
+      ctx.strokeStyle = '#070608';
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(w * 0.73, h * 0.56);
       ctx.lineTo(w * 0.92, h * 0.04);
@@ -3577,7 +3730,7 @@ export function drawPartyBackSprite(
       ctx.fill();
       ctx.stroke();
 
-      ctx.strokeStyle = '#eab308';
+      ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(w * 0.67, h * 0.50);
@@ -3976,6 +4129,61 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
     ctx.strokeStyle = '#fef08a';
     ctx.beginPath();
     ctx.arc(cx, cy, size * 0.2, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (itemId === 'silver_coin') {
+    const coinGrad = ctx.createRadialGradient(
+      cx - size * 0.08,
+      cy - size * 0.08,
+      size * 0.04,
+      cx,
+      cy,
+      size * 0.29
+    );
+    coinGrad.addColorStop(0, '#f8fafc');
+    coinGrad.addColorStop(0.55, '#94a3b8');
+    coinGrad.addColorStop(1, '#334155');
+    ctx.fillStyle = coinGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, size * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = Math.max(1.2, size * 0.025);
+    ctx.beginPath();
+    ctx.arc(cx, cy, size * 0.2, 0, Math.PI * 2);
+    ctx.moveTo(cx, cy - size * 0.11);
+    ctx.lineTo(cx, cy + size * 0.11);
+    ctx.moveTo(cx - size * 0.09, cy);
+    ctx.lineTo(cx + size * 0.09, cy);
+    ctx.stroke();
+  } else if (itemId === 'energy_stone') {
+    const esGrad = ctx.createRadialGradient(
+      cx - size * 0.05,
+      cy - size * 0.08,
+      size * 0.03,
+      cx,
+      cy,
+      size * 0.34
+    );
+    esGrad.addColorStop(0, '#f5d0fe');
+    esGrad.addColorStop(0.45, '#a855f7');
+    esGrad.addColorStop(1, '#3b0764');
+    ctx.fillStyle = esGrad;
+    ctx.beginPath();
+    ctx.moveTo(cx, size * 0.14);
+    ctx.lineTo(size * 0.74, size * 0.38);
+    ctx.lineTo(size * 0.68, size * 0.76);
+    ctx.lineTo(size * 0.32, size * 0.76);
+    ctx.lineTo(size * 0.26, size * 0.38);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#e9d5ff';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, size * 0.14);
+    ctx.lineTo(cx, size * 0.76);
+    ctx.moveTo(size * 0.26, size * 0.38);
+    ctx.lineTo(size * 0.74, size * 0.38);
     ctx.stroke();
   } else if (itemId === 'lockpick') {
     ctx.strokeStyle = '#cbd5e1';
@@ -4413,7 +4621,7 @@ export function getFloorTileTexture(
   isExterior: boolean = false
 ): HTMLCanvasElement {
   const v = Math.abs(variant) % 6;
-  const key = `v4_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}`;
+  const key = `v5_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}`;
   const cached = tileCache.get(key);
   if (cached) return cached;
 
@@ -4856,14 +5064,68 @@ export function getFloorTileTexture(
     ctx.lineTo(34, 32);
     ctx.stroke();
   } else if (tileType === 'HERB') {
-    // Wild Medicinal Herb Patch (Green / Red / White / Calm Flower cluster)
-    ctx.fillStyle = 'rgba(10, 24, 14, 0.65)';
+    // Distinct Wild Medicinal Herb Visuals:
+    // 0: green_herb (xanh lục u ám pha ánh ngọc)
+    // 1: red_herb (đỏ huyết dụ / đỏ tía đậm)
+    // 2: white_herb (trắng ngà / xám tro phát sáng nhẹ)
+    // 3: calm_flower (tím thẫm / xanh dương đậm)
+    const herbStyleIdx = v % 4;
+    const herbStyles = [
+      {
+        aura: 'rgba(16, 185, 129, 0.24)',
+        shadow: 'rgba(6, 36, 20, 0.72)',
+        stem: '#15803d',
+        leaf: '#10b981',
+        leafEdge: '#065f46',
+        bud: '#6ee7b7',
+        budRim: '#022c22',
+      },
+      {
+        aura: 'rgba(190, 18, 60, 0.24)',
+        shadow: 'rgba(42, 6, 12, 0.74)',
+        stem: '#6b0f1a',
+        leaf: '#9f1239',
+        leafEdge: '#4c0519',
+        bud: '#f43f5e',
+        budRim: '#2d040c',
+      },
+      {
+        aura: 'rgba(226, 232, 240, 0.26)',
+        shadow: 'rgba(30, 41, 59, 0.72)',
+        stem: '#64748b',
+        leaf: '#cbd5e1',
+        leafEdge: '#475569',
+        bud: '#f8fafc',
+        budRim: '#334155',
+      },
+      {
+        aura: 'rgba(99, 102, 241, 0.28)',
+        shadow: 'rgba(23, 21, 58, 0.76)',
+        stem: '#312e81',
+        leaf: '#4338ca',
+        leafEdge: '#1e1b4b',
+        bud: '#818cf8',
+        budRim: '#1e1b4b',
+      },
+    ];
+    const hs = herbStyles[herbStyleIdx];
+
+    // Subtle colored ground aura so players distinguish herb species from a distance
+    const auraGrad = ctx.createRadialGradient(24, 22, 2, 24, 22, 18);
+    auraGrad.addColorStop(0, hs.aura);
+    auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = auraGrad;
     ctx.beginPath();
-    ctx.ellipse(24, 30, 14, 8, 0, 0, Math.PI * 2);
+    ctx.arc(24, 22, 18, 0, Math.PI * 2);
     ctx.fill();
 
-    // Lush serrated herb stems & leaves
-    ctx.strokeStyle = '#15803d';
+    ctx.fillStyle = hs.shadow;
+    ctx.beginPath();
+    ctx.ellipse(24, 31, 14, 7.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Serrated herb stems
+    ctx.strokeStyle = hs.stem;
     ctx.lineWidth = 2.2;
     for (const [lx, ly] of [
       [14, 16],
@@ -4878,7 +5140,10 @@ export function getFloorTileTexture(
       ctx.stroke();
     }
 
-    ctx.fillStyle = '#22c55e';
+    // Species-tinted leaves
+    ctx.fillStyle = hs.leaf;
+    ctx.strokeStyle = hs.leafEdge;
+    ctx.lineWidth = 1;
     for (const [lx, ly, ang] of [
       [16, 20, -0.5],
       [32, 20, 0.5],
@@ -4887,23 +5152,43 @@ export function getFloorTileTexture(
       ctx.beginPath();
       ctx.ellipse(lx, ly, 5.5, 2.8, ang, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
     }
 
-    // Glowing medicinal buds (Emerald Green, Crimson Red, Pure White, or Calm Azure based on variant)
-    const budColors = ['#4ade80', '#ef4444', '#f8fafc', '#38bdf8'];
-    const budCol = budColors[v % budColors.length];
-    ctx.fillStyle = budCol;
-    for (const [bx, by] of [
-      [15, 15],
-      [24, 11],
-      [33, 16],
-    ]) {
-      ctx.beginPath();
-      ctx.arc(bx, by, 3.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#052e16';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+    if (herbStyleIdx === 3) {
+      // Calm Flower: 5-petal deep indigo/violet blossoms
+      for (const [bx, by] of [
+        [15, 15],
+        [24, 11],
+        [33, 16],
+      ]) {
+        ctx.fillStyle = '#5b21b6';
+        for (let p = 0; p < 5; p++) {
+          const a = (p * Math.PI * 2) / 5;
+          ctx.beginPath();
+          ctx.arc(bx + Math.cos(a) * 2.5, by + Math.sin(a) * 2.5, 2.0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = hs.bud;
+        ctx.beginPath();
+        ctx.arc(bx, by, 2.0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      // Distinct emerald, crimson-blood, or luminous ivory buds
+      ctx.fillStyle = hs.bud;
+      for (const [bx, by] of [
+        [15, 15],
+        [24, 11],
+        [33, 16],
+      ]) {
+        ctx.beginPath();
+        ctx.arc(bx, by, 3.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = hs.budRim;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
   } else if (tileType === 'CHEST') {
     // Dark Oak Treasure Chest bound in Iron Straps with Gold Lock

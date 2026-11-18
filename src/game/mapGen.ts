@@ -64,6 +64,8 @@ export interface MapEnemyInstance {
   alertTimerMs?: number;
   loseSightTimerMs?: number;
   questionTimerMs?: number;
+  eatTicksRemaining?: number;
+  patrolTicks?: number;
   moveCooldownMs?: number;
   lastSeenX?: number;
   lastSeenY?: number;
@@ -83,6 +85,23 @@ export interface MapEnemyInstance {
   talked: boolean;
 }
 
+export interface MapDecoy {
+  x: number;
+  y: number;
+  turnsLeft: number;
+}
+
+export type HerbType = 'green_herb' | 'red_herb' | 'white_herb' | 'calm_flower';
+
+export const HERB_POOL: HerbType[] = ['green_herb', 'red_herb', 'white_herb', 'calm_flower'];
+
+export function herbTypeToVariant(herbType: HerbType): number {
+  if (herbType === 'green_herb') return 0;
+  if (herbType === 'red_herb') return 1;
+  if (herbType === 'white_herb') return 2;
+  return 3;
+}
+
 export interface RoomData {
   id: string;
   floor: 1 | 2 | 3;
@@ -100,9 +119,24 @@ export interface RoomData {
   secretY: number;
   secretChamberCoords: string[];
   enemies: MapEnemyInstance[];
+  corpses?: MapEnemyInstance[];
+  decoys?: MapDecoy[];
+  herbTypes?: Record<string, HerbType>;
   lootedCoords: string[];
   shortcutOpened: boolean;
   secretWallBlown: boolean;
+}
+
+export function getHerbTypeAtCoord(
+  room: RoomData,
+  x: number,
+  y: number,
+  seed?: string
+): HerbType {
+  const key = `${x},${y}`;
+  const stored = room.herbTypes?.[key];
+  if (stored) return stored;
+  return new SeededRNG(`${seed || 'goethe'}_herb_${room.id}_${key}`).pick(HERB_POOL);
 }
 
 export interface WorldMapState {
@@ -290,7 +324,7 @@ export function buildRoomLayout(
   return { grid, spawnX, spawnY, exitX, exitY, secretX, secretY, secretChamberCoords };
 }
 
-function buildExteriorCourtyardRoom(): RoomData {
+function buildExteriorCourtyardRoom(seed: string): RoomData {
   const w = 22;
   const h = 16;
   const grid: TILE[][] = Array.from({ length: h }, () => Array(w).fill(TILE.VOID));
@@ -329,6 +363,12 @@ function buildExteriorCourtyardRoom(): RoomData {
   grid[h - 4][11] = TILE.HERB;
   grid[5][17] = TILE.CORPSE_LOOT;
 
+  const herbRng = new SeededRNG(`${seed}_exterior_herbs`);
+  const herbTypes: Record<string, HerbType> = {
+    [`8,6`]: herbRng.pick(HERB_POOL),
+    [`11,${h - 4}`]: herbRng.pick(HERB_POOL),
+  };
+
   const enemies: MapEnemyInstance[] = [
     createMapEnemyInstance('F2_EXT_TUTORIAL', 'fanatic_zealot', 12, gateY, {
       customName: 'Giáo Dân Cuồng Tín',
@@ -355,6 +395,7 @@ function buildExteriorCourtyardRoom(): RoomData {
     secretY,
     secretChamberCoords,
     enemies,
+    herbTypes,
     lootedCoords: [],
     shortcutOpened: true,
     secretWallBlown: false,
@@ -763,6 +804,7 @@ export function generateWorld(seed: string): WorldMapState {
       }
 
       // Place Crates, Chest, Herbs, and Survival Props with strict >= 2 Manhattan distance (bufferRadius = 1)
+      const herbTypes: Record<string, HerbType> = {};
       if (!isThroneRoom) {
         const chestSpot = popTileWithBuffer(extraRng, 1);
         if (chestSpot) grid[chestSpot[1]][chestSpot[0]] = TILE.CHEST;
@@ -774,7 +816,10 @@ export function generateWorld(seed: string): WorldMapState {
 
         for (let hIdx = 0; hIdx < 2; hIdx++) {
           const herbSpot = popTileWithBuffer(extraRng, 1);
-          if (herbSpot) grid[herbSpot[1]][herbSpot[0]] = TILE.HERB;
+          if (herbSpot) {
+            grid[herbSpot[1]][herbSpot[0]] = TILE.HERB;
+            herbTypes[`${herbSpot[0]},${herbSpot[1]}`] = extraRng.pick(HERB_POOL);
+          }
         }
       }
 
@@ -872,6 +917,7 @@ export function generateWorld(seed: string): WorldMapState {
         secretY,
         secretChamberCoords,
         enemies,
+        herbTypes,
         lootedCoords: [],
         shortcutOpened: false,
         secretWallBlown: false,
@@ -879,7 +925,7 @@ export function generateWorld(seed: string): WorldMapState {
     }
   }
 
-  rooms.F2_EXTERIOR = buildExteriorCourtyardRoom();
+  rooms.F2_EXTERIOR = buildExteriorCourtyardRoom(seed);
 
   return {
     seed,
@@ -888,3 +934,697 @@ export function generateWorld(seed: string): WorldMapState {
     visitedRoomIds: ['F2_EXTERIOR'],
   };
 }
+
+export const NPC_TILE_SET = new Set<TILE>([
+  TILE.NPC_PRIEST,
+  TILE.NPC_SMUGGLER,
+  TILE.NPC_PRISONER,
+  TILE.NPC_CHILD_12,
+  TILE.NPC_BROKEN_KNIGHT,
+  TILE.NPC_SMITH,
+  TILE.NPC_GLASS_LADY,
+  TILE.NPC_PHYSICIAN,
+  TILE.NPC_CHRONICLER,
+  TILE.NPC_RECRUIT_KNIGHT,
+  TILE.NPC_RECRUIT_NUN,
+  TILE.NPC_RECRUIT_HUNTER,
+]);
+
+function isSightBlockerTile(t: TILE | undefined): boolean {
+  return (
+    t === TILE.WALL ||
+    t === TILE.CRACKED_WALL ||
+    t === TILE.VOID ||
+    t === TILE.CRATE ||
+    t === TILE.BOOKSHELF ||
+    t === TILE.CHEST
+  );
+}
+
+/**
+ * Pure Bresenham Line-of-Sight check between two grid coordinates.
+ * Walls, Cracked Walls, Voids, and tall obstacles (Crates, Bookshelves, Chests) block sight beyond them.
+ */
+export function hasLineOfSight(
+  grid: TILE[][],
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number
+): boolean {
+  let cx = x0;
+  let cy = y0;
+  const dx = Math.abs(x1 - x0);
+  const dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+
+  while (cx !== x1 || cy !== y1) {
+    if (cx !== x0 || cy !== y0) {
+      const t = grid[cy]?.[cx];
+      if (isSightBlockerTile(t)) {
+        return false;
+      }
+    }
+    const e2 = err * 2;
+    const stepX = e2 > -dy;
+    const stepY = e2 < dx;
+    if (stepX && stepY) {
+      const tx = grid[cy]?.[cx + sx];
+      const ty = grid[cy + sy]?.[cx];
+      if (isSightBlockerTile(tx) && isSightBlockerTile(ty)) {
+        return false;
+      }
+    }
+    if (stepX) {
+      err -= dy;
+      cx += sx;
+    }
+    if (stepY) {
+      err += dx;
+      cy += sy;
+    }
+  }
+  return true;
+}
+
+/**
+ * Checks whether target (tx, ty) falls inside:
+ * 1) The enemy's narrow directional vision cone in front (`coneRange <= 3` tiles)
+ * 2) Or the surrounding sound/hearing radius (`1` tile normal/disguised, `2` with heavy armor)
+ */
+export function isDetectedByEnemy(
+  ex: number,
+  ey: number,
+  facing: 'up' | 'down' | 'left' | 'right',
+  tx: number,
+  ty: number,
+  coneRange: number,
+  hearingRadius: number
+): boolean {
+  const dx = tx - ex;
+  const dy = ty - ey;
+  const manhattan = Math.abs(dx) + Math.abs(dy);
+  if (manhattan === 0) return true;
+
+  if (manhattan <= hearingRadius) return true;
+
+  if (manhattan > coneRange) return false;
+  if (facing === 'left') return dx < 0 && Math.abs(dy) <= Math.abs(dx);
+  if (facing === 'right') return dx > 0 && Math.abs(dy) <= Math.abs(dx);
+  if (facing === 'up') return dy < 0 && Math.abs(dx) <= Math.abs(dy);
+  return dy > 0 && Math.abs(dx) <= Math.abs(dy);
+}
+
+/**
+ * Shortest-path BFS on walkable grid tiles from (sx, sy) to (tx, ty).
+ * Returns the first step (dx, dy) along the shortest path, or null if unreachable.
+ */
+function findNextChaseStepBFS(
+  grid: TILE[][],
+  roomW: number,
+  roomH: number,
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+  shortcutOpened: boolean,
+  blockedSecretSet: Set<string>,
+  occupiedByOtherEnemy: Set<string>
+): { dx: number; dy: number } | null {
+  if (sx === tx && sy === ty) return null;
+  const startKey = `${sx},${sy}`;
+  const targetKey = `${tx},${ty}`;
+  const queue: Array<{ x: number; y: number; firstDx: number; firstDy: number }> = [];
+  const visited = new Set<string>([startKey]);
+  const dirs: Array<[number, number]> = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+
+  for (const [dx, dy] of dirs) {
+    const nx = sx + dx;
+    const ny = sy + dy;
+    if (nx < 1 || nx >= roomW - 1 || ny < 1 || ny >= roomH - 1) continue;
+    const key = `${nx},${ny}`;
+    if (blockedSecretSet.has(key)) continue;
+    if (!isWalkableTile(grid[ny][nx], shortcutOpened)) continue;
+    if (key !== targetKey && occupiedByOtherEnemy.has(key)) continue;
+    if (key === targetKey) return { dx, dy };
+    visited.add(key);
+    queue.push({ x: nx, y: ny, firstDx: dx, firstDy: dy });
+  }
+
+  let head = 0;
+  let bestFallback: { dx: number; dy: number; dist: number } | null = null;
+  while (head < queue.length && visited.size < 450) {
+    const cur = queue[head++];
+    const curDist = Math.abs(cur.x - tx) + Math.abs(cur.y - ty);
+    if (!bestFallback || curDist < bestFallback.dist) {
+      bestFallback = { dx: cur.firstDx, dy: cur.firstDy, dist: curDist };
+    }
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      if (nx < 1 || nx >= roomW - 1 || ny < 1 || ny >= roomH - 1) continue;
+      const key = `${nx},${ny}`;
+      if (visited.has(key) || blockedSecretSet.has(key)) continue;
+      if (!isWalkableTile(grid[ny][nx], shortcutOpened)) continue;
+      if (key !== targetKey && occupiedByOtherEnemy.has(key)) continue;
+      if (key === targetKey) return { dx: cur.firstDx, dy: cur.firstDy };
+      visited.add(key);
+      queue.push({ x: nx, y: ny, firstDx: cur.firstDx, firstDy: cur.firstDy });
+    }
+  }
+  return bestFallback ? { dx: bestFallback.dx, dy: bestFallback.dy } : null;
+}
+
+function getFacingToward(
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+  fallback: 'up' | 'down' | 'left' | 'right'
+): 'up' | 'down' | 'left' | 'right' {
+  const dx = tx - sx;
+  const dy = ty - sy;
+  if (Math.abs(dx) >= Math.abs(dy) && dx !== 0) {
+    return dx > 0 ? 'right' : 'left';
+  }
+  if (dy !== 0) {
+    return dy > 0 ? 'down' : 'up';
+  }
+  return fallback;
+}
+
+export interface AdvanceEnemiesResult {
+  enemies: MapEnemyInstance[];
+  collidedEnemy: MapEnemyInstance | null;
+  decoys: MapDecoy[];
+}
+
+/**
+ * Autonomous AI Game Loop tick (called every ~400ms from App.tsx and in deterministic tests):
+ * advances each active enemy at most 1 grid step using narrow sightRange <= 3, solid obstacle LOS,
+ * <= 4 tile decoy luring with N-tick eating lock, patrol fallback, and instant <= 1 combat trigger.
+ */
+export function advanceRoomEnemiesOneTurn(
+  room: RoomData,
+  playerPos: { x: number; y: number },
+  equippedBody: string | null
+): AdvanceEnemiesResult {
+  const roomW = room.width || room.grid[0]?.length || CONFIG.GRID_W;
+  const roomH = room.height || room.grid.length || CONFIG.GRID_H;
+
+  const npcCenters: Array<[number, number]> = [];
+  for (let y = 0; y < roomH; y++) {
+    for (let x = 0; x < roomW; x++) {
+      if (NPC_TILE_SET.has(room.grid[y][x])) {
+        npcCenters.push([x, y]);
+      }
+    }
+  }
+  const isInsideNpcZone = (tx: number, ty: number) =>
+    npcCenters.some(([nx, ny]) => Math.abs(tx - nx) <= 1 && Math.abs(ty - ny) <= 1);
+
+  const isHeavyArmor =
+    equippedBody === 'legion_brigandine' ||
+    equippedBody === 'vanguard_hauberk' ||
+    equippedBody === 'cathedral_chainmail' ||
+    equippedBody === 'platinum_cuirass';
+  const isFlayedDisguise = equippedBody === 'flayed_disguise';
+  // Narrow tactical sight range (<= 3 tiles) & tight hearing radius
+  const sightRange = isFlayedDisguise ? 2 : 3;
+  const hearingRadius = isFlayedDisguise ? 1 : isHeavyArmor ? 2 : 1;
+
+  const activeDecoys: MapDecoy[] = (room.decoys || []).filter((d) => d.turnsLeft > 0);
+
+  const blockedSecretSet = new Set<string>(
+    !room.secretWallBlown ? room.secretChamberCoords || [] : []
+  );
+
+  const occupiedAll = new Set<string>(
+    room.enemies.filter((e) => !e.defeated).map((e) => `${e.x},${e.y}`)
+  );
+
+  const reverseMap: Record<'up' | 'down' | 'left' | 'right', 'up' | 'down' | 'left' | 'right'> = {
+    left: 'right',
+    right: 'left',
+    up: 'down',
+    down: 'up',
+  };
+
+  let collidedEnemy: MapEnemyInstance | null = null;
+  const nextEnemies: MapEnemyInstance[] = [];
+
+  for (const enemy of room.enemies) {
+    // Immediately stop enemy movement loop once combat has been triggered
+    if (collidedEnemy) {
+      nextEnemies.push(enemy);
+      continue;
+    }
+
+    if (enemy.defeated || enemy.isTutorialGatekeeper) {
+      nextEnemies.push(enemy);
+      continue;
+    }
+
+    if (enemy.isFloorBoss) {
+      if ((enemy.questionTimerMs || 0) > 0) {
+        nextEnemies.push({
+          ...enemy,
+          questionTimerMs: Math.max(0, (enemy.questionTimerMs || 0) - 1000),
+        });
+      } else {
+        nextEnemies.push(enemy);
+      }
+      continue;
+    }
+
+    // Locked eating decoy at current tile for N ticks while ignoring player
+    if ((enemy.eatTicksRemaining || 0) > 0) {
+      const nextEatTicks = Math.max(0, (enemy.eatTicksRemaining || 0) - 1);
+      nextEnemies.push({
+        ...enemy,
+        aiState: nextEatTicks > 0 ? ('deagro' as const) : ('patrol' as const),
+        eatTicksRemaining: nextEatTicks,
+        questionTimerMs: nextEatTicks > 0 ? 1000 : 0,
+        alertTimerMs: 0,
+        loseSightTimerMs: 0,
+        moveCooldownMs: 0,
+      });
+      continue;
+    }
+
+    const facing = enemy.facing || 'left';
+    const manhattanToPlayer =
+      Math.abs(playerPos.x - enemy.x) + Math.abs(playerPos.y - enemy.y);
+    const hasLOS = hasLineOfSight(room.grid, enemy.x, enemy.y, playerPos.x, playerPos.y);
+    const detected =
+      manhattanToPlayer <= sightRange &&
+      hasLOS &&
+      isDetectedByEnemy(
+        enemy.x,
+        enemy.y,
+        facing,
+        playerPos.x,
+        playerPos.y,
+        sightRange,
+        hearingRadius
+      );
+
+    let aiState: 'patrol' | 'alert' | 'chase' | 'deagro' = enemy.aiState || 'patrol';
+    let questionTimerMs = enemy.questionTimerMs || 0;
+    let loseSightTimerMs = enemy.loseSightTimerMs ?? 0;
+    let lastSeenX = enemy.lastSeenX ?? playerPos.x;
+    let lastSeenY = enemy.lastSeenY ?? playerPos.y;
+
+    const postFleeGraceActive = aiState === 'deagro' && questionTimerMs > 1000;
+
+    // Decoy / Bait (Mồi Nhử) priority luring within <= 4 Manhattan tiles
+    let nearestDecoy: MapDecoy | null = null;
+    let nearestDecoyDist = Infinity;
+    for (const decoy of activeDecoys) {
+      const dist = Math.abs(decoy.x - enemy.x) + Math.abs(decoy.y - enemy.y);
+      if (dist <= 4 && dist < nearestDecoyDist) {
+        nearestDecoy = decoy;
+        nearestDecoyDist = dist;
+      }
+    }
+
+    if (
+      nearestDecoy &&
+      !postFleeGraceActive &&
+      !(aiState === 'chase' && manhattanToPlayer <= 1 && nearestDecoyDist > 0)
+    ) {
+      if (enemy.x === nearestDecoy.x && enemy.y === nearestDecoy.y) {
+        nextEnemies.push({
+          ...enemy,
+          aiState: 'deagro' as const,
+          eatTicksRemaining: 6,
+          questionTimerMs: 1000,
+          alertTimerMs: 0,
+          loseSightTimerMs: 0,
+          moveCooldownMs: 0,
+        });
+        continue;
+      }
+      const decoyStep = findNextChaseStepBFS(
+        room.grid,
+        roomW,
+        roomH,
+        enemy.x,
+        enemy.y,
+        nearestDecoy.x,
+        nearestDecoy.y,
+        room.shortcutOpened,
+        blockedSecretSet,
+        occupiedAll
+      );
+      if (decoyStep) {
+        const nx = enemy.x + decoyStep.dx;
+        const ny = enemy.y + decoyStep.dy;
+        const nextFacing: 'up' | 'down' | 'left' | 'right' =
+          decoyStep.dx !== 0
+            ? decoyStep.dx > 0
+              ? 'right'
+              : 'left'
+            : decoyStep.dy > 0
+            ? 'down'
+            : 'up';
+        const nextKey = `${nx},${ny}`;
+        if (
+          !(nx === playerPos.x && ny === playerPos.y) &&
+          nx >= 1 &&
+          nx < roomW - 1 &&
+          ny >= 1 &&
+          ny < roomH - 1 &&
+          isWalkableTile(room.grid[ny][nx], room.shortcutOpened) &&
+          !blockedSecretSet.has(nextKey) &&
+          !occupiedAll.has(nextKey)
+        ) {
+          occupiedAll.delete(`${enemy.x},${enemy.y}`);
+          occupiedAll.add(nextKey);
+          const arrivedAtDecoy = nx === nearestDecoy.x && ny === nearestDecoy.y;
+          nextEnemies.push({
+            ...enemy,
+            x: nx,
+            y: ny,
+            facing: nextFacing,
+            aiState: 'deagro' as const,
+            eatTicksRemaining: arrivedAtDecoy ? 6 : 0,
+            questionTimerMs: 1000,
+            alertTimerMs: 0,
+            loseSightTimerMs: 0,
+            moveCooldownMs: 0,
+          });
+          continue;
+        }
+      }
+    }
+
+    if (aiState === 'deagro') {
+      questionTimerMs = Math.max(0, questionTimerMs - 1000);
+      if (detected && !postFleeGraceActive) {
+        const lockedFacing = getFacingToward(enemy.x, enemy.y, playerPos.x, playerPos.y, facing);
+        nextEnemies.push({
+          ...enemy,
+          facing: lockedFacing,
+          aiState: 'alert' as const,
+          alertTimerMs: 1,
+          loseSightTimerMs: 1000,
+          questionTimerMs: 0,
+          moveCooldownMs: 0,
+          lastSeenX: playerPos.x,
+          lastSeenY: playerPos.y,
+        });
+        continue;
+      }
+      if (questionTimerMs <= 0) {
+        aiState = 'patrol';
+      } else {
+        nextEnemies.push({
+          ...enemy,
+          aiState: 'deagro' as const,
+          questionTimerMs,
+          loseSightTimerMs: 0,
+          moveCooldownMs: 0,
+        });
+        continue;
+      }
+    }
+
+    if (aiState === 'patrol' && detected) {
+      const lockedFacing = getFacingToward(enemy.x, enemy.y, playerPos.x, playerPos.y, facing);
+      nextEnemies.push({
+        ...enemy,
+        facing: lockedFacing,
+        aiState: 'alert' as const,
+        alertTimerMs: 1,
+        loseSightTimerMs: 1000,
+        questionTimerMs: 0,
+        moveCooldownMs: 0,
+        lastSeenX: playerPos.x,
+        lastSeenY: playerPos.y,
+      });
+      continue;
+    }
+
+    if (aiState === 'alert') {
+      aiState = 'chase';
+      loseSightTimerMs = 1000;
+      if (hasLOS && manhattanToPlayer <= sightRange) {
+        lastSeenX = playerPos.x;
+        lastSeenY = playerPos.y;
+      }
+    }
+
+    if (aiState === 'chase') {
+      // Immediate combat lock if chasing enemy is already adjacent/overlapping (Manhattan <= 1)
+      if (manhattanToPlayer <= 1) {
+        const lockedFacing = getFacingToward(enemy.x, enemy.y, playerPos.x, playerPos.y, facing);
+        const engagedEnemy: MapEnemyInstance = {
+          ...enemy,
+          facing: lockedFacing,
+          aiState: 'chase',
+          alertTimerMs: 0,
+          loseSightTimerMs: 1000,
+          questionTimerMs: 0,
+          moveCooldownMs: 0,
+          lastSeenX: playerPos.x,
+          lastSeenY: playerPos.y,
+        };
+        collidedEnemy = engagedEnemy;
+        nextEnemies.push(engagedEnemy);
+        continue;
+      }
+
+      // Drop chase immediately back to Patrol if > sightRange (3 tiles) or blocked by obstacle/wall (!hasLOS)
+      if (manhattanToPlayer > sightRange || !hasLOS) {
+        nextEnemies.push({
+          ...enemy,
+          aiState: 'patrol' as const,
+          alertTimerMs: 0,
+          loseSightTimerMs: 0,
+          questionTimerMs: 0,
+          moveCooldownMs: 0,
+        });
+        continue;
+      }
+
+      loseSightTimerMs = 1000;
+      lastSeenX = playerPos.x;
+      lastSeenY = playerPos.y;
+
+      const bfsStep = findNextChaseStepBFS(
+        room.grid,
+        roomW,
+        roomH,
+        enemy.x,
+        enemy.y,
+        playerPos.x,
+        playerPos.y,
+        room.shortcutOpened,
+        blockedSecretSet,
+        occupiedAll
+      );
+
+      if (bfsStep) {
+        const nx = enemy.x + bfsStep.dx;
+        const ny = enemy.y + bfsStep.dy;
+        const nextFacing: 'up' | 'down' | 'left' | 'right' =
+          bfsStep.dx !== 0
+            ? bfsStep.dx > 0
+              ? 'right'
+              : 'left'
+            : bfsStep.dy > 0
+            ? 'down'
+            : 'up';
+
+        if (nx === playerPos.x && ny === playerPos.y) {
+          const engagedEnemy: MapEnemyInstance = {
+            ...enemy,
+            facing: nextFacing,
+            aiState: 'chase',
+            alertTimerMs: 0,
+            loseSightTimerMs: 1000,
+            questionTimerMs: 0,
+            moveCooldownMs: 0,
+            lastSeenX: playerPos.x,
+            lastSeenY: playerPos.y,
+          };
+          collidedEnemy = engagedEnemy;
+          nextEnemies.push(engagedEnemy);
+          continue;
+        }
+
+        const nextKey = `${nx},${ny}`;
+        if (
+          nx >= 1 &&
+          nx < roomW - 1 &&
+          ny >= 1 &&
+          ny < roomH - 1 &&
+          isWalkableTile(room.grid[ny][nx], room.shortcutOpened) &&
+          !blockedSecretSet.has(nextKey) &&
+          !occupiedAll.has(nextKey)
+        ) {
+          occupiedAll.delete(`${enemy.x},${enemy.y}`);
+          occupiedAll.add(nextKey);
+          const distAfterStep =
+            Math.abs(nx - playerPos.x) + Math.abs(ny - playerPos.y);
+          const movedEnemy: MapEnemyInstance = {
+            ...enemy,
+            x: nx,
+            y: ny,
+            facing: nextFacing,
+            aiState: 'chase' as const,
+            alertTimerMs: 0,
+            loseSightTimerMs,
+            questionTimerMs: 0,
+            moveCooldownMs: 0,
+            lastSeenX,
+            lastSeenY,
+          };
+          if (distAfterStep <= 1) {
+            collidedEnemy = {
+              ...movedEnemy,
+              facing: getFacingToward(nx, ny, playerPos.x, playerPos.y, nextFacing),
+            };
+          }
+          nextEnemies.push(movedEnemy);
+          continue;
+        }
+      }
+
+      nextEnemies.push({
+        ...enemy,
+        facing: getFacingToward(enemy.x, enemy.y, playerPos.x, playerPos.y, facing),
+        aiState: 'chase' as const,
+        alertTimerMs: 0,
+        loseSightTimerMs,
+        questionTimerMs: 0,
+        moveCooldownMs: 0,
+        lastSeenX,
+        lastSeenY,
+      });
+      continue;
+    }
+
+    // Patrol: roam naturally with occasional left/right turns and perpendicular obstacle avoidance (not just back-and-forth)
+    const leftTurnMap: Record<'up' | 'down' | 'left' | 'right', 'up' | 'down' | 'left' | 'right'> = {
+      up: 'left',
+      left: 'down',
+      down: 'right',
+      right: 'up',
+    };
+    const rightTurnMap: Record<'up' | 'down' | 'left' | 'right', 'up' | 'down' | 'left' | 'right'> = {
+      up: 'right',
+      right: 'down',
+      down: 'left',
+      left: 'up',
+    };
+    const dirDelta: Record<'up' | 'down' | 'left' | 'right', [number, number]> = {
+      left: [-1, 0],
+      right: [1, 0],
+      up: [0, -1],
+      down: [0, 1],
+    };
+    const tryPatrolDir = (dir: 'up' | 'down' | 'left' | 'right'): { x: number; y: number; key: string } | null => {
+      const [dx, dy] = dirDelta[dir];
+      const tx = enemy.x + dx;
+      const ty = enemy.y + dy;
+      const key = `${tx},${ty}`;
+      const withinPatrolBounds = tx >= 2 && tx < roomW - 2 && ty >= 3 && ty < roomH - 2;
+      if (
+        withinPatrolBounds &&
+        !(tx === playerPos.x && ty === playerPos.y) &&
+        isWalkableTile(room.grid[ty][tx], room.shortcutOpened) &&
+        !blockedSecretSet.has(key) &&
+        !isInsideNpcZone(tx, ty) &&
+        !occupiedAll.has(key)
+      ) {
+        return { x: tx, y: ty, key };
+      }
+      return null;
+    };
+
+    const nextPatrolTick = (enemy.patrolTicks || 0) + 1;
+    const patrolRng = new SeededRNG(`${room.id}_${enemy.uid}_patrol_${nextPatrolTick}`);
+    const patrolRoll = patrolRng.next();
+    const preferLeftFirst = patrolRng.next() < 0.5;
+    const perpA = preferLeftFirst ? leftTurnMap[facing] : rightTurnMap[facing];
+    const perpB = preferLeftFirst ? rightTurnMap[facing] : leftTurnMap[facing];
+
+    // Occasionally pause 1 beat & glance left/right to sweep vision cone naturally
+    if (nextPatrolTick > 2 && patrolRoll < 0.14) {
+      const lookDir = tryPatrolDir(perpA) ? perpA : tryPatrolDir(perpB) ? perpB : facing;
+      nextEnemies.push({
+        ...enemy,
+        facing: lookDir,
+        patrolTicks: nextPatrolTick,
+        aiState: 'patrol' as const,
+        alertTimerMs: 0,
+        loseSightTimerMs: 0,
+        questionTimerMs: 0,
+        moveCooldownMs: 0,
+      });
+      continue;
+    }
+
+    // Build candidate directions: periodically prefer a left/right turn over straight line after >= 3 ticks
+    const candidateDirs: Array<'up' | 'down' | 'left' | 'right'> =
+      nextPatrolTick >= 3 && patrolRoll < 0.42
+        ? [perpA, perpB, facing, reverseMap[facing]]
+        : [facing, perpA, perpB, reverseMap[facing]];
+
+    let movedPatrol = false;
+    for (const candidateDir of candidateDirs) {
+      const spot = tryPatrolDir(candidateDir);
+      if (spot) {
+        occupiedAll.delete(`${enemy.x},${enemy.y}`);
+        occupiedAll.add(spot.key);
+        nextEnemies.push({
+          ...enemy,
+          x: spot.x,
+          y: spot.y,
+          facing: candidateDir,
+          patrolTicks: nextPatrolTick,
+          aiState: 'patrol' as const,
+          alertTimerMs: 0,
+          loseSightTimerMs: 0,
+          questionTimerMs: 0,
+          moveCooldownMs: 0,
+        });
+        movedPatrol = true;
+        break;
+      }
+    }
+
+    if (!movedPatrol) {
+      nextEnemies.push({
+        ...enemy,
+        facing: reverseMap[facing],
+        patrolTicks: nextPatrolTick,
+        aiState: 'patrol' as const,
+        alertTimerMs: 0,
+        loseSightTimerMs: 0,
+        questionTimerMs: 0,
+        moveCooldownMs: 0,
+      });
+    }
+  }
+
+  const nextDecoys = activeDecoys
+    .map((d) => ({ ...d, turnsLeft: d.turnsLeft - 1 }))
+    .filter((d) => d.turnsLeft > 0);
+
+  return {
+    enemies: nextEnemies,
+    collidedEnemy,
+    decoys: nextDecoys,
+  };
+}
+

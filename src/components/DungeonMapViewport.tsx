@@ -1,7 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import { CONFIG } from '../game/config';
 import { PlayerState } from '../game/combat';
-import { isWalkableTile, MapEnemyInstance, RoomData, TILE } from '../game/mapGen';
+import {
+  getHerbTypeAtCoord,
+  hasLineOfSight,
+  herbTypeToVariant,
+  MapEnemyInstance,
+  NPC_TILE_SET,
+  RoomData,
+  TILE,
+} from '../game/mapGen';
+export { hasLineOfSight, isDetectedByEnemy } from '../game/mapGen';
 import {
   drawMultiTileLandmark,
   drawNpcSetDressing,
@@ -18,24 +27,8 @@ interface DungeonMapViewportProps {
   isInteractivePaused: boolean;
   riftElixirCollected?: boolean;
   onTileClick: (worldTileX: number, worldTileY: number) => void;
-  onUpdateEnemies?: (updater: (enemies: MapEnemyInstance[]) => MapEnemyInstance[]) => void;
   onEnemyCollidePlayer?: (enemy: MapEnemyInstance) => void;
 }
-
-const NPC_TILE_SET = new Set<TILE>([
-  TILE.NPC_PRIEST,
-  TILE.NPC_SMUGGLER,
-  TILE.NPC_PRISONER,
-  TILE.NPC_CHILD_12,
-  TILE.NPC_BROKEN_KNIGHT,
-  TILE.NPC_SMITH,
-  TILE.NPC_GLASS_LADY,
-  TILE.NPC_PHYSICIAN,
-  TILE.NPC_CHRONICLER,
-  TILE.NPC_RECRUIT_KNIGHT,
-  TILE.NPC_RECRUIT_NUN,
-  TILE.NPC_RECRUIT_HUNTER,
-]);
 
 function isRecruitNpcActive(tile: TILE, player: PlayerState, looted: boolean): boolean {
   if (tile === TILE.NPC_RECRUIT_KNIGHT) {
@@ -62,140 +55,6 @@ function isRecruitNpcActive(tile: TILE, player: PlayerState, looted: boolean): b
   return true;
 }
 
-/**
- * Shortest-path BFS on walkable grid tiles from (sx, sy) to (tx, ty).
- * Returns the first step (dx, dy) along the shortest path, or null if unreachable.
- */
-function findNextChaseStepBFS(
-  grid: TILE[][],
-  roomW: number,
-  roomH: number,
-  sx: number,
-  sy: number,
-  tx: number,
-  ty: number,
-  shortcutOpened: boolean,
-  blockedSecretSet: Set<string>,
-  occupiedByOtherEnemy: Set<string>
-): { dx: number; dy: number } | null {
-  if (sx === tx && sy === ty) return null;
-  const startKey = `${sx},${sy}`;
-  const targetKey = `${tx},${ty}`;
-  const queue: Array<{ x: number; y: number; firstDx: number; firstDy: number }> = [];
-  const visited = new Set<string>([startKey]);
-  const dirs: Array<[number, number]> = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ];
-
-  for (const [dx, dy] of dirs) {
-    const nx = sx + dx;
-    const ny = sy + dy;
-    if (nx < 1 || nx >= roomW - 1 || ny < 1 || ny >= roomH - 1) continue;
-    const key = `${nx},${ny}`;
-    if (blockedSecretSet.has(key)) continue;
-    if (!isWalkableTile(grid[ny][nx], shortcutOpened)) continue;
-    if (key !== targetKey && occupiedByOtherEnemy.has(key)) continue;
-    if (key === targetKey) return { dx, dy };
-    visited.add(key);
-    queue.push({ x: nx, y: ny, firstDx: dx, firstDy: dy });
-  }
-
-  let head = 0;
-  let bestFallback: { dx: number; dy: number; dist: number } | null = null;
-  while (head < queue.length && visited.size < 450) {
-    const cur = queue[head++];
-    const curDist = Math.abs(cur.x - tx) + Math.abs(cur.y - ty);
-    if (!bestFallback || curDist < bestFallback.dist) {
-      bestFallback = { dx: cur.firstDx, dy: cur.firstDy, dist: curDist };
-    }
-    for (const [dx, dy] of dirs) {
-      const nx = cur.x + dx;
-      const ny = cur.y + dy;
-      if (nx < 1 || nx >= roomW - 1 || ny < 1 || ny >= roomH - 1) continue;
-      const key = `${nx},${ny}`;
-      if (visited.has(key) || blockedSecretSet.has(key)) continue;
-      if (!isWalkableTile(grid[ny][nx], shortcutOpened)) continue;
-      if (key !== targetKey && occupiedByOtherEnemy.has(key)) continue;
-      if (key === targetKey) return { dx: cur.firstDx, dy: cur.firstDy };
-      visited.add(key);
-      queue.push({ x: nx, y: ny, firstDx: cur.firstDx, firstDy: cur.firstDy });
-    }
-  }
-  return bestFallback ? { dx: bestFallback.dx, dy: bestFallback.dy } : null;
-}
-
-/**
- * Pure Bresenham Line-of-Sight check between two grid coordinates.
- * Walls and Cracked Walls block sight beyond them, while the blocking wall itself remains visible.
- */
-export function hasLineOfSight(
-  grid: TILE[][],
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number
-): boolean {
-  let cx = x0;
-  let cy = y0;
-  const dx = Math.abs(x1 - x0);
-  const dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1;
-  const sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy;
-
-  while (cx !== x1 || cy !== y1) {
-    if (cx !== x0 || cy !== y0) {
-      const t = grid[cy]?.[cx];
-      if (t === TILE.WALL || t === TILE.CRACKED_WALL || t === TILE.VOID) {
-        return false;
-      }
-    }
-    const e2 = err * 2;
-    if (e2 > -dy) {
-      err -= dy;
-      cx += sx;
-    }
-    if (e2 < dx) {
-      err += dx;
-      cy += sy;
-    }
-  }
-  return true;
-}
-
-/**
- * Checks whether target (tx, ty) falls inside:
- * 1) The enemy's directional vision cone in front (`coneRange = 5` tiles)
- * 2) Or the surrounding sound/hearing radius (`hearingRadius = 2` tiles; `3` with heavy armor; `1` with Flayed Disguise)
- */
-export function isDetectedByEnemy(
-  ex: number,
-  ey: number,
-  facing: 'up' | 'down' | 'left' | 'right',
-  tx: number,
-  ty: number,
-  coneRange: number,
-  hearingRadius: number
-): boolean {
-  const dx = tx - ex;
-  const dy = ty - ey;
-  const manhattan = Math.abs(dx) + Math.abs(dy);
-  if (manhattan === 0) return true;
-
-  // Surrounding sound/hearing detection (requires clear LOS so walls block sound agro across rooms)
-  if (manhattan <= hearingRadius) return true;
-
-  // Directional 5-tile front sight cone
-  if (manhattan > coneRange) return false;
-  if (facing === 'left') return dx < 0 && Math.abs(dy) <= Math.abs(dx);
-  if (facing === 'right') return dx > 0 && Math.abs(dy) <= Math.abs(dx);
-  if (facing === 'up') return dy < 0 && Math.abs(dx) <= Math.abs(dy);
-  return dy > 0 && Math.abs(dx) <= Math.abs(dy);
-}
-
 export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   room,
   player,
@@ -205,7 +64,6 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   isInteractivePaused,
   riftElixirCollected = false,
   onTileClick,
-  onUpdateEnemies,
   onEnemyCollidePlayer,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -222,10 +80,10 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   const prevRoomIdRef = useRef<string>(room.id);
   const cameraOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const triggeredCombatRef = useRef<boolean>(false);
-  const onUpdateEnemiesRef = useRef(onUpdateEnemies);
-  onUpdateEnemiesRef.current = onUpdateEnemies;
   const onEnemyCollidePlayerRef = useRef(onEnemyCollidePlayer);
-  onEnemyCollidePlayerRef.current = onEnemyCollidePlayer;
+  useEffect(() => {
+    onEnemyCollidePlayerRef.current = onEnemyCollidePlayer;
+  }, [onEnemyCollidePlayer]);
 
   // Snap visualPos immediately when switching rooms and reset combat trigger lock
   useEffect(() => {
@@ -236,18 +94,18 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
     }
   }, [room.id, playerPos.x, playerPos.y]);
 
-  // Auto-trigger combat immediately whenever a chasing enemy (or Floor Boss) closes within Manhattan distance <= 1
+  // Trigger combat only if overlapping an enemy or inside a Floor Boss 3x3 aura
   useEffect(() => {
     if (isInteractivePaused || !onEnemyCollidePlayerRef.current) return;
 
     const threateningEnemy = room.enemies.find((e) => {
       if (e.defeated || e.isTutorialGatekeeper) return false;
-      const dist = Math.abs(e.x - playerPos.x) + Math.abs(e.y - playerPos.y);
-      if (dist > 1) return false;
       if (e.isFloorBoss) {
-        return (e.questionTimerMs || 0) <= 0;
+        const withinBossFootprint =
+          Math.abs(e.x - playerPos.x) <= 1 && Math.abs(e.y - playerPos.y) <= 1;
+        return withinBossFootprint && (e.questionTimerMs || 0) <= 0;
       }
-      return e.aiState === 'chase';
+      return e.x === playerPos.x && e.y === playerPos.y;
     });
 
     if (!threateningEnemy) {
@@ -261,351 +119,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
     }
   }, [room.id, room.enemies, playerPos.x, playerPos.y, isInteractivePaused]);
 
-  // High-Precision Chase & De-Agro AI Loop (50ms tick for exact 300ms alert pause, 250ms/190ms chase steps, and 2500ms LOS de-agro)
-  useEffect(() => {
-    if (isInteractivePaused || !onUpdateEnemiesRef.current) return;
 
-    const TICK_MS = 50;
-    const roomW = room.width || room.grid[0]?.length || CONFIG.GRID_W;
-    const roomH = room.height || room.grid.length || CONFIG.GRID_H;
-
-    // Collect NPC coordinates so patrolling enemies never enter the 3x3 clearance zone around NPCs
-    const npcCenters: Array<[number, number]> = [];
-    for (let y = 0; y < roomH; y++) {
-      for (let x = 0; x < roomW; x++) {
-        if (NPC_TILE_SET.has(room.grid[y][x])) {
-          npcCenters.push([x, y]);
-        }
-      }
-    }
-
-    const isInsideNpcZone = (tx: number, ty: number) =>
-      npcCenters.some(([nx, ny]) => Math.abs(tx - nx) <= 1 && Math.abs(ty - ny) <= 1);
-
-    const timer = setInterval(() => {
-      if (triggeredCombatRef.current || !onUpdateEnemiesRef.current) return;
-
-      const isHeavyArmor =
-        player.equippedBody === 'legion_brigandine' ||
-        player.equippedBody === 'vanguard_hauberk' ||
-        player.equippedBody === 'cathedral_chainmail' ||
-        player.equippedBody === 'platinum_cuirass';
-      const isFlayedDisguise = player.equippedBody === 'flayed_disguise';
-
-      const coneRange = 5;
-      const hearingRadius = isFlayedDisguise ? 1 : isHeavyArmor ? 3 : 2;
-
-      const blockedSecretSet = new Set<string>(
-        !room.secretWallBlown ? room.secretChamberCoords || [] : []
-      );
-
-      onUpdateEnemiesRef.current((prevEnemies) => {
-        const occupiedAll = new Set<string>(
-          prevEnemies.filter((e) => !e.defeated).map((e) => `${e.x},${e.y}`)
-        );
-        return prevEnemies.map((enemy) => {
-          if (enemy.defeated || enemy.isTutorialGatekeeper) {
-            return enemy;
-          }
-
-          if (enemy.isFloorBoss) {
-            if ((enemy.questionTimerMs || 0) > 0) {
-              return {
-                ...enemy,
-                questionTimerMs: Math.max(0, (enemy.questionTimerMs || 0) - TICK_MS),
-              };
-            }
-            return enemy;
-          }
-
-          const tpl = CONFIG.ENEMIES[enemy.templateId];
-          const speedSteps = tpl?.speedSteps || 1;
-          const chaseStepIntervalMs = speedSteps >= 2 ? 190 : 250;
-          const patrolStepIntervalMs = 450;
-
-          const facing = enemy.facing || 'left';
-          const manhattanToPlayer =
-            Math.abs(playerPos.x - enemy.x) + Math.abs(playerPos.y - enemy.y);
-
-          // If an alerted or chasing enemy is already adjacent (<= 1 tile), lock into chase so combat triggers immediately
-          if (manhattanToPlayer <= 1 && (enemy.aiState === 'chase' || enemy.aiState === 'alert')) {
-            const dxToPlayer = playerPos.x - enemy.x;
-            const dyToPlayer = playerPos.y - enemy.y;
-            const lockedFacing =
-              Math.abs(dxToPlayer) >= Math.abs(dyToPlayer) && dxToPlayer !== 0
-                ? dxToPlayer > 0
-                  ? 'right'
-                  : 'left'
-                : dyToPlayer !== 0
-                ? dyToPlayer > 0
-                  ? 'down'
-                  : 'up'
-                : facing;
-            return {
-              ...enemy,
-              aiState: 'chase',
-              alertTimerMs: 0,
-              questionTimerMs: 0,
-              facing: lockedFacing,
-              lastSeenX: playerPos.x,
-              lastSeenY: playerPos.y,
-            };
-          }
-
-          const hasLOS = hasLineOfSight(room.grid, enemy.x, enemy.y, playerPos.x, playerPos.y);
-          const detected =
-            hasLOS &&
-            isDetectedByEnemy(
-              enemy.x,
-              enemy.y,
-              facing,
-              playerPos.x,
-              playerPos.y,
-              coneRange,
-              hearingRadius
-            );
-
-          let aiState: 'patrol' | 'alert' | 'chase' | 'deagro' = enemy.aiState || 'patrol';
-          let alertTimerMs = Math.max(0, (enemy.alertTimerMs || 0) - TICK_MS);
-          let loseSightTimerMs = enemy.loseSightTimerMs ?? 0;
-          let questionTimerMs = Math.max(0, (enemy.questionTimerMs || 0) - TICK_MS);
-          let moveCooldownMs = Math.max(0, (enemy.moveCooldownMs || 0) - TICK_MS);
-          let lastSeenX = enemy.lastSeenX ?? playerPos.x;
-          let lastSeenY = enemy.lastSeenY ?? playerPos.y;
-
-          // 1. Agro Trigger: Patrol / De-Agro -> 300ms '!' Alert Pause -> Chase (loseSightTimerMs = 2500)
-          // Suppress instant re-agro right after fleeing combat while questionTimerMs > 1500
-          const postFleeGraceActive = aiState === 'deagro' && questionTimerMs > 1500;
-          if (aiState === 'patrol' || aiState === 'deagro') {
-            if (detected && !postFleeGraceActive) {
-              return {
-                ...enemy,
-                aiState: 'alert',
-                alertTimerMs: 300,
-                loseSightTimerMs: 2500,
-                questionTimerMs: 0,
-                moveCooldownMs: 300,
-                lastSeenX: playerPos.x,
-                lastSeenY: playerPos.y,
-              };
-            }
-            if (aiState === 'deagro' && questionTimerMs <= 0) {
-              aiState = 'patrol';
-            }
-          }
-
-          // 2. Alert Pause (300ms with red '!' overhead before starting chase)
-          if (aiState === 'alert') {
-            if (hasLOS) {
-              lastSeenX = playerPos.x;
-              lastSeenY = playerPos.y;
-            }
-            if (alertTimerMs > 0) {
-              return {
-                ...enemy,
-                aiState: 'alert',
-                alertTimerMs,
-                loseSightTimerMs: 2500,
-                moveCooldownMs,
-                lastSeenX,
-                lastSeenY,
-              };
-            }
-            aiState = 'chase';
-            loseSightTimerMs = 2500;
-            moveCooldownMs = 0;
-          }
-
-          // 3. De-Agro Conditions while in 'chase'
-          if (aiState === 'chase') {
-            // Condition A: Manhattan distance >= 9 tiles -> De-Agro & show yellow '?' for 1500ms
-            if (manhattanToPlayer >= 9) {
-              return {
-                ...enemy,
-                aiState: 'deagro',
-                questionTimerMs: 1500,
-                loseSightTimerMs: 0,
-                moveCooldownMs: patrolStepIntervalMs,
-              };
-            }
-
-            // Condition B: Line-of-sight blocked by wall continuously for 2500ms
-            if (hasLOS) {
-              loseSightTimerMs = 2500;
-              lastSeenX = playerPos.x;
-              lastSeenY = playerPos.y;
-            } else {
-              loseSightTimerMs = Math.max(0, loseSightTimerMs - TICK_MS);
-              if (loseSightTimerMs <= 0) {
-                return {
-                  ...enemy,
-                  aiState: 'deagro',
-                  questionTimerMs: 1500,
-                  loseSightTimerMs: 0,
-                  moveCooldownMs: patrolStepIntervalMs,
-                };
-              }
-            }
-          }
-
-          // Wait until movement cooldown expires before taking a grid step
-          if (moveCooldownMs > 0) {
-            return {
-              ...enemy,
-              aiState,
-              alertTimerMs,
-              loseSightTimerMs,
-              questionTimerMs,
-              moveCooldownMs,
-              lastSeenX,
-              lastSeenY,
-            };
-          }
-
-          let stepX = 0;
-          let stepY = 0;
-          let nextFacing = facing;
-
-          if (aiState === 'chase') {
-            // Move toward current playerPos if visible, or toward lastSeenX/lastSeenY when behind wall
-            const targetX = hasLOS ? playerPos.x : lastSeenX;
-            const targetY = hasLOS ? playerPos.y : lastSeenY;
-
-            if (enemy.x === targetX && enemy.y === targetY && !hasLOS) {
-              // Reached last seen tile and still cannot see player -> show '?' and return to patrol
-              return {
-                ...enemy,
-                aiState: 'deagro',
-                questionTimerMs: 1500,
-                loseSightTimerMs: 0,
-                moveCooldownMs: patrolStepIntervalMs,
-              };
-            }
-
-            const bfsStep = findNextChaseStepBFS(
-              room.grid,
-              roomW,
-              roomH,
-              enemy.x,
-              enemy.y,
-              targetX,
-              targetY,
-              room.shortcutOpened,
-              blockedSecretSet,
-              occupiedAll
-            );
-
-            if (bfsStep) {
-              stepX = bfsStep.dx;
-              stepY = bfsStep.dy;
-              if (stepX !== 0) nextFacing = stepX > 0 ? 'right' : 'left';
-              else if (stepY !== 0) nextFacing = stepY > 0 ? 'down' : 'up';
-            }
-          } else if (aiState === 'patrol' && !postFleeGraceActive) {
-            if (Math.random() < 0.65) {
-              if (facing === 'left') stepX = -1;
-              else if (facing === 'right') stepX = 1;
-              else if (facing === 'up') stepY = -1;
-              else stepY = 1;
-            }
-          }
-
-          const nx = enemy.x + stepX;
-          const ny = enemy.y + stepY;
-          const nextCooldown = aiState === 'chase' ? chaseStepIntervalMs : patrolStepIntervalMs;
-
-          // Allow stepping directly onto player coordinates without canceling or reversing the step
-          const isSteppingOntoPlayer =
-            (stepX !== 0 || stepY !== 0) && nx === playerPos.x && ny === playerPos.y;
-          if (isSteppingOntoPlayer) {
-            return {
-              ...enemy,
-              x: nx,
-              y: ny,
-              facing: nextFacing,
-              aiState: 'chase',
-              alertTimerMs: 0,
-              loseSightTimerMs: 2500,
-              questionTimerMs: 0,
-              moveCooldownMs: nextCooldown,
-              lastSeenX: playerPos.x,
-              lastSeenY: playerPos.y,
-            };
-          }
-
-          const withinBounds =
-            aiState === 'chase'
-              ? nx >= 1 && nx < roomW - 1 && ny >= 1 && ny < roomH - 1
-              : nx >= 2 && nx < roomW - 2 && ny >= 3 && ny < roomH - 2;
-
-          if (
-            (stepX !== 0 || stepY !== 0) &&
-            withinBounds &&
-            isWalkableTile(room.grid[ny][nx], room.shortcutOpened) &&
-            (aiState === 'chase' || !isInsideNpcZone(nx, ny))
-          ) {
-            return {
-              ...enemy,
-              x: nx,
-              y: ny,
-              facing: nextFacing,
-              aiState,
-              alertTimerMs,
-              loseSightTimerMs,
-              questionTimerMs,
-              moveCooldownMs: nextCooldown,
-              lastSeenX,
-              lastSeenY,
-            };
-          } else if (stepX !== 0 || stepY !== 0) {
-            const reverseMap: Record<'up' | 'down' | 'left' | 'right', 'up' | 'down' | 'left' | 'right'> = {
-              left: 'right',
-              right: 'left',
-              up: 'down',
-              down: 'up',
-            };
-            return {
-              ...enemy,
-              facing: reverseMap[facing],
-              aiState,
-              alertTimerMs,
-              loseSightTimerMs,
-              questionTimerMs,
-              moveCooldownMs: nextCooldown,
-              lastSeenX,
-              lastSeenY,
-            };
-          }
-
-          return {
-            ...enemy,
-            aiState,
-            alertTimerMs,
-            loseSightTimerMs,
-            questionTimerMs,
-            moveCooldownMs: nextCooldown,
-            lastSeenX,
-            lastSeenY,
-          };
-        });
-      });
-    }, TICK_MS);
-
-    return () => clearInterval(timer);
-  }, [
-    isInteractivePaused,
-    room.id,
-    room.grid,
-    room.width,
-    room.height,
-    room.shortcutOpened,
-    room.secretWallBlown,
-    room.secretChamberCoords,
-    playerPos.x,
-    playerPos.y,
-    player.equippedBody,
-    player.equippedHead,
-  ]);
 
   // Smooth Delta-Time Render Loop with Offscreen Static Layer + Camera Translation + Bresenham LOS
   useEffect(() => {
@@ -660,7 +174,10 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                     ? TILE.FLOOR
                     : tile;
 
-                const variantHash = Math.abs(((x * 73 + y * 37) ^ (x * 19)) % 6);
+                const variantHash =
+                  tile === TILE.HERB
+                    ? herbTypeToVariant(getHerbTypeAtCoord(room, x, y))
+                    : Math.abs(((x * 73 + y * 37) ^ (x * 19)) % 6);
                 const floorTex = getFloorTileTexture(
                   room.floor,
                   texTile,
@@ -791,6 +308,36 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
           }
 
+          // 1C. Placed Bait / Decoys (Mồi Nhử) on floor
+          for (const decoy of room.decoys || []) {
+            if (decoy.turnsLeft <= 0 || !visibleCoords.has(`${decoy.x},${decoy.y}`)) continue;
+            const dpx = decoy.x * tileW + tileW * 0.5;
+            const dpy = decoy.y * tileH + tileH * 0.55;
+            ctx.save();
+            ctx.strokeStyle = animTick % 2 === 0 ? 'rgba(163, 230, 53, 0.55)' : 'rgba(132, 204, 22, 0.3)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(dpx, dpy, tileW * 0.34, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = '#4d6b3c';
+            ctx.strokeStyle = '#070608';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.ellipse(dpx, dpy, tileW * 0.2, tileH * 0.14, -0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#e5dccb';
+            ctx.fillRect(dpx - tileW * 0.22, dpy + 2, 6, 3);
+
+            ctx.fillStyle = '#bef264';
+            ctx.font = 'bold 9px "Noto Serif", serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Mồi (${decoy.turnsLeft})`, dpx, decoy.y * tileH + 10);
+            ctx.restore();
+          }
+
           // 2. Depth-Sorted Entities Pass (Multi-Tile Landmarks + NPC Set-Dressing + NPCs + Party + Player + Enemies)
           interface RenderEntity {
             footY: number;
@@ -913,42 +460,50 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             },
           });
 
-          // Enemies (Alive or Slain Corpse for Looting & Devouring)
+          // Slain Corpses (removed from active enemies into room.corpses for Looting, Necromancy & Devouring)
+          const corpseList = [
+            ...(room.corpses || []),
+            ...room.enemies.filter((e) => e.defeated),
+          ];
+          for (const corpseInst of corpseList) {
+            if (!visibleCoords.has(`${corpseInst.x},${corpseInst.y}`) && !corpseInst.isFloorBoss) {
+              continue;
+            }
+            entities.push({
+              footY: corpseInst.y,
+              draw: () => {
+                const px = corpseInst.x * tileW;
+                const py = corpseInst.y * tileH;
+                ctx.fillStyle = 'rgba(125, 18, 18, 0.76)';
+                ctx.beginPath();
+                ctx.ellipse(px + tileW / 2, py + tileH / 2, 19, 11, 0, 0, Math.PI * 2);
+                ctx.fill();
+                const canRaise =
+                  (player.skillLevels?.necromancy || 0) >= 1 &&
+                  !corpseInst.corpseRaised &&
+                  player.party.length < 3;
+                if (!corpseInst.corpseDevoured || !corpseInst.corpseLooted || canRaise) {
+                  ctx.fillStyle = !corpseInst.corpseLooted || canRaise ? '#fde047' : '#fca5a5';
+                  ctx.font = 'bold 9px "Noto Serif", serif';
+                  ctx.textAlign = 'center';
+                  ctx.fillText(
+                    !corpseInst.corpseLooted || canRaise ? 'Xác Quái [F]' : 'Xác Quái',
+                    px + tileW / 2,
+                    py + tileH / 2 + 3
+                  );
+                }
+              },
+            });
+          }
+
+          // Active Living Enemies
           for (const enemyInst of room.enemies) {
+            if (enemyInst.defeated) continue;
             if (!visibleCoords.has(`${enemyInst.x},${enemyInst.y}`) && !enemyInst.isFloorBoss) {
               continue;
             }
             const tpl = CONFIG.ENEMIES[enemyInst.templateId];
             if (!tpl) continue;
-
-            if (enemyInst.defeated) {
-              entities.push({
-                footY: enemyInst.y,
-                draw: () => {
-                  const px = enemyInst.x * tileW;
-                  const py = enemyInst.y * tileH;
-                  ctx.fillStyle = 'rgba(125, 18, 18, 0.76)';
-                  ctx.beginPath();
-                  ctx.ellipse(px + tileW / 2, py + tileH / 2, 19, 11, 0, 0, Math.PI * 2);
-                  ctx.fill();
-                  const canRaise =
-                    (player.skillLevels?.necromancy || 0) >= 1 &&
-                    !enemyInst.corpseRaised &&
-                    player.party.length < 3;
-                  if (!enemyInst.corpseDevoured || !enemyInst.corpseLooted || canRaise) {
-                    ctx.fillStyle = !enemyInst.corpseLooted || canRaise ? '#fde047' : '#fca5a5';
-                    ctx.font = 'bold 9px "Noto Serif", serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(
-                      !enemyInst.corpseLooted || canRaise ? 'Xác Quái [F]' : 'Xác Quái',
-                      px + tileW / 2,
-                      py + tileH / 2 + 3
-                    );
-                  }
-                },
-              });
-              continue;
-            }
 
             entities.push({
               footY: enemyInst.y,
@@ -978,7 +533,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 const py =
                   (enemyInst.y + 1) * tileH - drawH + (animTick % 3 === 0 ? -2 : 0);
 
-                // Subtle 5-Tile Vision Cone indicator on floor for active patrolling/chasing enemies
+                // Subtle 3-Tile Vision Cone indicator on floor for active patrolling/chasing enemies
                 if (!enemyInst.isTutorialGatekeeper && !isBoss3x && enemyInst.facing) {
                   ctx.save();
                   ctx.fillStyle =
@@ -997,7 +552,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                       : -Math.PI / 2;
                   ctx.beginPath();
                   ctx.moveTo(cx, cy);
-                  ctx.arc(cx, cy, tileW * 4.8, ang - 0.45, ang + 0.45);
+                  ctx.arc(cx, cy, tileW * 3.0, ang - 0.45, ang + 0.45);
                   ctx.closePath();
                   ctx.fill();
                   ctx.restore();
@@ -1128,27 +683,70 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             ctx.fillRect(0, 0, worldPxW, worldPxH);
           }
 
-          // 3A. Drifting Miasma Mist Layer across the dungeon floor
+          // 3A. Continuous Pale Light-Gray Drifting Mist Layers across the Exploration Viewport
           ctx.save();
-          const driftT = now * 0.00035;
-          const mistBase =
-            room.floor === 3
-              ? 'rgba(147, 51, 234, 0.14)'
-              : room.floor === 1
-              ? 'rgba(153, 27, 27, 0.10)'
-              : room.isExterior
-              ? 'rgba(120, 113, 108, 0.13)'
-              : 'rgba(100, 116, 139, 0.09)';
-          for (let m = 0; m < 6; m++) {
-            const mx = ((m * 190 + driftT * (28 + m * 6)) % (worldPxW + 240)) - 120;
-            const my = ((m * 115 + Math.sin(driftT * 1.4 + m) * 28) % worldPxH);
-            const mr = 95 + (m % 3) * 32;
-            const mGrad = ctx.createRadialGradient(mx, my, 8, mx, my, mr);
-            mGrad.addColorStop(0, mistBase);
-            mGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          const mistSec = now * 0.001;
+          const mistStrength = room.isExterior ? 1.15 : room.floor === 3 ? 1.05 : 1.0;
+
+          // Layer 1: Wide drifting pale light-gray fog banks (layered radial clouds)
+          const wrapW = worldPxW + 360;
+          const wrapH = worldPxH + 220;
+          for (let m = 0; m < 10; m++) {
+            const speedX = 14 + (m % 4) * 5;
+            const speedY = (m % 2 === 0 ? 1 : -1) * (3.5 + (m % 3) * 1.5);
+            const rawX = m * 173 + mistSec * speedX;
+            const rawY = m * 119 + mistSec * speedY + Math.sin(mistSec * 0.45 + m * 1.3) * 26;
+            const mx = ((rawX % wrapW) + wrapW) % wrapW - 180;
+            const my = ((rawY % wrapH) + wrapH) % wrapH - 110;
+            const mr = 115 + (m % 3) * 42;
+            const alphaCenter = (0.11 + (m % 3) * 0.025) * mistStrength;
+            const alphaMid = (0.045 + (m % 2) * 0.015) * mistStrength;
+
+            const mGrad = ctx.createRadialGradient(mx, my, 10, mx, my, mr);
+            mGrad.addColorStop(0, `rgba(214, 220, 228, ${alphaCenter.toFixed(3)})`);
+            mGrad.addColorStop(0.55, `rgba(182, 190, 200, ${alphaMid.toFixed(3)})`);
+            mGrad.addColorStop(1, 'rgba(148, 158, 170, 0)');
             ctx.fillStyle = mGrad;
             ctx.beginPath();
             ctx.arc(mx, my, mr, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Layer 2: Horizontal elongated low-hanging pale-gray mist ribbons drifting steadily
+          for (let b = 0; b < 5; b++) {
+            const dir = b % 2 === 0 ? 1 : -1;
+            const bandSpanW = worldPxW + 420;
+            const bxRaw = b * 230 + mistSec * dir * (18 + b * 4);
+            const bx = ((bxRaw % bandSpanW) + bandSpanW) % bandSpanW - 210;
+            const by = ((b + 0.5) / 5) * worldPxH + Math.cos(mistSec * 0.55 + b) * 18;
+            const rw = 190 + (b % 2) * 55;
+            const rh = 58 + (b % 3) * 14;
+
+            ctx.save();
+            ctx.translate(bx, by);
+            ctx.scale(1, rh / rw);
+            const ribbonGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, rw);
+            ribbonGrad.addColorStop(0, `rgba(222, 227, 234, ${(0.095 * mistStrength).toFixed(3)})`);
+            ribbonGrad.addColorStop(0.6, `rgba(190, 198, 208, ${(0.04 * mistStrength).toFixed(3)})`);
+            ribbonGrad.addColorStop(1, 'rgba(160, 168, 178, 0)');
+            ctx.fillStyle = ribbonGrad;
+            ctx.beginPath();
+            ctx.arc(0, 0, rw, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Layer 3: Subtle floating pale-gray ash/mist motes
+          for (let p = 0; p < 16; p++) {
+            const pxRaw = p * 97 + mistSec * (12 + (p % 5) * 3.5);
+            const pyRaw = p * 67 - mistSec * (4 + (p % 3) * 2) + Math.sin(mistSec * 0.9 + p) * 14;
+            const px = ((pxRaw % worldPxW) + worldPxW) % worldPxW;
+            const py = ((pyRaw % worldPxH) + worldPxH) % worldPxH;
+            const pr = 1.4 + (p % 3) * 0.7;
+            const pAlpha = 0.22 + 0.14 * Math.sin(mistSec * 1.4 + p * 0.8);
+            ctx.fillStyle = `rgba(218, 224, 232, ${Math.max(0.08, pAlpha).toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(px, py, pr, 0, Math.PI * 2);
             ctx.fill();
           }
           ctx.restore();
@@ -1169,60 +767,38 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
           }
 
-          // 4. Proximity Interaction Highlight & Floating Prompt ([F])
-          // Multi-tile landmarks & NPCs support 2-tile radius; single-tile lootables check 1-tile first
+          // 4. Proximity Interaction Highlight & Floating Prompt ([F]) — Manhattan distance <= 1
           const searchOffsets: Array<[number, number]> = [
             [0, 0],
             [1, 0],
             [-1, 0],
             [0, 1],
             [0, -1],
-            [1, 1],
-            [-1, 1],
-            [1, -1],
-            [-1, -1],
-            [2, 0],
-            [-2, 0],
-            [0, 2],
-            [0, -2],
-            [2, 1],
-            [-2, 1],
-            [2, -1],
-            [-2, -1],
-            [1, 2],
-            [-1, 2],
-            [1, -2],
-            [-1, -2],
-            [2, 2],
-            [-2, 2],
-            [2, -2],
-            [-2, -2],
           ];
           let drewPrompt = false;
           for (const [dx, dy] of searchOffsets) {
+            if (Math.abs(dx) + Math.abs(dy) > 1) continue;
             const ix = playerPos.x + dx;
             const iy = playerPos.y + dy;
             if (ix < 0 || ix >= roomW || iy < 0 || iy >= roomH) continue;
             const cKey = `${ix},${iy}`;
             if (secretMaskSet.has(cKey)) continue;
             const t = room.grid[iy][ix];
-            const chebyshev = Math.max(Math.abs(dx), Math.abs(dy));
-            const manhattan = Math.abs(dx) + Math.abs(dy);
-            const isMultiTileOrNpc =
-              t === TILE.HEXEN_ALTAR ||
-              t === TILE.RITUAL_CIRCLE ||
-              t === TILE.VOID_RIFT ||
-              t === TILE.BOOKSHELF ||
-              t === TILE.CRACKED_WALL ||
-              NPC_TILE_SET.has(t);
-
-            if (!isMultiTileOrNpc && manhattan > 1) continue;
-            if (isMultiTileOrNpc && chebyshev > 2) continue;
 
             let promptLabel: string | null = null;
 
             if (t === TILE.CRATE && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Lục Thùng';
-            else if (t === TILE.HERB && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Hái Thảo Dược';
+            else if (t === TILE.HERB && !room.lootedCoords.includes(cKey)) {
+              const ht = getHerbTypeAtCoord(room, ix, iy);
+              promptLabel =
+                ht === 'red_herb'
+                  ? '[F] Hái Thảo Dược Đỏ'
+                  : ht === 'white_herb'
+                  ? '[F] Hái Thảo Dược Trắng'
+                  : ht === 'calm_flower'
+                  ? '[F] Hái Hoa Tĩnh Tâm'
+                  : '[F] Hái Thảo Dược Xanh';
+            }
             else if (t === TILE.CHEST && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Mở Rương';
             else if (t === TILE.BOOKSHELF && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Lục Kệ Sách';
             else if (t === TILE.HEXEN_ALTAR) promptLabel = '[F] Bàn Thờ Hexen';

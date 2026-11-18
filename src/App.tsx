@@ -1,12 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Skull,
   Shield,
   BookOpen,
   Flame,
   Heart,
   Brain,
-  Utensils,
   Compass,
   Sparkles,
   Backpack,
@@ -16,7 +14,6 @@ import {
   Volume2,
   VolumeX,
   HelpCircle,
-  Users,
 } from 'lucide-react';
 import { CONFIG } from './game/config';
 import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './game/narrative';
@@ -26,18 +23,24 @@ import {
   drawPixelSprite,
   drawPartyBackSprite,
   drawItemIcon,
-  drawPrologueScene,
   getLimbReticlePositions,
   drawEngravedGoldCoin,
 } from './game/pixelArt';
+import prologueFrame1Img from './assets/images/prologue_castle_colossal_1794938768880.jpg';
+import prologueFrame2Img from './assets/images/prologue_statue_mother_1794938322367.jpg';
+import prologueGateKnightImg from './assets/images/prologue_gate_knight_1794938325240.jpg';
+import prologueGateNunImg from './assets/images/prologue_gate_nun_1794938324507.jpg';
+import prologueGateHunterImg from './assets/images/prologue_gate_hunter_1794938325467.jpg';
 import { DungeonMapViewport } from './components/DungeonMapViewport';
 import {
   generateWorld,
+  getHerbTypeAtCoord,
   TILE,
   WorldMapState,
   RoomData,
   MapEnemyInstance,
   isWalkableTile,
+  advanceRoomEnemiesOneTurn,
 } from './game/mapGen';
 import {
   PlayerState,
@@ -65,11 +68,13 @@ import {
   canPlayerEquipShield,
   canAllyEquipGear,
   canAllyEquipShield,
+  isPureTankSummon,
+  isAllyGearLocked,
   bloodForgeWeapon,
   exorciseCursedWeapon,
   regrowLimbAtHexen,
   unlockHexenStatNode,
-  prayAffinityAtHexen,
+  learnOrUpgradeHexenSkill,
   GEAR_ITEMS,
 } from './game/combat';
 import { CombatEngine, CombatActionType } from './game/combatEngine';
@@ -100,6 +105,15 @@ type ActiveModal =
 type CombatMenuMode = 'main' | 'skills' | 'items';
 type EquipSlotKey = 'weapon' | 'shield' | 'head' | 'body' | 'accessory';
 export type CoinOutcomeTier = 'win' | 'partial' | 'lose';
+type AffinityPillarKey = 'holyMother' | 'primordialVoid' | 'demonicPact';
+interface AffinityToastState {
+  id: number;
+  pillar: AffinityPillarKey;
+  godName: string;
+  prevVal: number;
+  nextVal: number;
+  unlockedSkills: string[];
+}
 
 interface SaveSlotData {
   slot: number;
@@ -137,6 +151,38 @@ interface InteractionPromptState {
   choices: InteractionChoice[];
   selectedIndex: number;
 }
+
+const HungerBowlIcon: React.FC<{ className?: string; isDanger?: boolean }> = ({
+  className = 'w-4 h-4',
+  isDanger = false,
+}) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+    className={`${className} transition-all duration-300 ${
+      isDanger
+        ? 'text-[#ef4444] drop-shadow-[0_0_6px_rgba(239,68,68,0.9)] animate-pulse'
+        : 'text-[#eab308]'
+    }`}
+  >
+    <path
+      d="M4 10.5C4 15.2 7.2 18.8 12 18.8C16.8 18.8 20 15.2 20 10.5H4Z"
+      fill="currentColor"
+      fillOpacity="0.24"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+    />
+    <ellipse cx="12" cy="10.5" rx="8" ry="2.2" stroke="currentColor" strokeWidth="1.6" />
+    <path
+      d="M8.5 21H15.5M9.5 18.5L8.8 21M14.5 18.5L15.2 21"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 // Reusable 64x64 Vector Artwork Canvas for Weapons, Shields, Gear & Vials
 const ItemArtworkCanvas: React.FC<{ itemOrWeaponId: string; size?: number; className?: string }> = ({
@@ -249,6 +295,15 @@ export default function App() {
   const [introStepIdx, setIntroStepIdx] = useState<0 | 1 | 2>(0);
   const [riftElixirCollected, setRiftElixirCollected] = useState<boolean>(false);
   const [hexenFeedback, setHexenFeedback] = useState<string | null>(null);
+  const [affinityToast, setAffinityToast] = useState<AffinityToastState | null>(null);
+  const [recentAffinityPillar, setRecentAffinityPillar] = useState<AffinityPillarKey | null>(null);
+  const prevAffinitiesRef = useRef<{ holyMother: number; primordialVoid: number; demonicPact: number }>({
+    holyMother: 0,
+    primordialVoid: 0,
+    demonicPact: 0,
+  });
+  const skipNextAffinityToastRef = useRef<boolean>(false);
+  const affinityToastTimerRef = useRef<number | null>(null);
 
   // Modals & Equipment UI
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
@@ -265,6 +320,69 @@ export default function App() {
       setInvTab((tab) => (tab === 'saw' ? 'equip' : tab));
     }
   }, [activeModal]);
+
+  useEffect(() => {
+    const cur = player.affinities || { holyMother: 0, primordialVoid: 0, demonicPact: 0 };
+    if (skipNextAffinityToastRef.current) {
+      prevAffinitiesRef.current = { ...cur };
+      skipNextAffinityToastRef.current = false;
+      return;
+    }
+    if (screen !== 'playing' && screen !== 'combat') {
+      return;
+    }
+
+    const prev = prevAffinitiesRef.current;
+    const pillars: Array<{ key: AffinityPillarKey; name: string; icon: string }> = [
+      { key: 'holyMother', name: 'Thánh Mẫu', icon: '✝️' },
+      { key: 'primordialVoid', name: 'Hư Vô Nguyên Thủy', icon: '🌌' },
+      { key: 'demonicPact', name: 'Giao Kèo Ác Quỷ', icon: '🩸' },
+    ];
+
+    for (const pInfo of pillars) {
+      const prevVal = prev[pInfo.key] || 0;
+      const nextVal = cur[pInfo.key] || 0;
+      if (nextVal > prevVal) {
+        const unlockedSkills = CONFIG.SKILLS.filter(
+          (s) =>
+            s.requiredAffinity?.pillar === pInfo.key &&
+            s.requiredAffinity.level > prevVal &&
+            s.requiredAffinity.level <= nextVal
+        ).map((s) => s.name);
+
+        setAffinityToast({
+          id: Date.now(),
+          pillar: pInfo.key,
+          godName: pInfo.name,
+          prevVal,
+          nextVal,
+          unlockedSkills,
+        });
+        setRecentAffinityPillar(pInfo.key);
+        sfx.playHealOrChime();
+
+        if (affinityToastTimerRef.current) {
+          window.clearTimeout(affinityToastTimerRef.current);
+        }
+        affinityToastTimerRef.current = window.setTimeout(() => {
+          setAffinityToast(null);
+          setRecentAffinityPillar(null);
+          affinityToastTimerRef.current = null;
+        }, 5200);
+        break;
+      }
+    }
+
+    prevAffinitiesRef.current = { ...cur };
+  }, [player.affinities, screen]);
+
+  useEffect(() => {
+    return () => {
+      if (affinityToastTimerRef.current) {
+        window.clearTimeout(affinityToastTimerRef.current);
+      }
+    };
+  }, []);
   const [selectedEquipSlot, setSelectedEquipSlot] = useState<EquipSlotKey>('weapon');
   const [previewItemId, setPreviewItemId] = useState<string>('broad_iron_sword');
   const [selectedLoreBookId, setSelectedLoreBookId] = useState<string>(CONFIG.BOOKS[0].id);
@@ -286,10 +404,27 @@ export default function App() {
   } | null>(null);
 
   const [narrativeLogs, setNarrativeLogs] = useState<string[]>([
-    'Lâu Đài Ma Vương Vaelis từ vết rách không gian giáng xuống đè nát mái vòm Đại giáo đường Goethe.',
+    'Lâu Đài Hắc Ám từ vòm trời đêm giáng xuống, nghiền nát mái vòm Đại Giáo Đường Goethe.',
     'Bạn tỉnh dậy tại Ngoại Vi Đại Giáo Đường Goethe giữa sương mù và mùi máu tanh.',
   ]);
   const [lastStepTime, setLastStepTime] = useState<number>(0);
+  const inCombat = screen === 'combat';
+  const [isInputLocked, setIsInputLocked] = useState<boolean>(false);
+  const isInputLockedRef = useRef<boolean>(false);
+  const worldRef = useRef(world);
+  useEffect(() => {
+    worldRef.current = world;
+  }, [world]);
+
+  const playerPosRef = useRef(playerPos);
+  useEffect(() => {
+    playerPosRef.current = playerPos;
+  }, [playerPos]);
+
+  const playerRef = useRef(player);
+  useEffect(() => {
+    playerRef.current = player;
+  }, [player]);
   const [animTick, setAnimTick] = useState<number>(0);
   const [muted, setMuted] = useState<boolean>(false);
   const [saveSlots, setSaveSlots] = useState<Array<SaveSlotData | null>>([
@@ -314,7 +449,6 @@ export default function App() {
     { x: 1, y: 11 },
   ]);
 
-  const prologueCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const combatStageCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const addLog = useCallback((msg: string) => {
@@ -327,6 +461,16 @@ export default function App() {
   // Track Shift key hold for 2-coin toss mode
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
       if (e.key === 'Shift') setShiftHeld(true);
     };
     const onUp = (e: KeyboardEvent) => {
@@ -371,16 +515,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Draw Prologue Canvas
-  useEffect(() => {
-    if (screen !== 'prologue') return;
-    const canvas = prologueCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    drawPrologueScene(ctx, prologueFrame, canvas.width, canvas.height, player.classId);
-  }, [screen, prologueFrame, player.classId]);
-
   // Trigger 3D Gold Coin Toss Modal (Heads / Tails; hold Shift to toss 2 coins simultaneously)
   const triggerCoinToss = useCallback(
     (
@@ -415,9 +549,7 @@ export default function App() {
                   resultSide: landed,
                   wonOutcome: won,
                   outcomeTier: won ? 'win' : 'lose',
-                  outcomeText: won
-                    ? 'Đồng xu rơi xuống nền đá lạnh... Mặt bạn chọn ngửa lên.'
-                    : 'Đồng xu lăn vào bóng tối... Mặt còn lại úp xuống.',
+                  outcomeText: landed === 'HEADS' ? 'Mặt Ngửa' : 'Mặt Sấp',
                 }
               : null
           );
@@ -471,9 +603,7 @@ export default function App() {
         let landed2: 'HEADS' | 'TAILS' | null = null;
         let tier: CoinOutcomeTier = win1 ? 'win' : 'lose';
         let totalWon = win1;
-        let text = win1
-          ? 'Đồng xu rơi xuống nền đá lạnh... Mặt bạn chọn ngửa lên.'
-          : 'Đồng xu lăn vào bóng tối... Mặt còn lại úp xuống.';
+        let text = landed1 === 'HEADS' ? 'Mặt Ngửa' : 'Mặt Sấp';
 
         if (tossTwoWithShift) {
           win2 = rng.chance(winChance);
@@ -481,15 +611,15 @@ export default function App() {
           if (win1 && win2) {
             tier = 'win';
             totalWon = true;
-            text = 'Đồng xu rơi xuống nền đá lạnh... Mặt bạn chọn ngửa lên.';
+            text = landed1 === 'HEADS' ? 'Mặt Ngửa' : 'Mặt Sấp';
           } else if (win1 || win2) {
             tier = 'partial';
             totalWon = true;
-            text = 'Một đồng ngửa, một đồng sấp... Định mệnh chỉ hé mở một khe hở nhỏ.';
+            text = 'Một ngửa, một sấp';
           } else {
             tier = 'lose';
             totalWon = false;
-            text = 'Đồng xu lăn vào bóng tối... Mặt còn lại úp xuống.';
+            text = landed1 === 'HEADS' ? 'Mặt Ngửa' : 'Mặt Sấp';
           }
         }
 
@@ -577,6 +707,9 @@ export default function App() {
         { x: Math.max(1, startRoom.spawnX - 3), y: Math.max(1, startRoom.spawnY - 1) },
       ]);
       setSelectedInvMemberIdx(0);
+      skipNextAffinityToastRef.current = true;
+      setAffinityToast(null);
+      setRecentAffinityPillar(null);
       setScreen('prologue');
     },
     [seedInput, selectedClassId, characterNameInput, generateRandomSeed]
@@ -601,9 +734,11 @@ export default function App() {
       night_hunter:
         '🗡️ Lời Nguyền Hóa Đá: Lớp vảy đá xám trên cánh tay lại nhói buốt. Chỉ có bình Tiên Dược Cổ Đại dưới đáy Vực Sao và Lõi Khóa Hư Vô mới giúp bạn thoát khỏi Thung Lũng Xương Tàn.',
     };
+    isInputLockedRef.current = false;
+    setIsInputLocked(false);
     setScreen('playing');
     setNarrativeLogs([
-      `[Seed: ${world.seed}] Bạn đứng trước Cổng Sắt Răng Cưa tại ${startRoom.name}.`,
+      `Bạn đứng trước Cổng Sắt Răng Cưa tại ${startRoom.name}.`,
       ...(starterPackSummary ? [starterPackSummary] : []),
       classOpening[player.classId] || startRoom.sensoryLine,
       startRoom.sensoryLine,
@@ -625,6 +760,8 @@ export default function App() {
       setBackstoryChosen(true);
       setPlayerPos({ x: startRoom.spawnX, y: startRoom.spawnY });
       setAreaBannerText(startRoom.name);
+      skipNextAffinityToastRef.current = true;
+      setAffinityToast(null);
       setScreen('playing');
     }
   }, []);
@@ -641,7 +778,7 @@ export default function App() {
     };
     localStorage.setItem(`${CONFIG.SAVE_KEY_PREFIX}${slotIdx}`, JSON.stringify(payload));
     refreshSaveSlots();
-    addLog(`Đã khắc ấn ký lưu tiến trình vào Ô Lưu #${slotIdx + 1}.`);
+    addLog(`🕯️ Đã khắc ấn ký lưu giữ hành trình vào trang ký ức thứ ${slotIdx + 1}.`);
   };
 
   const loadFromSlot = (slotIdx: number) => {
@@ -657,8 +794,16 @@ export default function App() {
       x: restoredRoom?.spawnX ?? 3,
       y: restoredRoom?.spawnY ?? 6,
     };
+    const restoredPlayer: PlayerState = {
+      ...data.player,
+      inventory: {
+        ...data.player.inventory,
+        energy_stone: data.player.inventory?.energy_stone ?? data.player.energyStones ?? 0,
+        silver_coin: data.player.inventory?.silver_coin ?? data.player.silverCoins ?? 0,
+      },
+    };
     setWorld(restoredWorld);
-    setPlayer(data.player);
+    setPlayer(restoredPlayer);
     setPlayerPos(spawnPos);
     setSeedInput(restoredSeed);
     setAreaBannerText(restoredRoom?.name || 'Ngoại Vi Đại Giáo Đường Goethe');
@@ -673,8 +818,13 @@ export default function App() {
     setEndingInfo(null);
     setActiveModal(null);
     setTitleSaveModalOpen(false);
+    isInputLockedRef.current = false;
+    setIsInputLocked(false);
+    skipNextAffinityToastRef.current = true;
+    setAffinityToast(null);
+    setRecentAffinityPillar(null);
     setScreen('playing');
-    addLog(`Đã khôi phục ký ức từ Ô Lưu #${slotIdx + 1} (Quay về Seed cũ: ${restoredSeed}).`);
+    addLog(`🕰️ Ký ức từ trang thứ ${slotIdx + 1} đã được đánh thức giữa sương mù.`);
   };
 
   const deleteSaveSlot = (slotIdx: number) => {
@@ -687,11 +837,13 @@ export default function App() {
     (e) => e.uid === activeEnemyUid
   );
 
-  // Enter Combat against a map enemy instance
+  // Enter Combat against a map enemy instance (locks map input & pauses AI loop)
   const startCombatWithEnemy = useCallback(
     (enemyInst: MapEnemyInstance) => {
       const tpl = CONFIG.ENEMIES[enemyInst.templateId];
       if (!tpl) return;
+      isInputLockedRef.current = true;
+      setIsInputLocked(true);
       setActiveEnemyUid(enemyInst.uid);
       const defaultLimb =
         enemyInst.limbs.find((l) => l.isWeaponArm && l.hp > 0)?.id ||
@@ -705,8 +857,8 @@ export default function App() {
       setCombatLogs([
         `⚔️ CHẠM TRÁN: ${enemyInst.customName || tpl.name}!`,
         enemyInst.isTutorialGatekeeper
-          ? '💡 MẸO TÂN THỦ: Nhắm chặt [Tay Phải (Kiếm Gãy)] của Kẻ Gác Cổng trước để phế bỏ vũ khí!'
-          : `Quan sát kỹ các khớp chi của ${tpl.name} trước khi tung đòn.`,
+          ? 'Ánh thép gỉ sét loé lên trước cổng sắt; cánh tay phải của tên gác ngục vung thanh kiếm gãy.'
+          : `Quan sát kỹ từng cử động của ${tpl.name} trong màn sương tối.`,
       ]);
       setScreen('combat');
       setInteractionMenu(null);
@@ -714,6 +866,52 @@ export default function App() {
       addLog(`⚔️ Giao chiến với ${enemyInst.customName || tpl.name}!`);
     },
     [addLog]
+  );
+
+  const triggerCombat = useCallback(
+    (enemyInst: MapEnemyInstance) => {
+      startCombatWithEnemy(enemyInst);
+    },
+    [startCombatWithEnemy]
+  );
+
+  // Cleanly exit combat: reset inCombat & isInputLocked, and remove defeated enemy from active `enemies` list (archiving to `corpses`)
+  const handleCombatEnd = useCallback(
+    (opts?: { defeatedEnemyUid?: string; fled?: boolean; nextScreen?: ScreenMode }) => {
+      const roomId = worldRef.current.currentRoomId;
+      if (opts?.defeatedEnemyUid) {
+        setWorld((prev) => {
+          const curRoom = prev.rooms[roomId];
+          if (!curRoom) return prev;
+          const defeatedInst = curRoom.enemies.find((e) => e.uid === opts.defeatedEnemyUid);
+          const remainingEnemies = curRoom.enemies.filter((e) => e.uid !== opts.defeatedEnemyUid);
+          const existingCorpses = curRoom.corpses || [];
+          const nextCorpses =
+            defeatedInst && !existingCorpses.some((c) => c.uid === defeatedInst.uid)
+              ? [...existingCorpses, { ...defeatedInst, defeated: true }]
+              : existingCorpses;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [roomId]: {
+                ...curRoom,
+                enemies: remainingEnemies,
+                corpses: nextCorpses,
+              },
+            },
+          };
+        });
+      }
+      isInputLockedRef.current = false;
+      setIsInputLocked(false);
+      setActiveEnemyUid(null);
+      setActiveActorIdx(0);
+      setCombatMenuMode('main');
+      setFocusedLimbId(null);
+      setScreen(opts?.nextScreen || 'playing');
+    },
+    []
   );
 
   // Room transition helper that updates Fog-of-War visitedRoomIds, resets old room enemy Chase states, and updates Area Banner
@@ -778,7 +976,7 @@ export default function App() {
   // Use Brown Vial on Cracked Wall (Shortcut / Secret Chamber)
   const useBrownVialOnMap = useCallback((): boolean => {
     if ((player.inventory.brown_vial || 0) <= 0) {
-      const msg = '⚠️ Bạn không còn Lọ Nâu (Dung Dịch Nổ) trong túi!';
+      const msg = '⚠️ Trong hành trang không còn Lọ Nâu nào.';
       setInvFeedback(msg);
       addLog(msg);
       setLogOverlayVisible(true);
@@ -790,9 +988,10 @@ export default function App() {
     let blown = false;
     const newGrid = room.grid.map((r) => [...r]);
 
-    // Check within 2 tiles of playerPos so standing near a Cracked Wall reliably blows it open
-    for (let dy = -2; dy <= 2; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
+    // Check within Manhattan distance <= 1 of playerPos for an adjacent Cracked Wall
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (Math.abs(dx) + Math.abs(dy) > 1) continue;
         const nx = playerPos.x + dx;
         const ny = playerPos.y + dy;
         if (ny >= 0 && ny < roomH && nx >= 0 && nx < roomW) {
@@ -806,7 +1005,7 @@ export default function App() {
 
     if (!blown) {
       const warnMsg =
-        '⚠️ Chưa thể kích nổ (Lọ Nâu vẫn còn nguyên)! Hãy di chuyển đến đứng gần bức Tường Đá Rạn Nứt rồi nhấn phím [F] để phá tường mở Mật Thất!';
+        '⚠️ Quanh đây chưa thấy bức tường đá rạn nứt nào để châm nổ Lọ Nâu.';
       setInvFeedback(warnMsg);
       addLog(warnMsg);
       setLogOverlayVisible(true);
@@ -832,7 +1031,7 @@ export default function App() {
         },
       },
     }));
-    const okMsg = '💥 ẦM! Lọ Nâu phá tung bức tường nứt, mở toang khoang Mật Thất ẩn giấu!';
+    const okMsg = '💥 ẦM! Lọ Nâu nổ tung xé toạc bức tường nứt, hé lộ khoang Mật Thất ẩn giấu.';
     setInvFeedback(okMsg);
     addLog(okMsg);
     setLogOverlayVisible(true);
@@ -845,7 +1044,7 @@ export default function App() {
     setInteractionMenu({
       title: 'TƯỜNG ĐÁ RẠN NỨT',
       description:
-        'Bức tường đá có nhiều vết nứt sâu dẫn vào Mật Thất ẩn giấu. Bạn có muốn châm nổ bức tường bằng Lọ Nâu (Thuốc Nổ) không?',
+        'Bức tường đá có nhiều vết nứt sâu dẫn vào Mật Thất ẩn giấu. Bạn có muốn châm nổ bức tường bằng Lọ Nâu không?',
       selectedIndex: 0,
       choices: [
         {
@@ -976,14 +1175,22 @@ export default function App() {
               }
               const useWhite = (player.inventory.green_herb || 0) <= 0;
               const secondBookId = CONFIG.BOOKS[1].id;
+              const gainedHolyAff = !player.holyMagicLocked;
               setPlayer((prev) => ({
                 ...prev,
                 energyStones: prev.energyStones + 2,
+                affinities: {
+                  ...prev.affinities,
+                  holyMother: prev.holyMagicLocked
+                    ? prev.affinities.holyMother
+                    : prev.affinities.holyMother + 1,
+                },
                 readBookIds: prev.readBookIds.includes(secondBookId)
                   ? prev.readBookIds
                   : [...prev.readBookIds, secondBookId],
                 inventory: {
                   ...prev.inventory,
+                  energy_stone: (prev.inventory.energy_stone ?? prev.energyStones) + 2,
                   green_herb: useWhite
                     ? prev.inventory.green_herb
                     : Math.max(0, (prev.inventory.green_herb || 0) - 1),
@@ -995,7 +1202,9 @@ export default function App() {
               }));
               setInteractionMenu(null);
               addLog(
-                '✨ Giáo Sĩ Mù trao tặng +2 Đá Năng Lượng và [Sổ Kiểm Kê Tế Lễ]!'
+                `✨ Giáo Sĩ Mù trao tặng +2 Đá Năng Lượng và [Sổ Kiểm Kê Tế Lễ]${
+                  gainedHolyAff ? ' (+1 Thiện cảm Thánh Mẫu)' : ''
+                }!`
               );
               setLogOverlayVisible(true);
             },
@@ -1035,11 +1244,18 @@ export default function App() {
                 ),
             },
             {
-              label: '✝ Giải thoát nhẹ nhàng (-10 Tha Hóa & nhận [Mảnh Linh Hồn Thuần Khiết])',
+              label: '✝ Giải thoát nhẹ nhàng (-10 Tha Hóa, +1 Thiện cảm Thánh Mẫu & [Mảnh Linh Hồn Thuần Khiết])',
               onSelect: () => {
+                const gainedHoly = !player.holyMagicLocked;
                 setPlayer((prev) => ({
                   ...prev,
                   corruption: Math.max(0, prev.corruption - 10),
+                  affinities: {
+                    ...prev.affinities,
+                    holyMother: prev.holyMagicLocked
+                      ? prev.affinities.holyMother
+                      : prev.affinities.holyMother + 1,
+                  },
                   inventory: {
                     ...prev.inventory,
                     pure_soul_shard: (prev.inventory.pure_soul_shard || 0) + 1,
@@ -1048,27 +1264,34 @@ export default function App() {
                 }));
                 setInteractionMenu(null);
                 addLog(
-                  '✝️ Bạn rút nhẹ các ống kim loại, giải thoát linh hồn Thánh Tử Thứ 12 (-10 Tha Hóa, nhận [Mảnh Linh Hồn Thuần Khiết]).'
+                  `✝️ Bạn nhẹ nhàng tháo gỡ các ống đồng lạnh lẽo, trả lại sự thanh thản cho Thánh Tử Thứ 12 và thu nhận [Mảnh Linh Hồn Thuần Khiết]${
+                    gainedHoly ? ' (+1 Thiện cảm Thánh Mẫu)' : ''
+                  }.`
                 );
                 setLogOverlayVisible(true);
               },
             },
             {
-              label: '🩸 Rút cạn máu vàng tế đàn (+15 Tha Hóa, +2 Đá NL & +2 Bình Máu)',
+              label: '🩸 Rút cạn máu vàng tế đàn (+15 Tha Hóa, +1 Thiện cảm Ác Quỷ, +2 Đá NL & +2 Bình Máu)',
               onSelect: () => {
                 setPlayer((prev) => ({
                   ...prev,
                   corruption: Math.min(100, prev.corruption + 15),
                   energyStones: prev.energyStones + 2,
+                  affinities: {
+                    ...prev.affinities,
+                    demonicPact: prev.affinities.demonicPact + 1,
+                  },
                   inventory: {
                     ...prev.inventory,
+                    energy_stone: (prev.inventory.energy_stone ?? prev.energyStones) + 2,
                     blood_vial: (prev.inventory.blood_vial || 0) + 2,
                   },
                   questFlags: { ...prev.questFlags, child12Resolved: true },
                 }));
                 setInteractionMenu(null);
                 addLog(
-                  '🩸 Bạn rút cạn ống máu vàng của Thánh Tử Thứ 12 (+15 Tha Hóa, +2 Đá NL, +2 Bình Máu).'
+                  '🩸 Bạn rút cạn dòng máu vàng từ tế đàn của Thánh Tử Thứ 12, thu về Đá Năng Lượng, hai Bình Máu đặc quánh (+1 Thiện cảm Ác Quỷ).'
                 );
                 setLogOverlayVisible(true);
               },
@@ -1143,6 +1366,7 @@ export default function App() {
                   silverCoins: prev.silverCoins + 12,
                   inventory: {
                     ...prev.inventory,
+                    silver_coin: (prev.inventory.silver_coin ?? prev.silverCoins) + 12,
                     knight_ring: (prev.inventory.knight_ring || 0) + 1,
                   },
                   questFlags: { ...prev.questFlags, brokenKnightResolved: true },
@@ -1150,7 +1374,7 @@ export default function App() {
                 markCoordLooted(tileCoordKey);
                 setInteractionMenu(null);
                 addLog(
-                  '⚔️ Bạn ban nhát kiếm giải thoát cho Kỵ Sĩ Gãy Kiếm (+8 Tha Hóa, +12 Bạc, nhận [Nhẫn Kỵ Sĩ]).'
+                  '⚔️ Bạn ban nhát kiếm ân huệ kết thúc nỗi thống khổ của Kỵ Sĩ Gãy Kiếm, thu lại [Nhẫn Kỵ Sĩ Của Vaelis] cùng túi bạc.'
                 );
                 setLogOverlayVisible(true);
               },
@@ -1284,7 +1508,7 @@ export default function App() {
                 }));
                 setInteractionMenu(null);
                 addLog(
-                  '💍✨ Quý Cô ôm chiếc nhẫn bật khóc: Hồi đầy Sinh Lực & Tâm Trí, nhận [Chìa Khóa Tư Liệu Mật Goethe] & Hồ Sơ Tội Đồ!'
+                  '💍✨ Quý Cô ôm chiếc nhẫn bật khóc: Sinh lực và tâm trí bạn được xoa dịu, nhận [Chìa Khóa Tư Liệu Mật Goethe] cùng Hồ Sơ Tội Đồ.'
                 );
                 setLogOverlayVisible(true);
               },
@@ -1296,11 +1520,15 @@ export default function App() {
                   ...prev,
                   corruption: Math.min(100, prev.corruption + 15),
                   energyStones: prev.energyStones + 2,
+                  inventory: {
+                    ...prev.inventory,
+                    energy_stone: (prev.inventory.energy_stone ?? prev.energyStones) + 2,
+                  },
                   questFlags: { ...prev.questFlags, glassLadyResolved: true },
                 }));
                 setInteractionMenu(null);
                 addLog(
-                  '💔 Bạn đập vỡ Lồng Kính lấy đi mảnh kết tinh (+15 Tha Hóa, +2 Đá Năng Lượng).'
+                  '💔 Bạn đập vỡ Lồng Kính đoạt lấy hai viên Đá Năng Lượng giữa tiếng khóc nghẹn tắt dần.'
                 );
                 setLogOverlayVisible(true);
               },
@@ -1384,11 +1612,15 @@ export default function App() {
         ];
         if (!player.questFlags?.chroniclerTalked) {
           choices.push({
-            label: '📜 Nhận [Mảnh Thần Chú Tái Thiết] & Giải mã Cổ Thư',
+            label: '📜 Nhận [Mảnh Thần Chú Tái Thiết] & Giải mã Cổ Thư (+1 Thiện cảm Hư Vô)',
             onSelect: () => {
               const loreBooks = CONFIG.BOOKS.slice(0, 4).map((b) => b.id);
               setPlayer((prev) => ({
                 ...prev,
+                affinities: {
+                  ...prev.affinities,
+                  primordialVoid: prev.affinities.primordialVoid + 1,
+                },
                 readBookIds: Array.from(new Set([...prev.readBookIds, ...loreBooks])),
                 inventory: {
                   ...prev.inventory,
@@ -1397,40 +1629,51 @@ export default function App() {
                 questFlags: { ...prev.questFlags, chroniclerTalked: true },
               }));
               setInteractionMenu(null);
-              addLog(
-                '📜 Kẻ Chép Sử Hóa Thạch trao [3 Mảnh Thần Chú Tái Thiết] & giải mã Cổ Thư #1–4!'
-              );
-              setLogOverlayVisible(true);
-            },
+                addLog(
+                  '📜 Kẻ Chép Sử Hóa Thạch trao [Mảnh Thần Chú Tái Thiết] cùng những trang cổ thư bị phong ấn (+1 Thiện cảm Hư Vô).'
+                );
+                setLogOverlayVisible(true);
+              },
+            });
+          }
+          choices.push({ label: 'Rời đi', onSelect: closePrompt });
+          setInteractionMenu({
+            title: 'KẺ CHÉP SỬ HÓA THẠCH',
+            description: speech,
+            selectedIndex: 0,
+            choices,
           });
-        }
-        choices.push({ label: 'Rời đi', onSelect: closePrompt });
-        setInteractionMenu({
-          title: 'KẺ CHÉP SỬ HÓA THẠCH',
-          description: speech,
-          selectedIndex: 0,
-          choices,
-        });
-        return;
-      }
-
-      if (npcId === 'npc_smuggler') {
-        if (player.npcFlags.smugglerClosed) {
-          addLog(
-            'Kẻ Buôn Lậu Đeo Mặt Nạ đã khóa chặt sạp hàng và biến mất vì bạn trả giá quá rẻ mạt.'
-          );
-          setLogOverlayVisible(true);
           return;
         }
-        const speech =
-          customSpeech ||
-          `“Hề hề... Túi của ngươi hiện có ${player.silverCoins} Đồng Bạc. Kể từ khi sương mù khóa chặt Thung Lũng, đám giáo sĩ đều bỏ lại bạc trắng cả. Chọn món hàng ngươi cần đi!”`;
-        const wares: Array<{ id: string; name: string; price: number }> = [
-          { id: 'brown_vial', name: 'Lọ Nâu (Thuốc Nổ Phá Tường)', price: 6 },
-          { id: 'red_vial', name: 'Lọ Đỏ (Axit Sôi Mù Mắt)', price: 6 },
-          { id: 'bone_saw', name: 'Cưa Xương Rỉ Máu', price: 8 },
-          { id: 'butcher_cleaver', name: 'Đao Phay Đồ Tể', price: 12 },
-        ];
+
+        if (npcId === 'npc_smuggler') {
+          if (player.npcFlags.smugglerClosed) {
+            addLog(
+              'Kẻ Buôn Lậu Đeo Mặt Nạ đã khóa chặt sạp hàng và biến mất vào bóng tối.'
+            );
+            setLogOverlayVisible(true);
+            return;
+          }
+          const coinsBought = player.npcFlags.smugglerCoinsBought || 0;
+          const remainingCoins = Math.max(0, 2 - coinsBought);
+          const speech =
+            customSpeech ||
+            `“Hề hề... Túi của ngươi hiện có ${player.silverCoins} Đồng Bạc. Kể từ khi sương mù khóa chặt Thung Lũng, đám giáo sĩ đều bỏ lại bạc trắng cả. Chọn món hàng ngươi cần đi!”`;
+          const wares: Array<{ id: string; name: string; price: number }> = [
+            { id: 'brown_vial', name: 'Lọ Nâu', price: 6 },
+            { id: 'red_vial', name: 'Lọ Đỏ', price: 6 },
+            { id: 'bone_saw', name: 'Cưa Xương Rỉ Máu', price: 8 },
+            { id: 'butcher_cleaver', name: 'Đao Phay Đồ Tể', price: 12 },
+            ...(remainingCoins > 0
+              ? [
+                  {
+                    id: 'lucky_coin',
+                    name: `Đồng Xu May Mắn (Còn ${remainingCoins}/2)`,
+                    price: 24,
+                  },
+                ]
+              : []),
+          ];
         const choices: InteractionChoice[] = [
           {
             label: '"Ngươi lấy những lọ thuốc và vũ khí này từ đâu?"',
@@ -1450,21 +1693,35 @@ export default function App() {
                 );
                 return;
               }
-              setPlayer((prev) => ({
-                ...prev,
-                silverCoins: prev.silverCoins - w.price,
-                unlockedWeapons:
-                  w.id === 'butcher_cleaver' && !prev.unlockedWeapons.includes('butcher_cleaver')
-                    ? [...prev.unlockedWeapons, 'butcher_cleaver']
-                    : prev.unlockedWeapons,
-                inventory:
-                  w.id === 'butcher_cleaver'
-                    ? prev.inventory
-                    : {
-                        ...prev.inventory,
-                        [w.id]: (prev.inventory[w.id] || 0) + 1,
-                      },
-              }));
+              setPlayer((prev) => {
+                const nextSilver = Math.max(0, prev.silverCoins - w.price);
+                return {
+                  ...prev,
+                  silverCoins: nextSilver,
+                  npcFlags:
+                    w.id === 'lucky_coin'
+                      ? {
+                          ...prev.npcFlags,
+                          smugglerCoinsBought: (prev.npcFlags.smugglerCoinsBought || 0) + 1,
+                        }
+                      : prev.npcFlags,
+                  unlockedWeapons:
+                    w.id === 'butcher_cleaver' && !prev.unlockedWeapons.includes('butcher_cleaver')
+                      ? [...prev.unlockedWeapons, 'butcher_cleaver']
+                      : prev.unlockedWeapons,
+                  inventory:
+                    w.id === 'butcher_cleaver'
+                      ? {
+                          ...prev.inventory,
+                          silver_coin: nextSilver,
+                        }
+                      : {
+                          ...prev.inventory,
+                          silver_coin: nextSilver,
+                          [w.id]: (prev.inventory[w.id] || 0) + 1,
+                        },
+                };
+              });
               setInteractionMenu(null);
               addLog(`💰 Đã mua [${w.name}] từ Kẻ Buôn Lậu với giá ${w.price} Đồng Bạc!`);
               setLogOverlayVisible(true);
@@ -1633,8 +1890,8 @@ export default function App() {
               setInteractionMenu(null);
               addLog(
                 canJoin
-                  ? '🤝💔 Bạn bẻ gãy xiềng xích giải cứu Thánh Tử Thứ 13! Đứa trẻ đã gia nhập Tổ Đội — hãy bảo vệ em ấy sống sót ra khỏi Cổng Sắt Ngoại Vi!'
-                  : '⚠️ Tổ đội đã đầy (4/4), bạn mới mở được khóa cũi sắt cho Thánh Tử 13 nhưng không thể đưa em vào đội hình cùng lúc!'
+                  ? '🤝💔 Bạn bẻ gãy xiềng xích giải cứu Thánh Tử Thứ 13! Đứa trẻ run rẩy nép sau lưng bạn, hướng về phía Cổng Sắt Ngoại Vi.'
+                  : '⚠️ Hàng ngũ đồng hành đã kín chỗ; bạn chỉ kịp mở khóa cũi sắt cho Thánh Tử Thứ 13.'
               );
               setLogOverlayVisible(true);
             },
@@ -1789,33 +2046,13 @@ export default function App() {
       setLogOverlayVisible(false);
     };
 
-    // Search offsets: 1-tile neighbors first, then 2-tile ring for multi-tile landmarks & NPCs
+    // Strictly scan current tile (0,0) and 4 orthogonal adjacent tiles (Manhattan distance <= 1)
     const searchOffsets: Array<[number, number]> = [
       [0, 0],
       [1, 0],
       [-1, 0],
       [0, 1],
       [0, -1],
-      [1, 1],
-      [-1, 1],
-      [1, -1],
-      [-1, -1],
-      [2, 0],
-      [-2, 0],
-      [0, 2],
-      [0, -2],
-      [2, 1],
-      [-2, 1],
-      [2, -1],
-      [-2, -1],
-      [1, 2],
-      [-1, 2],
-      [1, -2],
-      [-1, -2],
-      [2, 2],
-      [-2, 2],
-      [2, -2],
-      [-2, -2],
     ];
 
     const npcTileToModalMap: Record<string, string> = {
@@ -1835,23 +2072,12 @@ export default function App() {
     };
 
     for (const [dx, dy] of searchOffsets) {
+      if (Math.abs(dx) + Math.abs(dy) > 1) continue;
       const cx = playerPos.x + dx;
       const cy = playerPos.y + dy;
       if (cy < 0 || cy >= roomH || cx < 0 || cx >= roomW) continue;
       const tile = room.grid[cy][cx];
       const coordKey = `${cx},${cy}`;
-      const manhattan = Math.abs(dx) + Math.abs(dy);
-      const chebyshev = Math.max(Math.abs(dx), Math.abs(dy));
-
-      const isMultiTileOrNpc =
-        tile === TILE.HEXEN_ALTAR ||
-        tile === TILE.RITUAL_CIRCLE ||
-        tile === TILE.VOID_RIFT ||
-        tile === TILE.BOOKSHELF ||
-        Boolean(npcTileToModalMap[tile]);
-
-      if (!isMultiTileOrNpc && manhattan > 1) continue;
-      if (isMultiTileOrNpc && chebyshev > 2) continue;
 
       if (npcTileToModalMap[tile]) {
         if (tile === TILE.NPC_PRISONER && player.npcFlags.prisonerRecruited) continue;
@@ -1904,14 +2130,14 @@ export default function App() {
                     mind: Math.min(prev.maxMind, prev.mind + 30),
                   }));
                   addLog(
-                    '🛏️ Giấc ngủ bình yên hiếm hoi (+35 Sinh Lực, +30 Tâm Trí)! Hãy chọn Ô Lưu (1–5) để ghi lại hành trình.'
+                    '🛏️ Giấc ngủ bình yên hiếm hoi xoa dịu vết thương và tâm trí giữa bóng tối.'
                   );
                   setActiveModal('saves');
                   return;
                 }
                 triggerCoinToss(
-                  'NGỦ TRÊN GIƯỜNG ĐÁ CỔ & LƯU TIẾN TRÌNH',
-                  'Tung Đồng Xu Định Mệnh trước khi ngủ: Thắng sẽ hồi phục Sinh Lực và Tâm Trí; Thua sẽ bị ác mộng cào xé trong lúc ngủ trước khi mở bảng 5 Ô Lưu!',
+                  'GIẤC NGỦ',
+                  '',
                   (won, tier) => {
                     if (won && tier === 'win') {
                       setPlayer((prev) => ({
@@ -1920,7 +2146,7 @@ export default function App() {
                         mind: Math.min(prev.maxMind, prev.mind + 30),
                       }));
                       addLog(
-                        '🛏️ Giấc ngủ bình yên (+35 Sinh Lực, +30 Tâm Trí)! Hãy chọn Ô Lưu (1–5) để Lưu mới hoặc Lưu đè.'
+                        '🛏️ Giấc ngủ bình yên xoa dịu cơ thể rã rời và khôi phục tinh thần.'
                       );
                     } else if (won && tier === 'partial') {
                       setPlayer((prev) => ({
@@ -1929,7 +2155,7 @@ export default function App() {
                         mind: Math.min(prev.maxMind, prev.mind + 12),
                       }));
                       addLog(
-                        '🛏️ Giấc ngủ chập chờn (1 Ngửa 1 Sấp: +15 Sinh Lực, +12 Tâm Trí)! Hãy chọn Ô Lưu (1–5) để Lưu tiến trình.'
+                        '🛏️ Giấc ngủ chập chờn giữa tiếng thì thầm ngoài hành lang chỉ giúp bạn hồi sức đôi chút.'
                       );
                     } else {
                       setPlayer((prev) => ({
@@ -1938,7 +2164,7 @@ export default function App() {
                         mind: Math.max(0, prev.mind - 12),
                       }));
                       addLog(
-                        '⚠️ Cơn ác mộng cào xé trong lúc ngủ (-14 Sinh Lực, -12 Tâm Trí)! Hãy chọn Ô Lưu (1–5) để Lưu tiến trình.'
+                        '⚠️ Cơn ác mộng cào xé tâm can trong lúc thiếp đi trên phiến đá lạnh!'
                       );
                     }
                     setActiveModal('saves');
@@ -1959,11 +2185,11 @@ export default function App() {
         return;
       }
 
-      // CRATE: Instant loot on [F] — Grants AT MOST 1 random item (1 món bất kì)
+      // CRATE: Instant loot on [F] — High food spawn rate (~60% overall) + supplies (12% rare Lucky Coin)
       if (tile === TILE.CRATE && !room.lootedCoords.includes(coordKey)) {
         sfx.playHealOrChime();
         const rng = new SeededRNG(`${world.seed}_${room.id}_${coordKey}`);
-        const lootTable = [
+        const supplyTable = [
           'brown_vial',
           'red_vial',
           'blue_vial',
@@ -1972,43 +2198,64 @@ export default function App() {
           'red_herb',
           'white_herb',
           'bandage',
-          'dried_meat',
-          'moldy_bread',
           'bone_saw',
           'lockpick',
           'torch',
         ];
-        const item1 = rng.pick(lootTable);
+        const foodTable = ['dried_meat', 'moldy_bread', 'moldy_bread'];
+
+        let item1: string;
+        let bonusFood: string | null = null;
+        if (rng.chance(0.12)) {
+          item1 = 'lucky_coin';
+        } else if (rng.chance(0.52)) {
+          item1 = rng.pick(foodTable);
+        } else {
+          item1 = rng.pick(supplyTable);
+          if (rng.chance(0.35)) {
+            bonusFood = rng.pick(foodTable);
+          }
+        }
 
         setPlayer((prev) => ({
           ...prev,
           inventory: {
             ...prev.inventory,
             [item1]: (prev.inventory[item1] || 0) + 1,
+            ...(bonusFood ? { [bonusFood]: (prev.inventory[bonusFood] || 0) + 1 } : {}),
           },
         }));
 
-        setWorld((prev) => ({
-          ...prev,
-          rooms: {
-            ...prev.rooms,
-            [room.id]: {
-              ...room,
-              lootedCoords: [...room.lootedCoords, coordKey],
+        setWorld((prev) => {
+          const curRoom = prev.rooms[room.id] || room;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [room.id]: {
+                ...curRoom,
+                lootedCoords: curRoom.lootedCoords.includes(coordKey)
+                  ? curRoom.lootedCoords
+                  : [...curRoom.lootedCoords, coordKey],
+              },
             },
-          },
-        }));
-        addLog(`📦 Lục thùng gỗ tiếp tế: Nhận +1 ${CONFIG.ITEMS[item1]?.name || item1}!`);
+          };
+        });
+        addLog(
+          item1 === 'lucky_coin'
+            ? '📦✨ Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Đồng Xu May Mắn] ẩn dưới lớp rơm!'
+            : bonusFood
+            ? `📦 Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}] cùng [${CONFIG.ITEMS[bonusFood]?.name || bonusFood}].`
+            : `📦 Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}].`
+        );
         setLogOverlayVisible(true);
         return;
       }
 
-      // WILD HERB: Instant forage on [F]
+      // WILD HERB: Instant forage on [F] matching the exact herb color rendered on the map
       if (tile === TILE.HERB && !room.lootedCoords.includes(coordKey)) {
         sfx.playHealOrChime();
-        const rng = new SeededRNG(`${world.seed}_herb_${room.id}_${coordKey}`);
-        const herbPool = ['green_herb', 'red_herb', 'white_herb', 'calm_flower'];
-        const h1 = rng.pick(herbPool);
+        const h1 = getHerbTypeAtCoord(room, cx, cy, world.seed);
 
         setPlayer((prev) => ({
           ...prev,
@@ -2018,25 +2265,32 @@ export default function App() {
           },
         }));
 
-        setWorld((prev) => ({
-          ...prev,
-          rooms: {
-            ...prev.rooms,
-            [room.id]: {
-              ...room,
-              lootedCoords: [...room.lootedCoords, coordKey],
+        setWorld((prev) => {
+          const curRoom = prev.rooms[room.id] || room;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [room.id]: {
+                ...curRoom,
+                lootedCoords: curRoom.lootedCoords.includes(coordKey)
+                  ? curRoom.lootedCoords
+                  : [...curRoom.lootedCoords, coordKey],
+              },
             },
-          },
-        }));
-        addLog(`🌿 Hái thảo dược hoang dã: Nhận +1 ${CONFIG.ITEMS[h1]?.name || h1}!`);
+          };
+        });
+        addLog(`🌿 Hái được nhành [${CONFIG.ITEMS[h1]?.name || h1}] mọc bên kẽ đá ẩm.`);
         setLogOverlayVisible(true);
         return;
       }
 
-      // CHEST: Grants AT MOST 2 items (tối đa 2 món). Partial (1 Heads 1 Tails with Shift) gives lesser items.
+      // CHEST: 45% sealed chests require a Coin Toss (or Lockpick) to open; grants gear, rare vial, high chance of food rations (~60%), and 28% Lucky Coin
       if (tile === TILE.CHEST && !room.lootedCoords.includes(coordKey)) {
-        const isSecretChamberChest = room.secretWallBlown || cy <= 2;
-        const grantChestRewards = (tier: CoinOutcomeTier) => {
+        const lockRng = new SeededRNG(`${world.seed}_chest_lock_${room.id}_${coordKey}`);
+        const requiresCoinToss = lockRng.chance(0.45);
+
+        const openChestAndGrantRewards = (extraHealthDelta = 0, prefixLog?: string) => {
           const rng = new SeededRNG(`${world.seed}_chest_${room.id}_${coordKey}`);
           const allGearIds = Object.keys(GEAR_ITEMS).filter(
             (g) => !player.unlockedGear.includes(g)
@@ -2048,168 +2302,136 @@ export default function App() {
             (w) => w !== 'bite_headbutt' && !player.unlockedWeapons.includes(w)
           );
 
-          setWorld((prev) => ({
-            ...prev,
-            rooms: {
-              ...prev.rooms,
-              [room.id]: {
-                ...room,
-                lootedCoords: [...room.lootedCoords, coordKey],
+          setWorld((prev) => {
+            const curRoom = prev.rooms[room.id] || room;
+            return {
+              ...prev,
+              rooms: {
+                ...prev.rooms,
+                [room.id]: {
+                  ...curRoom,
+                  lootedCoords: curRoom.lootedCoords.includes(coordKey)
+                    ? curRoom.lootedCoords
+                    : [...curRoom.lootedCoords, coordKey],
+                },
               },
+            };
+          });
+
+          const rollEquipType = rng.next();
+          const rareVials = ['white_vial', 'purple_vial', 'blue_vial', 'silver_sword_oil'];
+          const vialId = rng.pick(rareVials);
+          const foundLuckyCoin = rng.chance(0.28);
+          const hasFood = rng.chance(0.6);
+          const foodId = rng.chance(0.62) ? 'dried_meat' : 'moldy_bread';
+          const foodQty = hasFood ? (rng.chance(0.3) ? 2 : 1) : 0;
+          let equipRewardName = '';
+
+          const applyRewards = (
+            prev: PlayerState,
+            updates: Partial<Pick<PlayerState, 'unlockedGear' | 'unlockedShields' | 'unlockedWeapons'>>
+          ): PlayerState => ({
+            ...prev,
+            ...updates,
+            hp:
+              extraHealthDelta < 0
+                ? Math.max(1, prev.hp + extraHealthDelta)
+                : prev.hp,
+            inventory: {
+              ...prev.inventory,
+              [vialId]: (prev.inventory[vialId] || 0) + 1,
+              ...(foodQty > 0 ? { [foodId]: (prev.inventory[foodId] || 0) + foodQty } : {}),
+              ...(foundLuckyCoin ? { lucky_coin: (prev.inventory.lucky_coin || 0) + 1 } : {}),
             },
-          }));
+          });
 
-          if (tier === 'win') {
-            // Win (1 coin win, or 2 coins both win): 1 Rare Equipment/Weapon + 1 Rare Vial (Max 2 items)
-            const rollEquipType = rng.next();
-            const rareVials = ['white_vial', 'purple_vial', 'blue_vial', 'silver_sword_oil'];
-            const vialId = rng.pick(rareVials);
-            let equipRewardName = '';
-
-            if (rollEquipType < 0.45 && allGearIds.length > 0) {
-              const pickedGear = rng.pick(allGearIds);
-              equipRewardName = GEAR_ITEMS[pickedGear]?.name || pickedGear;
-              setPlayer((prev) => ({
-                ...prev,
+          if (rollEquipType < 0.45 && allGearIds.length > 0) {
+            const pickedGear = rng.pick(allGearIds);
+            equipRewardName = GEAR_ITEMS[pickedGear]?.name || pickedGear;
+            setPlayer((prev) =>
+              applyRewards(prev, {
                 unlockedGear: prev.unlockedGear.includes(pickedGear)
                   ? prev.unlockedGear
                   : [...prev.unlockedGear, pickedGear],
-                inventory: {
-                  ...prev.inventory,
-                  [vialId]: (prev.inventory[vialId] || 0) + 1,
-                },
-              }));
-            } else if (rollEquipType < 0.7 && allShieldIds.length > 0) {
-              const pickedShield = rng.pick(allShieldIds);
-              equipRewardName = CONFIG.SHIELDS[pickedShield]?.name || pickedShield;
-              setPlayer((prev) => ({
-                ...prev,
+              })
+            );
+          } else if (rollEquipType < 0.7 && allShieldIds.length > 0) {
+            const pickedShield = rng.pick(allShieldIds);
+            equipRewardName = CONFIG.SHIELDS[pickedShield]?.name || pickedShield;
+            setPlayer((prev) =>
+              applyRewards(prev, {
                 unlockedShields: prev.unlockedShields.includes(pickedShield)
                   ? prev.unlockedShields
                   : [...prev.unlockedShields, pickedShield],
-                inventory: {
-                  ...prev.inventory,
-                  [vialId]: (prev.inventory[vialId] || 0) + 1,
-                },
-              }));
-            } else {
-              const chosenWeapon =
-                weaponKeys.length > 0 ? rng.pick(weaponKeys) : 'claymore_greatsword';
-              equipRewardName = CONFIG.WEAPONS[chosenWeapon]?.name || chosenWeapon;
-              setPlayer((prev) => ({
-                ...prev,
+              })
+            );
+          } else {
+            const chosenWeapon =
+              weaponKeys.length > 0 ? rng.pick(weaponKeys) : 'claymore_greatsword';
+            equipRewardName = CONFIG.WEAPONS[chosenWeapon]?.name || chosenWeapon;
+            setPlayer((prev) =>
+              applyRewards(prev, {
                 unlockedWeapons: prev.unlockedWeapons.includes(chosenWeapon)
                   ? prev.unlockedWeapons
                   : [...prev.unlockedWeapons, chosenWeapon],
-                inventory: {
-                  ...prev.inventory,
-                  [vialId]: (prev.inventory[vialId] || 0) + 1,
-                },
-              }));
-            }
-
-            sfx.playHealOrChime();
-            addLog(
-              `🗝️ Mở Rương Kho Báu thành công (2 vật phẩm): Thu được [${equipRewardName}] và +1 [${CONFIG.ITEMS[vialId]?.name}]!`
-            );
-          } else if (tier === 'partial') {
-            // Partial (Shift 2 coins -> 1 Heads + 1 Tails): Inferior loot compared to 1-coin win (Max 2 common items)
-            const common1 = rng.pick(['bandage', 'green_herb', 'dried_meat']);
-            const common2 = rng.pick(['red_vial', 'moldy_bread', 'torch']);
-            setPlayer((prev) => ({
-              ...prev,
-              inventory: {
-                ...prev.inventory,
-                [common1]: (prev.inventory[common1] || 0) + 1,
-                [common2]: (prev.inventory[common2] || 0) + 1,
-              },
-            }));
-            sfx.playHealOrChime();
-            addLog(
-              `🗝️⚖️ Mở Rương (Kết quả 1 Ngửa – 1 Sấp): Tránh được bẫy nhưng chỉ lấy được 2 món thường (+1 ${CONFIG.ITEMS[common1]?.name}, +1 ${CONFIG.ITEMS[common2]?.name})!`
-            );
-          } else {
-            // Lose: Poison needle trap + only 1 salvaged item
-            const salvaged = rng.pick(['bandage', 'red_vial']);
-            setPlayer((prev) => ({
-              ...prev,
-              hp: Math.max(5, prev.hp - 15),
-              statuses: { ...prev.statuses, poisoned: true },
-              inventory: {
-                ...prev.inventory,
-                [salvaged]: (prev.inventory[salvaged] || 0) + 1,
-              },
-            }));
-            addLog(
-              `🩸 Bẫy kim độc trong Rương Sắt phóng ra (-15 Sinh Lực & Trúng Độc), bạn chỉ vớt vát được +1 [${CONFIG.ITEMS[salvaged]?.name}]!`
+              })
             );
           }
+
+          sfx.playHealOrChime();
+          const foodPart =
+            foodQty > 0
+              ? ` & +${foodQty} [${CONFIG.ITEMS[foodId]?.name || foodId}]`
+              : '';
+          const coinPart = foundLuckyCoin ? ' & 🪙 +1 [Đồng Xu May Mắn]' : '';
+          addLog(
+            `${prefixLog ? `${prefixLog} ` : ''}🗝️ Mở nắp rương cổ: Thu được [${equipRewardName}], [${CONFIG.ITEMS[vialId]?.name || vialId}]${foodPart}${coinPart}.`
+          );
           setLogOverlayVisible(true);
         };
 
-        const chestChoices: InteractionChoice[] = [
-          {
-            label: isSecretChamberChest
-              ? 'Mở Rương Kho Báu Mật Thất'
-              : 'Mở nắp rương sắt (Tung Đồng Xu Định Mệnh)',
-            onSelect: () => {
-              setInteractionMenu(null);
-              if (isSecretChamberChest) {
-                grantChestRewards('win');
-                return;
-              }
-              triggerCoinToss(
-                'MỞ RƯƠNG SẮT CỔ ĐẠI',
-                'Tung Đồng Xu để mở khóa an toàn: Thắng nhận chiến lợi phẩm quý; Thua dính bẫy kim độc!',
-                (_won, tier) => grantChestRewards(tier),
-                (player.inventory.lockpick || 0) > 0
-                  ? () => {
-                      setPlayer((prev) => ({
-                        ...prev,
-                        inventory: {
-                          ...prev.inventory,
-                          lockpick: Math.max(0, (prev.inventory.lockpick || 0) - 1),
-                        },
-                      }));
-                      grantChestRewards('win');
-                      addLog(
-                        '🗝️ Bạn dùng [Chìa Khóa Vạn Năng] bẻ khóa êm ru mà không kích hoạt bẫy kim độc!'
-                      );
-                    }
-                  : undefined
-              );
-            },
-          },
-        ];
-
-        if (!isSecretChamberChest && (player.inventory.lockpick || 0) > 0) {
-          chestChoices.push({
-            label: `Dùng Chìa Khóa Vạn Năng mở an toàn (Còn ${player.inventory.lockpick})`,
-            onSelect: () => {
-              setInteractionMenu(null);
-              setPlayer((prev) => ({
-                ...prev,
-                inventory: {
-                  ...prev.inventory,
-                  lockpick: Math.max(0, (prev.inventory.lockpick || 0) - 1),
-                },
-              }));
-              grantChestRewards('win');
-              addLog('🗝️ Bạn dùng [Chìa Khóa Vạn Năng] bẻ khóa êm ru mà không kích hoạt bẫy kim độc!');
-              setLogOverlayVisible(true);
-            },
-          });
+        if (!requiresCoinToss) {
+          openChestAndGrantRewards();
+          return;
         }
 
-        chestChoices.push({ label: 'Rời đi', onSelect: closePrompt });
+        const lockpickCount = player.inventory.lockpick || 0;
+        const useLockpick =
+          lockpickCount > 0
+            ? () => {
+                setPlayer((prev) => ({
+                  ...prev,
+                  inventory: {
+                    ...prev.inventory,
+                    lockpick: Math.max(0, (prev.inventory.lockpick || 0) - 1),
+                  },
+                }));
+                openChestAndGrantRewards(0, '🔓 Chìa Khóa Vạn Năng lách khẽ qua ổ khóa cổ.');
+              }
+            : undefined;
 
-        setInteractionMenu({
-          title: 'RƯƠNG SẮT CỔ ĐẠI',
-          description:
-            'Chiếc rương sắt cổ đại khóa chặt bằng chốt đồng.',
-          selectedIndex: 0,
-          choices: chestChoices,
-        });
+        triggerCoinToss(
+          'RƯƠNG NIÊM PHONG',
+          '',
+          (_won, tier) => {
+            if (tier === 'win') {
+              openChestAndGrantRewards();
+            } else if (tier === 'partial') {
+              openChestAndGrantRewards(
+                -6,
+                '🩸⚖️ Lưỡi châm sượt qua ngón tay nhưng chốt khóa đã bật tung.'
+              );
+            } else {
+              setPlayer((prev) => ({
+                ...prev,
+                hp: Math.max(1, prev.hp - 10),
+              }));
+              addLog('🩸 Mũi kim bật ra từ ổ khóa rương cổ. Nắp rương vẫn đóng chặt trong bóng tối.');
+              setLogOverlayVisible(true);
+            }
+          },
+          useLockpick
+        );
         return;
       }
 
@@ -2273,34 +2495,53 @@ export default function App() {
                   return;
                 }
 
-                // Skill Scroll Shelf: Requires Coin Toss!
+                // Skill Scroll Shelf (Chiến Kỹ only — God spells require Affinity at Hexen Altar!): Requires Coin Toss!
                 triggerCoinToss(
-                  'LỤC TÌM CUỘN BÍ KÍP KỸ NĂNG',
-                  'Tung Đồng Xu Định Mệnh để lục tìm Cuộn Bí Kíp giữa kệ sách mục nát.',
+                  'LỤC KỆ SÁCH',
+                  '',
                   (_won, tier) => {
                     if (tier === 'win') {
                       const uncollectedScrollSkills = CONFIG.SKILLS.filter(
                         (s) =>
+                          s.branch === 'Chiến Kỹ' &&
                           (player.skillLevels[s.id] || 0) === 0 &&
                           (player.inventory[`scroll_${s.id}`] || 0) === 0
                       );
-                      const pickedSkill =
-                        uncollectedScrollSkills.length > 0
-                          ? rng.pick(uncollectedScrollSkills)
-                          : rng.pick(CONFIG.SKILLS);
-                      const scrollItemId = `scroll_${pickedSkill.id}`;
 
-                      setPlayer((prev) => ({
-                        ...prev,
-                        inventory: {
-                          ...prev.inventory,
-                          [scrollItemId]: (prev.inventory[scrollItemId] || 0) + 1,
-                        },
-                      }));
-                      sfx.playHealOrChime();
-                      addLog(
-                        `📜✨ Tìm thấy [${CONFIG.ITEMS[scrollItemId]?.name || pickedSkill.name}] trên kệ sách! (Mở Túi [I] đọc để lĩnh hội Lv.1).`
-                      );
+                      if (uncollectedScrollSkills.length > 0) {
+                        const pickedSkill = rng.pick(uncollectedScrollSkills);
+                        const scrollItemId = `scroll_${pickedSkill.id}`;
+
+                        setPlayer((prev) => ({
+                          ...prev,
+                          inventory: {
+                            ...prev.inventory,
+                            [scrollItemId]: (prev.inventory[scrollItemId] || 0) + 1,
+                          },
+                        }));
+                        sfx.playHealOrChime();
+                        addLog(
+                          `📜✨ Thu nhận được [${CONFIG.ITEMS[scrollItemId]?.name || pickedSkill.name}]. Bấm Túi [I] để lĩnh hội Chiến Kỹ.`
+                        );
+                      } else {
+                        const rareArchiveItem = rng.pick([
+                          'blue_vial',
+                          'white_vial',
+                          'calm_flower',
+                          'green_herb',
+                        ]);
+                        setPlayer((prev) => ({
+                          ...prev,
+                          inventory: {
+                            ...prev.inventory,
+                            [rareArchiveItem]: (prev.inventory[rareArchiveItem] || 0) + 1,
+                          },
+                        }));
+                        sfx.playHealOrChime();
+                        addLog(
+                          `📜✨ Toàn bộ Chiến Kỹ cổ đã lĩnh hội, bạn tìm thấy [${CONFIG.ITEMS[rareArchiveItem]?.name}] cất giấu sau kệ sách.`
+                        );
+                      }
                     } else if (tier === 'partial') {
                       // 1 Heads + 1 Tails with Shift -> inferior reward (1 common herb/bandage instead of Scroll)
                       const lesserItem = rng.pick(['green_herb', 'bandage', 'white_herb']);
@@ -2312,12 +2553,12 @@ export default function App() {
                         },
                       }));
                       addLog(
-                        `📜⚖️ Kết quả 1 Ngửa – 1 Sấp: Không tìm thấy Cuộn Bí Kíp, chỉ nhặt được +1 [${CONFIG.ITEMS[lesserItem]?.name}] kẹp giữa khe tủ!`
+                        `📜⚖️ Cuộn giấy mục nát vỡ vụn giữa tay, chỉ sót lại [${CONFIG.ITEMS[lesserItem]?.name}] kẹp sau giá gỗ.`
                       );
                     } else {
                       // Lose -> Nothing!
                       addLog(
-                        '📜💨 Lục kệ sách thất bại: Chỉ toàn giấy mục nát và tro bụi, không tìm thấy cuốn sách nào!'
+                        '📜💨 Kệ sách chỉ toàn giấy mục nát và tro bụi.'
                       );
                     }
                     setLogOverlayVisible(true);
@@ -2417,7 +2658,7 @@ export default function App() {
                   },
                 }));
                 addLog(
-                  '🌌 Bạn hít sâu luồng Chướng Khí tím (-18 Tâm Trí, +8 Tha Hóa): Thiện cảm Hư Vô Nguyên Thủy tăng +1!'
+                  '🌌 Bạn hít sâu luồng Chướng Khí tím, tâm trí rúng động khi nghe rõ nhịp thở của Hư Vô Nguyên Thủy.'
                 );
                 setLogOverlayVisible(true);
               },
@@ -2465,7 +2706,7 @@ export default function App() {
                     },
                   },
                 }));
-                addLog('✝️ Ánh sáng trắng rực lên từ Vòng Tròn Cổ Ngữ: Thiện cảm Thánh Mẫu +1!');
+                addLog('✝️ Ánh sáng trắng bừng lên từ Vòng Tròn Cổ Ngữ, đáp lại lời cầu nguyện thanh sạch.');
                 setLogOverlayVisible(true);
               },
             },
@@ -2494,7 +2735,7 @@ export default function App() {
                   },
                 }));
                 addLog(
-                  '🩸 Máu tươi thấm vào cổ ngữ (-20 Sinh Lực, +10 Tha Hóa): Thiện cảm Ác Quỷ +1 & hồi +15 Tâm Trí!'
+                  '🩸 Máu tươi thấm vào cổ ngữ lạnh lẽo, khế ước bóng tối âm thầm đáp lời.'
                 );
                 setLogOverlayVisible(true);
               },
@@ -2556,25 +2797,24 @@ export default function App() {
       }
     }
 
-    // Check within 2 tiles for Cracked Wall (explosive interaction unified on [F])
-    for (let dy = -2; dy <= 2; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
-        const nx = playerPos.x + dx;
-        const ny = playerPos.y + dy;
-        if (ny >= 0 && ny < roomH && nx >= 0 && nx < roomW) {
-          if (room.grid[ny][nx] === TILE.CRACKED_WALL) {
-            promptCrackedWallExplosion();
-            return;
-          }
+    // Check directly adjacent tiles (Manhattan <= 1) for Cracked Wall (explosive interaction unified on [F])
+    for (const [dx, dy] of searchOffsets) {
+      if (Math.abs(dx) + Math.abs(dy) > 1) continue;
+      const nx = playerPos.x + dx;
+      const ny = playerPos.y + dy;
+      if (ny >= 0 && ny < roomH && nx >= 0 && nx < roomW) {
+        if (room.grid[ny][nx] === TILE.CRACKED_WALL) {
+          promptCrackedWallExplosion();
+          return;
         }
       }
     }
 
     // Check adjacent slain enemy corpse (Supports Looting, Necromancy Raise, AND Devouring Corpse)
     const canCastNecro = (player.skillLevels?.necromancy || 0) >= 1 && player.party.length < 3;
-    const corpse = room.enemies.find(
+    const allCorpses = [...(room.corpses || []), ...room.enemies.filter((e) => e.defeated)];
+    const corpse = allCorpses.find(
       (e) =>
-        e.defeated &&
         (!e.corpseDevoured || !e.corpseLooted || (!e.corpseRaised && canCastNecro)) &&
         Math.abs(e.x - playerPos.x) + Math.abs(e.y - playerPos.y) <= 1
     );
@@ -2594,7 +2834,7 @@ export default function App() {
 
             const nextPlayer: PlayerState = JSON.parse(JSON.stringify(player));
 
-            // 1. Boss / Mini-Boss guaranteed signature weapon or key relic
+            // 1. Boss / Mini-Boss guaranteed signature weapon, key relic & rare Lucky Coins (1-2)
             if (tpl?.guaranteedWeaponDrop && CONFIG.WEAPONS[tpl.guaranteedWeaponDrop]) {
               const sigWpn = tpl.guaranteedWeaponDrop;
               if (!nextPlayer.unlockedWeapons.includes(sigWpn)) {
@@ -2607,8 +2847,13 @@ export default function App() {
               nextPlayer.inventory[sigItem] = (nextPlayer.inventory[sigItem] || 0) + 1;
               lootMessages.push(`Di vật [${CONFIG.ITEMS[sigItem].name}]`);
             }
+            if ((tpl?.tier === 'miniboss' || tpl?.tier === 'boss') && (tpl?.dropLuckyCoins || 0) > 0) {
+              const luckyCount = tpl.dropLuckyCoins || 1;
+              nextPlayer.inventory.lucky_coin = (nextPlayer.inventory.lucky_coin || 0) + luckyCount;
+              lootMessages.push(`🪙 +${luckyCount} [${CONFIG.ITEMS.lucky_coin.name}]`);
+            }
 
-            // 2. If normal enemy or additional drop: Weapon, Key (lockpick), or Gear/Shield
+            // 2. Normal enemy drop (never drops Lucky Coins — only weapons, lockpicks, gear)
             if (lootMessages.length === 0) {
               const dropRoll = rng.next();
               const normalWeaponPool = [
@@ -2650,18 +2895,25 @@ export default function App() {
             }
 
             setPlayer(nextPlayer);
-            setWorld((prev) => ({
-              ...prev,
-              rooms: {
-                ...prev.rooms,
-                [room.id]: {
-                  ...room,
-                  enemies: room.enemies.map((e) =>
-                    e.uid === corpse.uid ? { ...e, corpseLooted: true } : e
-                  ),
+            setWorld((prev) => {
+              const curRoom = prev.rooms[room.id];
+              if (!curRoom) return prev;
+              return {
+                ...prev,
+                rooms: {
+                  ...prev.rooms,
+                  [room.id]: {
+                    ...curRoom,
+                    enemies: curRoom.enemies.map((e) =>
+                      e.uid === corpse.uid ? { ...e, corpseLooted: true } : e
+                    ),
+                    corpses: (curRoom.corpses || []).map((c) =>
+                      c.uid === corpse.uid ? { ...c, corpseLooted: true } : c
+                    ),
+                  },
                 },
-              },
-            }));
+              };
+            });
             addLog(`🗡️ Lục soát xác [${corpseName}]: Thu được ${lootMessages.join(' & ')}!`);
             setLogOverlayVisible(true);
           },
@@ -2679,16 +2931,21 @@ export default function App() {
             if (res.success) {
               sfx.playHealOrChime();
               setPlayer(pCopy);
-              setWorld((prev) => ({
-                ...prev,
-                rooms: {
-                  ...prev.rooms,
-                  [room.id]: {
-                    ...room,
-                    enemies: room.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
+              setWorld((prev) => {
+                const curRoom = prev.rooms[room.id];
+                if (!curRoom) return prev;
+                return {
+                  ...prev,
+                  rooms: {
+                    ...prev.rooms,
+                    [room.id]: {
+                      ...curRoom,
+                      enemies: curRoom.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
+                      corpses: (curRoom.corpses || []).map((c) => (c.uid === eCopy.uid ? eCopy : c)),
+                    },
                   },
-                },
-              }));
+                };
+              });
             }
             addLog(res.message);
             setLogOverlayVisible(true);
@@ -2706,16 +2963,21 @@ export default function App() {
             const res = devourEnemyCorpse(pCopy, eCopy);
             if (!res.success) return;
             setPlayer(pCopy);
-            setWorld((prev) => ({
-              ...prev,
-              rooms: {
-                ...prev.rooms,
-                [room.id]: {
-                  ...room,
-                  enemies: room.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
+            setWorld((prev) => {
+              const curRoom = prev.rooms[room.id];
+              if (!curRoom) return prev;
+              return {
+                ...prev,
+                rooms: {
+                  ...prev.rooms,
+                  [room.id]: {
+                    ...curRoom,
+                    enemies: curRoom.enemies.map((e) => (e.uid === eCopy.uid ? eCopy : e)),
+                    corpses: (curRoom.corpses || []).map((c) => (c.uid === eCopy.uid ? eCopy : c)),
+                  },
                 },
-              },
-            }));
+              };
+            });
             addLog(res.message);
             setLogOverlayVisible(true);
           },
@@ -2782,7 +3044,7 @@ export default function App() {
       return;
     }
 
-    addLog('Không có vật thể tương tác nào ngay sát cạnh bạn.');
+    addLog('Không có đối tượng tương tác ngay sát bên cạnh.');
     setLogOverlayVisible(true);
   }, [
     screen,
@@ -2797,12 +3059,90 @@ export default function App() {
     triggerCoinToss,
     promptCrackedWallExplosion,
     openNpcRpgDialogue,
+    activeActorIdx,
+    player.party,
   ]);
 
-  // Sokoban Step Movement with STEP_COOLDOWN = 220ms & Hunger Loop + Dynamic Room Bounds & Survival Tile Triggers
+  // Autonomous AI Enemy Game Loop (~400ms tick) — decoupled from player keydown events
+  const canRunAiTick =
+    !inCombat &&
+    screen === 'playing' &&
+    !isInputLocked &&
+    !activeModal &&
+    !coinToss &&
+    !interactionMenu;
+
+  useEffect(() => {
+    if (!canRunAiTick) return;
+
+    const tickId = window.setInterval(() => {
+      if (isInputLockedRef.current) return;
+      const curWorld = worldRef.current;
+      const curRoom = curWorld.rooms[curWorld.currentRoomId];
+      if (!curRoom) return;
+      const curPlayerPos = playerPosRef.current;
+      const curPlayer = playerRef.current;
+
+      // Immediate Manhattan <= 1 check before advancing AI tick
+      const adjacentChaser = curRoom.enemies.find((e) => {
+        if (e.defeated || e.isFloorBoss || e.isTutorialGatekeeper) return false;
+        if (e.aiState !== 'chase' || (e.eatTicksRemaining || 0) > 0) return false;
+        return Math.abs(e.x - curPlayerPos.x) + Math.abs(e.y - curPlayerPos.y) <= 1;
+      });
+
+      if (adjacentChaser) {
+        isInputLockedRef.current = true;
+        setIsInputLocked(true);
+        triggerCombat(adjacentChaser);
+        return;
+      }
+
+      const tickResult = advanceRoomEnemiesOneTurn(
+        curRoom,
+        curPlayerPos,
+        curPlayer.equippedBody
+      );
+
+      setWorld((prev) => {
+        const latestRoom = prev.rooms[curRoom.id];
+        if (!latestRoom) return prev;
+        return {
+          ...prev,
+          rooms: {
+            ...prev.rooms,
+            [curRoom.id]: {
+              ...latestRoom,
+              enemies: tickResult.enemies,
+              decoys: tickResult.decoys,
+            },
+          },
+        };
+      });
+
+      if (tickResult.collidedEnemy) {
+        isInputLockedRef.current = true;
+        setIsInputLocked(true);
+        triggerCombat(tickResult.collidedEnemy);
+      }
+    }, 400);
+
+    return () => window.clearInterval(tickId);
+  }, [canRunAiTick, triggerCombat]);
+
+  // Grid Step Movement with STEP_COOLDOWN = 220ms & Hunger Loop (decoupled from enemy AI tick)
   const attemptMove = useCallback(
     (dx: number, dy: number) => {
-      if (screen !== 'playing' || activeModal || coinToss || interactionMenu) return;
+      if (
+        inCombat ||
+        screen !== 'playing' ||
+        isInputLocked ||
+        isInputLockedRef.current ||
+        activeModal ||
+        coinToss ||
+        interactionMenu
+      ) {
+        return;
+      }
       if (logOverlayVisible) {
         setLogOverlayVisible(false);
       }
@@ -2811,6 +3151,21 @@ export default function App() {
       if (now - lastStepTime < cooldown) return;
 
       const room = world.rooms[world.currentRoomId];
+
+      // Immediate combat lock if a chasing enemy is already adjacent (Manhattan <= 1) and not eating decoy
+      const pinningChaser = room.enemies.find((e) => {
+        if (e.defeated || e.isFloorBoss || e.isTutorialGatekeeper) return false;
+        if (e.aiState !== 'chase' || (e.eatTicksRemaining || 0) > 0) return false;
+        return Math.abs(e.x - playerPos.x) + Math.abs(e.y - playerPos.y) <= 1;
+      });
+      if (pinningChaser) {
+        isInputLockedRef.current = true;
+        setIsInputLocked(true);
+        setLastStepTime(now);
+        triggerCombat(pinningChaser);
+        return;
+      }
+
       const roomW = room.width || room.grid[0]?.length || CONFIG.GRID_W;
       const roomH = room.height || room.grid.length || CONFIG.GRID_H;
       const nx = playerPos.x + dx;
@@ -2907,7 +3262,7 @@ export default function App() {
         } else {
           nextMind = Math.max(0, nextMind - 3);
           nextCor = Math.min(100, nextCor + 2);
-          addLog('🌫️ Bước qua Khe Nứt Chướng Khí (-3 Tâm Trí, +2 Tha Hóa)! Nhấn [F] nếu muốn hấp thụ.');
+          addLog('🌫️ Khói tím chướng khí tràn vào buồng phổi, bào mòn lý trí!');
         }
       }
 
@@ -2927,40 +3282,35 @@ export default function App() {
       setTrailCoords((prev) => [{ x: playerPos.x, y: playerPos.y }, ...prev].slice(0, 4));
       setPlayer(updatedPlayer);
 
-      // Step hazard: FLOOR_TRAP triggers Coin Toss if not yet sprung
       const stepCoordKey = `${nx},${ny}`;
-      if (targetTile === TILE.FLOOR_TRAP && !room.lootedCoords.includes(stepCoordKey)) {
-        setWorld((prev) => ({
-          ...prev,
-          rooms: {
-            ...prev.rooms,
-            [room.id]: {
-              ...room,
-              lootedCoords: [...room.lootedCoords, stepCoordKey],
+      const isFloorTrapTriggered =
+        targetTile === TILE.FLOOR_TRAP && !room.lootedCoords.includes(stepCoordKey);
+
+      // Check immediately after player's step if any chasing enemy is now at Manhattan <= 1
+      const adjacentChaserAfterStep =
+        updatedPlayer.hp > 0
+          ? room.enemies.find((e) => {
+              if (e.defeated || e.isFloorBoss || e.isTutorialGatekeeper) return false;
+              if (e.aiState !== 'chase' || (e.eatTicksRemaining || 0) > 0) return false;
+              return Math.abs(e.x - nx) + Math.abs(e.y - ny) <= 1;
+            })
+          : undefined;
+
+      if (isFloorTrapTriggered) {
+        setWorld((prev) => {
+          const curRoom = prev.rooms[room.id];
+          if (!curRoom) return prev;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [room.id]: {
+                ...curRoom,
+                lootedCoords: [...curRoom.lootedCoords, stepCoordKey],
+              },
             },
-          },
-        }));
-        triggerCoinToss(
-          'BẪY ĐÁ NGẦM BẬT NẨY!',
-          'Bạn vừa giẫm phải phiến đá bẫy ngầm! Tung Đồng Xu Định Mệnh để nhảy lùi tránh hàm răng sắt!',
-          (_won, tier) => {
-            if (tier === 'win') {
-              addLog('⚡ Nhảy lùi kịp thời! Bạn thoát khỏi Bẫy Đá Ngầm mà không hề hấn gì.');
-            } else if (tier === 'partial') {
-              setPlayer((prev) => ({ ...prev, hp: Math.max(5, prev.hp - 8) }));
-              addLog('🩸⚖️ Kết quả 1 Ngửa – 1 Sấp: Mũi chông sượt qua bắp chân (-8 Sinh Lực)!');
-            } else {
-              setPlayer((prev) => ({
-                ...prev,
-                hp: Math.max(5, prev.hp - 18),
-                statuses: { ...prev.statuses, bleeding: true },
-              }));
-              addLog('🩸 Bẫy sắt sập trúng chân (-18 Sinh Lực & Chảy Máu)!');
-            }
-            setLogOverlayVisible(true);
-          }
-        );
-        return;
+          };
+        });
       }
 
       if (updatedPlayer.hp <= 0) {
@@ -2976,9 +3326,44 @@ export default function App() {
         setScreen('ending');
         return;
       }
+
+      // Immediate combat lock if player stepped next to a chaser (distance <= 1)
+      if (adjacentChaserAfterStep) {
+        isInputLockedRef.current = true;
+        setIsInputLocked(true);
+        triggerCombat(adjacentChaserAfterStep);
+        return;
+      }
+
+      // Step hazard: FLOOR_TRAP triggers Coin Toss if not yet sprung
+      if (isFloorTrapTriggered) {
+        triggerCoinToss(
+          'BẪY ĐÁ NGẦM',
+          '',
+          (_won, tier) => {
+            if (tier === 'win') {
+              addLog('⚡ Nhảy lùi kịp thời! Bạn thoát khỏi Bẫy Đá Ngầm mà không hề hấn gì.');
+            } else if (tier === 'partial') {
+              setPlayer((prev) => ({ ...prev, hp: Math.max(5, prev.hp - 8) }));
+              addLog('🩸⚖️ Mũi chông sượt qua bắp chân trong gang tấc.');
+            } else {
+              setPlayer((prev) => ({
+                ...prev,
+                hp: Math.max(5, prev.hp - 18),
+                statuses: { ...prev.statuses, bleeding: true },
+              }));
+              addLog('🩸 Hàm sắt bật nẩy ngoạm trúng chân, máu tươi loang ra nền đá!');
+            }
+            setLogOverlayVisible(true);
+          }
+        );
+        return;
+      }
     },
     [
+      inCombat,
       screen,
+      isInputLocked,
       activeModal,
       coinToss,
       interactionMenu,
@@ -2989,6 +3374,7 @@ export default function App() {
       world,
       addLog,
       startCombatWithEnemy,
+      triggerCombat,
       movePlayerToRoom,
       generateRandomSeed,
       triggerCoinToss,
@@ -3082,7 +3468,7 @@ export default function App() {
           ? {
               ...eCur,
               aiState: 'deagro',
-              questionTimerMs: 2500,
+              questionTimerMs: 4000,
               alertTimerMs: 0,
               loseSightTimerMs: 0,
               moveCooldownMs: 1800,
@@ -3090,16 +3476,20 @@ export default function App() {
           : eCur;
 
         setPlayer(pCur);
-        setWorld((prev) => ({
-          ...prev,
-          rooms: {
-            ...prev.rooms,
-            [currentRoom.id]: {
-              ...currentRoom,
-              enemies: currentRoom.enemies.map((e) => (e.uid === persistedEnemy.uid ? persistedEnemy : e)),
+        setWorld((prev) => {
+          const curRoom = prev.rooms[currentRoom.id];
+          if (!curRoom) return prev;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [currentRoom.id]: {
+                ...curRoom,
+                enemies: curRoom.enemies.map((e) => (e.uid === persistedEnemy.uid ? persistedEnemy : e)),
+              },
             },
-          },
-        }));
+          };
+        });
         if (collectedLogs.length > 0) {
           setCombatLogs((prev) => [...collectedLogs.slice().reverse(), ...prev.slice(0, 18)]);
         }
@@ -3107,6 +3497,12 @@ export default function App() {
         setCombatMenuMode('main');
         if (nextControllableActor !== null) {
           setActiveActorIdx(nextControllableActor);
+        }
+
+        if (fledBattle) {
+          handleCombatEnd({ fled: true });
+          addLog('🏃 Cả đội đã thoát khỏi cuộc giao tranh trong gang tấc.');
+          return;
         }
 
         // Advance selectedLimbId if targeted limb was severed
@@ -3120,19 +3516,9 @@ export default function App() {
           setSelectedLimbId(lastTargetLimb);
         }
 
-        if (fledBattle) {
-          setActiveEnemyUid(null);
-          setActiveActorIdx(0);
-          setScreen('playing');
-          addLog('🏃 Cả đội đã thoát khỏi cuộc giao tranh trong gang tấc.');
-          return;
-        }
-
         if (finalEndingTrigger) {
-          setActiveActorIdx(0);
           if (finalEndingTrigger.id === 'VAELIS_CLIMAX_CHOICE') {
-            setActiveEnemyUid(null);
-            setScreen('playing');
+            handleCombatEnd({ defeatedEnemyUid: eCur.uid });
             openNpcRpgDialogue('vaelis_climax');
             return;
           }
@@ -3146,7 +3532,7 @@ export default function App() {
           } else {
             setEndingInfo(finalEndingTrigger);
           }
-          setScreen('ending');
+          handleCombatEnd({ nextScreen: 'ending' });
         }
       } catch (err) {
         console.error('Combat turn execution error:', err);
@@ -3161,6 +3547,7 @@ export default function App() {
       selectedLimbId,
       currentRoom,
       addLog,
+      handleCombatEnd,
       generateRandomSeed,
       openNpcRpgDialogue,
     ]
@@ -3169,6 +3556,17 @@ export default function App() {
   // Keyboard Controls (Exploration + 2-Step Combat Limb Selection + 1-5 Quick Action Hotkeys)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
       if (coinToss) {
         const cKey = e.key.toLowerCase();
         if (
@@ -3203,10 +3601,13 @@ export default function App() {
       if (screen === 'combat' && activeCombatEnemy && !activeCombatEnemy.defeated && !activeModal) {
         const aliveLimbs = activeCombatEnemy.limbs.filter((l) => l.hp > 0);
         if (aliveLimbs.length === 0) return;
+        const activeAllyForKeys = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
+        const isPureTankKeyTurn = Boolean(activeAllyForKeys && isPureTankSummon(activeAllyForKeys));
 
         // Number Hotkeys 1-5 for fast tactical combat input
         if (e.key === '1') {
           e.preventDefault();
+          if (isPureTankKeyTurn) return;
           setCombatMenuMode('main');
           runCombatTurn('ATTACK', { limbId: selectedLimbId });
           return;
@@ -3259,7 +3660,11 @@ export default function App() {
 
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          runCombatTurn('ATTACK', { limbId: selectedLimbId });
+          if (isPureTankKeyTurn) {
+            runCombatTurn('GUARD');
+          } else {
+            runCombatTurn('ATTACK', { limbId: selectedLimbId });
+          }
           return;
         }
       }
@@ -3605,15 +4010,6 @@ export default function App() {
           }}
         />
 
-        <header className="relative z-10 flex items-center justify-between px-6 py-2.5 border-b border-[#2e2325] shrink-0">
-          <div className="flex items-center gap-2.5">
-            <Skull className="w-5 h-5 text-[#dc2626]" />
-            <span className="text-xs tracking-[0.2em] uppercase text-[#a89882]">
-              Đại Giáo Đường Goethe • Thung Lũng Xương Tàn
-            </span>
-          </div>
-        </header>
-
         <main className="relative z-10 max-w-4xl w-full mx-auto px-5 py-3 flex items-center justify-center flex-1 min-h-0">
           {titleStep === 'menu' ? (
             <div className="w-full max-w-xl mx-auto text-center space-y-8 py-6">
@@ -3633,17 +4029,17 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setTitleStep('char_select')}
-                  className="w-full px-6 py-3 bg-[#991b1b] hover:bg-[#b91c1c] text-[#fef2f2] font-bold tracking-wider uppercase text-xs sm:text-sm border border-[#f87171]/50 shadow-[0_0_20px_rgba(153,27,27,0.35)] transition cursor-pointer"
+                  className="w-full px-6 py-3 df-btn-blood font-bold tracking-wider uppercase text-xs sm:text-sm cursor-pointer"
                 >
                   Bắt Đầu Hành Trình
                 </button>
                 <button
                   type="button"
                   onClick={() => setTitleSaveModalOpen(true)}
-                  className="w-full px-6 py-3 bg-[#1b1521] hover:bg-[#2a2033] text-[#f3e5ab] font-bold tracking-wider uppercase text-xs sm:text-sm border border-[#6e5a44] transition cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full px-6 py-3 df-btn-bronze font-bold tracking-wider uppercase text-xs sm:text-sm cursor-pointer flex items-center justify-center gap-2"
                   title="Mở danh sách 5 ô lưu ký ức"
                 >
-                  <FolderOpen className="w-4 h-4 text-[#fbbf24]" />
+                  <FolderOpen className="w-4 h-4 text-[#c5a059]" />
                   <span>Tiếp Tục ({saveSlots.filter(Boolean).length}/5)</span>
                 </button>
               </div>
@@ -3652,25 +4048,25 @@ export default function App() {
             <div className="w-full space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <h1
-                  className="text-2xl sm:text-3xl font-bold tracking-tight text-[#f5ebd6] leading-none"
+                  className="text-2xl sm:text-3xl font-bold tracking-tight text-[#d3d3d3] leading-none"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  CHỌN NHÂN VẬT <span className="text-lg sm:text-xl font-normal text-[#c2410c]">— KHỞI HÀNH</span>
+                  CHỌN NHÂN VẬT <span className="text-lg sm:text-xl font-normal text-[#c5a059]">— KHỞI HÀNH</span>
                 </h1>
                 <button
                   type="button"
                   onClick={() => setTitleStep('menu')}
-                  className="px-3.5 py-1.5 bg-[#1b1521] hover:bg-[#2a2033] text-[#e7dcc8] font-bold tracking-wider uppercase text-xs border border-[#52404c] transition cursor-pointer"
+                  className="px-3.5 py-1.5 df-btn font-bold tracking-wider uppercase text-xs cursor-pointer"
                 >
                   ← Quay Lại
                 </button>
               </div>
 
               {/* Character Name Input & Class Selection */}
-              <div className="p-3.5 bg-[#110e14]/90 border border-[#33272a] space-y-2.5">
+              <div className="p-4 df-panel space-y-3">
                 <div className="flex flex-col sm:flex-row gap-2.5 items-end">
                   <div className="flex-1 w-full">
-                    <label className="block text-[10px] uppercase tracking-wider text-[#9c8c76] mb-1">
+                    <label className="block text-[10px] uppercase tracking-wider text-[#c5a059] mb-1">
                       Tên Nhân Vật
                     </label>
                     <div className="flex gap-2">
@@ -3678,13 +4074,13 @@ export default function App() {
                         type="text"
                         value={characterNameInput}
                         onChange={(e) => setCharacterNameInput(e.target.value)}
-                        className="w-full px-3 py-1.5 bg-[#09070b] border border-[#473639] text-[#f5ebd6] font-serif text-xs focus:outline-none focus:border-[#dc2626]"
+                        className="w-full px-3 py-1.5 df-well text-[#d3d3d3] font-serif text-xs focus:outline-none focus:border-[#c5a059]"
                         placeholder="Nhập tên..."
                       />
                       <button
                         type="button"
                         onClick={() => setCharacterNameInput(generateRandomCharacterName())}
-                        className="px-2.5 py-1.5 bg-[#1c1621] hover:bg-[#2a2030] border border-[#52404c] text-[11px] font-bold text-[#fbbf24] shrink-0 cursor-pointer"
+                        className="px-3 py-1.5 df-btn-bronze text-[11px] font-bold shrink-0 cursor-pointer"
                         title="Đặt Tên Ngẫu Nhiên"
                       >
                         🎲 Ngẫu Nhiên
@@ -3695,14 +4091,14 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => enterPrologue()}
-                      className="flex-1 sm:flex-initial px-5 py-2 bg-[#991b1b] hover:bg-[#b91c1c] text-[#fef2f2] font-bold tracking-wider uppercase text-xs border border-[#f87171]/40 transition cursor-pointer"
+                      className="flex-1 sm:flex-initial px-5 py-2 df-btn-blood font-bold tracking-wider uppercase text-xs cursor-pointer"
                     >
                       Tiến Vào Hành Trình →
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {CONFIG.CLASSES.map((cls) => {
                     const active = cls.id === selectedClassId;
                     const startWpn = CONFIG.WEAPONS[cls.startingWeapon];
@@ -3718,50 +4114,57 @@ export default function App() {
                             setCharacterNameInput(cls.name);
                           }
                         }}
-                        className={`text-left p-2.5 border transition cursor-pointer flex flex-col justify-between ${
+                        className={`text-left p-3 cursor-pointer flex flex-col justify-between ${
                           active
-                            ? 'bg-[#261317] border-[#dc2626] text-[#f5ebd6] shadow-[0_0_12px_rgba(220,38,38,0.25)]'
-                            : 'bg-[#0b090e] border-[#2c2225] text-[#9c8c76] hover:border-[#574347]'
+                            ? 'df-card-active text-[#d3d3d3]'
+                            : 'df-card text-[#9e968c]'
                         }`}
                       >
                         <div>
-                          <div className="font-bold text-xs sm:text-sm text-[#f3e5ab]">{cls.name}</div>
-                          <div className="text-[10px] text-[#c2410c] font-semibold mb-1">{cls.title}</div>
-                          <p className="text-[11px] leading-snug text-[#cfc0a9]">{cls.lore}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-xs sm:text-sm text-[#c5a059]">{cls.name}</span>
+                            {active && (
+                              <span className="text-[9px] uppercase tracking-widest text-[#d46a6a] font-bold">
+                                ✦ Đã Chọn
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-[#b54848] font-semibold mb-1">{cls.title}</div>
+                          <p className="text-[11px] leading-snug text-[#d3d3d3]">{cls.lore}</p>
                         </div>
 
-                        <div className="mt-2 pt-1.5 border-t border-[#2c2225] space-y-0.5 text-[10px] font-mono">
+                        <div className="mt-2.5 pt-2 border-t border-[#3a3a3a]/70 space-y-0.5 text-[10px] font-mono">
                           <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#a89882]">ATK / CRIT:</span>
+                            <span className="text-[#9e968c]">ATK / CRIT:</span>
                             <span>
-                              <b className="text-[#f87171]">{startWpn ? `${startWpn.dmg[0]}–${startWpn.dmg[1]}` : '150–200'}</b>
-                              <span className="text-[#5e5246]"> • </span>
-                              <b className="text-[#facc15]">{startWpn ? `${Math.round(startWpn.critChance * 100)}%` : '15%'}</b>
+                              <b className="text-[#c96b6b]">{startWpn ? `${startWpn.dmg[0]}–${startWpn.dmg[1]}` : '150–200'}</b>
+                              <span className="text-[#5e564e]"> • </span>
+                              <b className="text-[#c5a059]">{startWpn ? `${Math.round(startWpn.critChance * 100)}%` : '15%'}</b>
                             </span>
                           </div>
                           <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#a89882]">DEF / Né / Chạy:</span>
+                            <span className="text-[#9e968c]">DEF / Né / Chạy:</span>
                             <span>
-                              <b className="text-[#93c5fd]">{Math.round(cls.naturalArmor * 100)}%</b>
-                              <span className="text-[#5e5246]"> • </span>
-                              <b className="text-[#4ade80]">+{Math.round(cls.evasionBonus * 100)}%/{Math.round(cls.baseFleeChance * 100)}%</b>
+                              <b className="text-[#94a3b8]">{Math.round(cls.naturalArmor * 100)}%</b>
+                              <span className="text-[#5e564e]"> • </span>
+                              <b className="text-[#9ab08e]">+{Math.round(cls.evasionBonus * 100)}%/{Math.round(cls.baseFleeChance * 100)}%</b>
                             </span>
                           </div>
                           <div className="flex items-center justify-between whitespace-nowrap">
-                            <span className="text-[#a89882]">Kỹ năng đầu:</span>
-                            <span className="text-[#e9d5ff] font-bold">{startSkill?.name}</span>
+                            <span className="text-[#9e968c]">Kỹ năng đầu:</span>
+                            <span className="text-[#c5a059] font-bold">{startSkill?.name}</span>
                           </div>
                         </div>
                       </button>
                     );
                   })}
                 </div>
-                <div className="text-[11px] text-[#d6c5ad] bg-[#18131a] px-2.5 py-1.5 border border-[#2e2428] flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] text-[#d3d3d3] df-well px-3 py-2 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <span className="text-[#fbbf24] font-semibold">Khởi đầu:</span>{' '}
+                    <span className="text-[#c5a059] font-semibold">Khởi đầu:</span>{' '}
                     [{CONFIG.WEAPONS[selectedClass.startingWeapon]?.name}] • [{CONFIG.SKILLS.find((s) => s.id === selectedClass.startingSkill)?.name}]
                   </div>
-                  <span className="text-[10px] text-[#9c8c76] italic">
+                  <span className="text-[10px] text-[#9e968c] italic">
                     * Sinh Lực &amp; Tâm Trí ẩn đến khi vào Thung Lũng.
                   </span>
                 </div>
@@ -3772,18 +4175,18 @@ export default function App() {
 
         {/* Title Screen 5-Slot Save Files Modal when clicking 'Tiếp Tục' */}
         {titleSaveModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-            <div className="max-w-lg w-full bg-[#120e17] border-2 border-[#6e5a44] p-4 space-y-3 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-[#2e2428] pb-2">
+          <div className="fixed inset-0 z-50 bg-black/88 flex items-center justify-center p-4">
+            <div className="max-w-lg w-full df-panel p-5 space-y-3">
+              <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-2">
                 <div className="flex items-center gap-2">
-                  <FolderOpen className="w-4 h-4 text-[#fbbf24]" />
-                  <h2 className="text-sm font-bold uppercase tracking-wider text-[#f3e5ab]">
+                  <FolderOpen className="w-4 h-4 text-[#c5a059]" />
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-[#c5a059]">
                     Danh Sách File Save (5 Ô Lưu)
                   </h2>
                 </div>
                 <button
                   onClick={() => setTitleSaveModalOpen(false)}
-                  className="px-2.5 py-1 bg-[#261e24] hover:bg-[#382b34] text-xs font-bold border border-[#524046] cursor-pointer"
+                  className="px-2.5 py-1 df-btn text-xs font-bold cursor-pointer"
                 >
                   Đóng [ESC]
                 </button>
@@ -3795,19 +4198,19 @@ export default function App() {
                   return (
                     <div
                       key={idx}
-                      className="p-2.5 bg-[#09070c] border border-[#2a2024] flex items-center justify-between gap-2"
+                      className="p-2.5 df-card flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-[#f3e5ab]">
+                        <div className="text-xs font-bold text-[#d3d3d3]">
                           FILE SAVE #{idx + 1}{' '}
                           {slot?.player?.name ? (
-                            <span className="text-[#fbbf24]">— {slot.player.name}</span>
+                            <span className="text-[#c5a059]">— {slot.player.name}</span>
                           ) : null}
                         </div>
                         {slot ? (
-                          <div className="text-[11px] text-[#a89882] space-y-0.5 mt-0.5">
+                          <div className="text-[11px] text-[#a3998f] space-y-0.5 mt-0.5">
                             <div>
-                              <span className="font-mono text-[#fde68a]">Seed: {slot.seed}</span> • Khu:{' '}
+                              <span className="font-mono text-[#c5a059]">Seed: {slot.seed}</span> • Khu:{' '}
                               {slot.world.currentRoomId} • {slot.timestamp}
                             </div>
                             <div>
@@ -3816,20 +4219,20 @@ export default function App() {
                             </div>
                           </div>
                         ) : (
-                          <div className="text-[11px] text-[#5e5246] italic">Trống...</div>
+                          <div className="text-[11px] text-[#6b635b] italic">Trống...</div>
                         )}
                       </div>
                       {slot && (
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             onClick={() => loadFromSlot(idx)}
-                            className="px-3 py-1 bg-[#15803d] hover:bg-[#16a34a] text-white text-xs font-bold cursor-pointer"
+                            className="px-3 py-1 df-btn-bronze text-xs font-bold cursor-pointer"
                           >
                             Tải
                           </button>
                           <button
                             onClick={() => deleteSaveSlot(idx)}
-                            className="px-2 py-1 bg-[#3f161b] hover:bg-[#5c1c24] border border-[#7f1d1d] text-[#fca5a5] text-[11px] cursor-pointer"
+                            className="px-2 py-1 df-btn-blood text-[11px] cursor-pointer"
                             title="Xóa bản lưu này"
                           >
                             Xóa
@@ -3844,10 +4247,6 @@ export default function App() {
           </div>
         )}
 
-        <footer className="relative z-10 px-6 py-2 border-t border-[#241b1d] text-[11px] text-[#7d6e5d] flex flex-wrap justify-between gap-2 shrink-0">
-          <span>WASD: Di chuyển/Ngắm • F/Enter: Tương tác/Chém • I: Túi • L: Sách • ?: Cẩm Nang</span>
-          <span>Vaelis – Thung Lũng Xương Tàn</span>
-        </footer>
       </div>
     );
   }
@@ -3856,57 +4255,80 @@ export default function App() {
   // RENDER: 3-FRAME ILLUSTRATED PROLOGUE & BACKSTORY CHOICE
   // ============================================================================
   if (screen === 'prologue') {
+    const frame3Image =
+      player.classId === 'forsaken_nun'
+        ? prologueGateNunImg
+        : player.classId === 'night_hunter'
+        ? prologueGateHunterImg
+        : prologueGateKnightImg;
+
     const prologueTexts = [
       {
         title: 'KHUNG I: LÂU ĐÀI HẮC ÁM ĐÈ NÁT GIÁO ĐƯỜNG GOETHE',
         desc: 'Đêm Trăng Đỏ, Lâu Đài Hắc Ám từ trên cao giáng thẳng xuống đè sập tháp chuông Giáo Đường Goethe — vùi lấp mọi lối thoát dưới tầng tầng bóng tối.',
+        image: prologueFrame1Img,
+        alt: 'Lâu Đài Hắc Ám giáng xuống dưới Trăng Đỏ đè nát mái Giáo Đường Goethe',
       },
       {
-        title: 'KHUNG II: BỨC TƯỢNG VỠ & ÁNH MẮT TRONG SƯƠNG TÍM',
-        desc: 'Giữa sương mù tím đặc quánh, những bức tượng cổ nứt toác rỉ thứ dịch đen lạnh lẽo; từng cặp mắt đỏ rực dần hé mở dõi theo bất kỳ kẻ sống sót nào.',
+        title: 'KHUNG II: BỨC TƯỢNG THÁNH MẪU VỠ & ÁNH MẮT TRONG SƯƠNG',
+        desc: 'Giữa sương mù tím đặc quánh, bức tượng Thánh Mẫu cổ nứt toác rỉ thứ dịch đen lạnh lẽo; từng cặp mắt đỏ rực dần hé mở dõi theo bất kỳ kẻ sống sót nào.',
+        image: prologueFrame2Img,
+        alt: 'Bức tượng Thánh Mẫu nứt vỡ rỉ dịch đen giữa sương mù tím và những cặp mắt đỏ rực',
       },
       {
         title: 'KHUNG III: TRƯỚC CỔNG SẮT RĂNG CƯA NGOẠI VI',
-        desc: 'Bức tường chướng khí cuồn cuộn ép sát sau lưng đẩy bạn về phía cánh cổng sắt hoen gỉ — hãy khắc ghi 3 quyết định quá khứ của chính mình trước khi bước vào.',
+        desc: 'Bức tường sương xám cuồn cuộn ép sát sau lưng đẩy bạn về phía cánh cổng sắt hoen gỉ — hãy khắc ghi 3 quyết định quá khứ của chính mình trước khi bước vào.',
+        image: frame3Image,
+        alt: 'Nhân vật đứng giữa làn sương xám nhạt trước cổng sắt răng cưa Ngoại Vi Đại Giáo Đường',
       },
     ];
 
     return (
-      <div className="h-screen bg-[#070509] text-[#e7dcc8] flex items-center justify-center p-3 overflow-y-auto lg:overflow-hidden">
-        <div className="max-w-3xl w-full bg-[#110d14] border-2 border-[#6e5a44] p-4 space-y-3 shadow-2xl">
-          <div className="flex items-center justify-between border-b border-[#362b28] pb-2">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-[#fbbf24]">
+      <div className="min-h-screen h-screen bg-[#070509] text-[#d3d3d3] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+        <div className="max-w-3xl w-full df-panel p-5 space-y-3 my-auto">
+          <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-2">
+            <span className="text-[11px] uppercase tracking-[0.2em] text-[#c5a059]">
               Dẫn Nhập Vaelis ({prologueFrame + 1}/3)
             </span>
             <button
+              type="button"
               onClick={finishPrologueAndPlay}
-              className="text-[11px] text-[#fde68a] hover:text-white underline cursor-pointer"
+              className="text-[11px] text-[#c5a059] hover:text-[#d3d3d3] underline cursor-pointer"
               title="Bỏ qua dẫn nhập và tự động nhận bộ trang bị + nhu yếu phẩm mặc định của nhân vật"
             >
               Bỏ qua (Nhận Đồ Mặc Định) → Vào Ngoại Vi
             </button>
           </div>
 
-          <canvas
-            ref={prologueCanvasRef}
-            width={640}
-            height={270}
-            className="w-full max-h-[175px] object-contain border border-[#4a3b32] bg-[#08060a]"
-          />
+          <div className="relative w-full aspect-video overflow-hidden df-well bg-[#08060a]">
+            <img
+              src={prologueTexts[prologueFrame].image}
+              alt={prologueTexts[prologueFrame].alt}
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover pixelated select-none"
+            />
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  'radial-gradient(ellipse at center, transparent 58%, rgba(7, 5, 9, 0.72) 100%)',
+              }}
+            />
+          </div>
 
           <div className="space-y-1">
             <h2
-              className="text-lg sm:text-xl font-bold text-[#f3e5ab]"
+              className="text-lg sm:text-xl font-bold text-[#c5a059]"
               style={{ fontFamily: "'Cormorant Garamond', serif" }}
             >
               {prologueTexts[prologueFrame].title}
             </h2>
-            <p className="text-xs text-[#cfc0a9] leading-snug">{prologueTexts[prologueFrame].desc}</p>
+            <p className="text-xs text-[#d3d3d3] leading-snug">{prologueTexts[prologueFrame].desc}</p>
           </div>
 
           {/* Class-Specific 3-Step Intro Choices on Frame 3 */}
           {prologueFrame === 2 && (
-            <div className="p-4 bg-[#18121c] border border-[#4a393f] space-y-3">
+            <div className="p-4 df-well space-y-3">
               {(() => {
                 const clsKey =
                   (player.classId as 'fallen_knight' | 'forsaken_nun' | 'night_hunter') ||
@@ -3916,17 +4338,17 @@ export default function App() {
                 return (
                   <>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs font-bold uppercase tracking-wider text-[#fbbf24]">
+                      <div className="text-xs font-bold uppercase tracking-wider text-[#c5a059]">
                         Ký Ức & Hành Trang Của {player.name} — Bước {introStepIdx + 1}/3
                       </div>
-                      <span className="text-[11px] text-[#a89882] font-mono">
+                      <span className="text-[11px] text-[#a3998f] font-mono">
                         Tha Hóa: {player.corruption}% • Tâm Trí: {player.mind}/{player.maxMind}
                       </span>
                     </div>
 
                     {!backstoryChosen && currentStep ? (
                       <div className="space-y-2.5">
-                        <div className="text-xs font-semibold text-[#f3e5ab]">
+                        <div className="text-xs font-semibold text-[#d3d3d3]">
                           {currentStep.prompt}
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -3952,10 +4374,10 @@ export default function App() {
                                   setBackstoryChosen(true);
                                 }
                               }}
-                              className="p-3 bg-[#0e0b11] hover:bg-[#231922] border border-[#4d3942] hover:border-[#fbbf24] text-left text-xs cursor-pointer transition flex flex-col justify-between gap-1.5"
+                              className="p-3 df-card text-left text-xs cursor-pointer flex flex-col justify-between gap-1.5"
                             >
-                              <div className="font-bold text-[#f3e5ab]">{opt.label}</div>
-                              <div className="text-[11px] text-[#86efac] leading-snug">
+                              <div className="font-bold text-[#c5a059]">{opt.label}</div>
+                              <div className="text-[11px] text-[#9ab08e] leading-snug">
                                 {opt.effectText}
                               </div>
                             </button>
@@ -3963,8 +4385,8 @@ export default function App() {
                         </div>
                       </div>
                     ) : (
-                      <div className="p-3 bg-[#101c14] border border-[#285436] text-xs text-[#bbf7d0] space-y-1">
-                        <div className="font-bold text-[#fde68a]">
+                      <div className="p-3 df-card-active text-xs text-[#d3d3d3] space-y-1">
+                        <div className="font-bold text-[#c5a059]">
                           ✓ Bạn đã định hình xong 3 bước quá khứ trước Cổng Sắt Goethe!
                         </div>
                         <div>
@@ -3984,21 +4406,21 @@ export default function App() {
             <button
               disabled={prologueFrame === 0}
               onClick={() => setPrologueFrame((f) => (f > 0 ? ((f - 1) as 0 | 1 | 2) : f))}
-              className="px-4 py-2 bg-[#1c161f] border border-[#3d3038] text-xs disabled:opacity-40 cursor-pointer"
+              className="px-4 py-2 df-btn text-xs disabled:opacity-40 cursor-pointer"
             >
               ← Khung Trước
             </button>
             {prologueFrame < 2 ? (
               <button
                 onClick={() => setPrologueFrame((f) => ((f + 1) as 0 | 1 | 2))}
-                className="px-6 py-2 bg-[#991b1b] hover:bg-[#b91c1c] text-xs font-bold uppercase tracking-wider cursor-pointer"
+                className="px-6 py-2 df-btn-blood text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
                 Tiếp Tục Khung Hình →
               </button>
             ) : (
               <button
                 onClick={finishPrologueAndPlay}
-                className="px-6 py-2.5 bg-[#b45309] hover:bg-[#d97706] text-xs font-bold uppercase tracking-wider text-white cursor-pointer"
+                className="px-6 py-2.5 df-btn-bronze text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
                 Bước Vào Ngoại Vi Đại Giáo Đường →
               </button>
@@ -4014,19 +4436,19 @@ export default function App() {
   // ============================================================================
   if (screen === 'ending' && endingInfo) {
     return (
-      <div className="min-h-screen bg-[#070509] text-[#e7dcc8] flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full bg-[#120e16] border-2 border-[#7f1d1d] p-8 space-y-6 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#261014] border border-[#991b1b] text-xs uppercase tracking-widest text-[#fca5a5]">
+      <div className="min-h-screen bg-[#070509] text-[#d3d3d3] flex items-center justify-center p-6">
+        <div className="max-w-2xl w-full df-panel p-8 space-y-6 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 df-well border-[#8b0000] text-xs uppercase tracking-widest text-[#c96b6b]">
             <Sparkles className="w-3.5 h-3.5" /> Kết Cục Định Mệnh
           </div>
           <h1
-            className="text-4xl font-bold text-[#f3e5ab]"
+            className="text-4xl font-bold text-[#c5a059]"
             style={{ fontFamily: "'Cormorant Garamond', serif" }}
           >
             {endingInfo.title}
           </h1>
-          <div className="text-sm uppercase tracking-widest text-[#d97706]">{endingInfo.subtitle}</div>
-          <p className="text-base text-[#cfc0a9] leading-relaxed border-y border-[#2d2327] py-5">
+          <div className="text-sm uppercase tracking-widest text-[#b54848]">{endingInfo.subtitle}</div>
+          <p className="text-base text-[#d3d3d3] leading-relaxed border-y border-[#3a3a3a] py-5">
             {endingInfo.epilogue}
           </p>
           <div className="flex flex-wrap justify-center gap-4 pt-2">
@@ -4036,13 +4458,13 @@ export default function App() {
                 setSeedInput(freshSeed);
                 enterPrologue(freshSeed, player.classId);
               }}
-              className="px-6 py-2.5 bg-[#991b1b] hover:bg-[#b91c1c] text-white font-bold text-sm uppercase tracking-wider cursor-pointer"
+              className="px-6 py-2.5 df-btn-blood font-bold text-sm uppercase tracking-wider cursor-pointer"
             >
               🎲 Chơi Ván Mới (Seed Ngẫu Nhiên: {seedInput})
             </button>
             <button
               onClick={() => setScreen('title')}
-              className="px-6 py-2.5 bg-[#1f1922] hover:bg-[#2d2532] border border-[#4a3b42] text-sm uppercase tracking-wider cursor-pointer"
+              className="px-6 py-2.5 df-btn text-sm uppercase tracking-wider cursor-pointer"
             >
               Về Màn Hình Chính
             </button>
@@ -4050,8 +4472,8 @@ export default function App() {
 
           {/* Quick Load Saved Game to Restore Old Seed */}
           {saveSlots.some((s) => s !== null) && (
-            <div className="pt-4 border-t border-[#2d2327] space-y-2 text-left">
-              <div className="text-xs font-bold uppercase tracking-wider text-[#fbbf24] text-center">
+            <div className="pt-4 border-t border-[#3a3a3a] space-y-2 text-left">
+              <div className="text-xs font-bold uppercase tracking-wider text-[#c5a059] text-center">
                 Hoặc Tải Lại Bản Lưu (Khôi Phục Về Seed Cũ Đã Lưu)
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -4062,11 +4484,11 @@ export default function App() {
                     <button
                       key={idx}
                       onClick={() => loadFromSlot(idx)}
-                      className="p-2.5 bg-[#19141f] hover:bg-[#261e2e] border border-[#52435c] text-left text-xs cursor-pointer transition"
+                      className="p-2.5 df-card text-left text-xs cursor-pointer"
                     >
-                      <div className="font-bold text-[#f3e5ab]">Tải Ô Lưu #{idx + 1}</div>
-                      <div className="font-mono text-[11px] text-[#fbbf24]">Seed: {slot.seed}</div>
-                      <div className="text-[11px] text-[#a89882]">
+                      <div className="font-bold text-[#c5a059]">Tải Ô Lưu #{idx + 1}</div>
+                      <div className="font-mono text-[11px] text-[#d3d3d3]">Seed: {slot.seed}</div>
+                      <div className="text-[11px] text-[#a3998f]">
                         Phòng {slot.world.currentRoomId} • Sinh Lực {slot.player.hp}/{slot.player.maxHp}
                       </div>
                     </button>
@@ -4087,6 +4509,7 @@ export default function App() {
     const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
     const reticleMap = getLimbReticlePositions(tpl.spriteKey);
     const activeAlly = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
+    const isPureTankTurn = Boolean(activeAlly && isPureTankSummon(activeAlly));
     const actingName = activeAlly ? activeAlly.name : player.name;
     const activeWeapon = activeAlly ? getAllyEffectiveWeapon(activeAlly) : getEffectiveWeapon(player);
     const activeSkillIds = activeAlly
@@ -4095,10 +4518,10 @@ export default function App() {
           .filter(([, lv]) => lv > 0)
           .map(([id]) => id);
 
-    // Reticle Click Handler: clicking the currently selected limb attacks immediately; clicking a different limb selects and focuses it
+    // Reticle Click Handler: clicking the currently selected limb attacks immediately (unless Pure Tank); clicking a different limb selects and focuses it
     const handleReticleClick = (limbId: string) => {
       if (activeCombatEnemy.defeated) return;
-      if (selectedLimbId !== limbId && focusedLimbId !== limbId) {
+      if (isPureTankTurn || (selectedLimbId !== limbId && focusedLimbId !== limbId)) {
         setSelectedLimbId(limbId);
         setFocusedLimbId(limbId);
       } else {
@@ -4111,25 +4534,25 @@ export default function App() {
       activeCombatEnemy.limbs.find((l) => l.id === selectedLimbId) || activeCombatEnemy.limbs[0];
 
     return (
-      <div className="h-screen w-screen overflow-hidden bg-[#060508] text-[#e7dcc8] flex flex-col select-none">
+      <div className="h-screen w-screen overflow-hidden bg-[#060508] text-[#d3d3d3] flex flex-col select-none">
         {/* UPPER 68% COMBAT STAGE */}
-        <div className="relative h-[68%] w-full bg-[#09070c] border-b-2 border-[#a8a29e] flex flex-col items-center justify-between overflow-hidden">
-          {/* Top Silver-Bordered Telegraph & Enemy Header Banner (Enemy HP is calculated behind the scenes) */}
+        <div className="relative h-[68%] w-full bg-[#09070c] border-b border-[#c5a059]/45 flex flex-col items-center justify-between overflow-hidden">
+          {/* Top Chamfered Telegraph & Enemy Header Banner */}
           <div className="z-20 w-full max-w-4xl mt-1.5 px-3 shrink-0">
-            <div className="bg-[#0e0c12]/95 border-2 border-[#a8a29e] px-3 py-1.5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="df-well px-3.5 py-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-widest text-[#fca5a5] font-bold">
+                <div className="text-[10px] uppercase tracking-widest text-[#c96b6b] font-bold">
                   Hiệp #{activeCombatEnemy.turnCount + 1} • {activeCombatEnemy.customName || tpl.name}
                 </div>
-                <div className="text-xs text-[#f5ebd6] italic truncate">
+                <div className="text-xs text-[#d3d3d3] italic truncate">
                   {activeCombatEnemy.telegraphing
                     ? `⚠️ SẮP TUNG: [${tpl.telegraphName}] — ${tpl.telegraphDesc}`
                     : `“${tpl.telegraphDesc}”`}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0 text-[10px] uppercase tracking-wider text-[#d6c5ad] font-mono">
+              <div className="flex items-center gap-2 shrink-0 text-[10px] uppercase tracking-wider text-[#a3998f] font-mono">
                 <span>⌖ Chọn Bộ Phận:</span>
-                <span className="text-[#fbbf24] font-bold">{currentTargetLimb?.name}</span>
+                <span className="text-[#c5a059] font-bold">{currentTargetLimb?.name}</span>
               </div>
             </div>
           </div>
@@ -4209,32 +4632,32 @@ export default function App() {
                       onMouseEnter={() => setHoveredLimbId(limb.id)}
                       onMouseLeave={() => setHoveredLimbId(null)}
                       onClick={() => handleReticleClick(limb.id)}
-                      className={`transition cursor-pointer ${
+                      className={`cursor-pointer ${
                         isSevered
-                          ? 'px-1.5 py-0.5 bg-[#1a0d10]/70 border border-[#451a1f] text-[#6e5a5f] opacity-50 cursor-not-allowed'
+                          ? 'px-1.5 py-0.5 df-well opacity-45 text-[#6b635b] cursor-not-allowed'
                           : showExpanded
-                          ? 'px-2.5 py-1 bg-[#2b090d]/95 border-2 border-[#fbbf24] text-[#fef08a] scale-105 shadow-[0_0_14px_rgba(251,191,36,0.55)]'
-                          : 'px-1.5 py-0.5 bg-[#0b090e]/75 border border-[#9ca3af]/65 text-[#e7dcc8] hover:border-[#fbbf24]'
+                          ? 'px-2.5 py-1 df-card-active text-[#c5a059] scale-105'
+                          : 'px-1.5 py-0.5 df-card text-[#d3d3d3]'
                       }`}
                     >
                       {showExpanded ? (
                         <>
                           <div className="flex items-center gap-1.5 text-[10px] font-bold whitespace-nowrap">
-                            <span className="text-[#ef4444]">⌖</span>
+                            <span className="text-[#c96b6b]">⌖</span>
                             <span>{limb.name}</span>
-                            <span className="font-mono text-[10px] text-[#fde047]">
+                            <span className="font-mono text-[10px] text-[#c5a059]">
                               {isSevered ? '[ĐỨT]' : !targetable ? '[KHÓA]' : `${preview.hitPct}%`}
                             </span>
                           </div>
                           {isFocused && !isSevered && (
-                            <div className="text-[9px] text-[#fbbf24] font-bold uppercase tracking-tighter mt-0.5">
+                            <div className="text-[9px] text-[#c5a059] font-bold uppercase tracking-tighter mt-0.5">
                               [Nhấn lần 2 / Enter: CHÉM!]
                             </div>
                           )}
                         </>
                       ) : (
                         <div className="flex items-center gap-1 text-[10px] font-mono font-bold whitespace-nowrap">
-                          <span className="text-[#ef4444]">⌖</span>
+                          <span className="text-[#c96b6b]">⌖</span>
                           <span>{isSevered ? 'ĐỨT' : !targetable ? '🔒' : `${preview.hitPct}%`}</span>
                         </div>
                       )}
@@ -4245,28 +4668,28 @@ export default function App() {
                       <div
                         className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${
                           tooltipOnLeft ? 'right-full mr-2' : 'left-full ml-2'
-                        } w-44 bg-[#0b0910]/95 border border-[#fbbf24] p-2 text-[10px] text-[#e7dcc8] shadow-xl space-y-0.5`}
+                        } w-44 df-panel p-2.5 text-[10px] text-[#d3d3d3] space-y-0.5`}
                       >
-                        <div className="font-bold text-[#fde68a] border-b border-[#2e242c] pb-0.5">
+                        <div className="font-bold text-[#c5a059] border-b border-[#3a3a3a] pb-0.5">
                           <span>DỰ KIẾN SÁT THƯƠNG</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-[#a89882]">Sát thương:</span>
-                          <span className="font-mono font-bold text-[#f87171]">
+                          <span className="text-[#a3998f]">Sát thương:</span>
+                          <span className="font-mono font-bold text-[#c96b6b]">
                             {preview.minDmg}–{preview.maxDmg}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-[#a89882]">Tỷ lệ Trúng:</span>
-                          <span className="font-mono font-bold text-[#4ade80]">{preview.hitPct}%</span>
+                          <span className="text-[#a3998f]">Tỷ lệ Trúng:</span>
+                          <span className="font-mono font-bold text-[#9ab08e]">{preview.hitPct}%</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-[#a89882]">Tỷ lệ Crit:</span>
-                          <span className="font-mono font-bold text-[#facc15]">{preview.critPct}%</span>
+                          <span className="text-[#a3998f]">Tỷ lệ Crit:</span>
+                          <span className="font-mono font-bold text-[#c5a059]">{preview.critPct}%</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-[#a89882]">Giáp bộ phận:</span>
-                          <span className="font-mono font-bold text-[#93c5fd]">
+                          <span className="text-[#a3998f]">Giáp bộ phận:</span>
+                          <span className="font-mono font-bold text-[#94a3b8]">
                             {preview.armorPoints} (-{preview.armorReductionPct}%)
                           </span>
                         </div>
@@ -4279,49 +4702,53 @@ export default function App() {
           </div>
 
           {/* Bottom Strip of Upper Stage: Recent Combat Log Line & Active Weapon Hint */}
-          <div className="z-20 w-full bg-[#0b090f]/90 border-t border-[#3b322c] px-5 py-1.5 flex items-center justify-between text-xs">
-            <div className="text-[#d6c5ad] truncate max-w-3xl">
-              <span className="text-[#fbbf24] font-bold mr-2">Diễn biến:</span>
+          <div className="z-20 w-full bg-[#0b090f]/90 border-t border-[#3a3a3a] px-5 py-1.5 flex items-center justify-between text-xs">
+            <div className="text-[#d3d3d3] truncate max-w-3xl">
+              <span className="text-[#c5a059] font-bold mr-2">Diễn biến:</span>
               {combatLogs[0]}
             </div>
-            <div className="text-[#a89882] shrink-0 hidden md:block">
-              Lượt: <span className="text-[#fbbf24] font-semibold">{actingName}</span> • Vũ khí:{' '}
-              <span className="text-[#f3e5ab] font-semibold">{activeWeapon.name}</span> • Mục tiêu:{' '}
-              <span className="text-[#fca5a5] font-semibold">{currentTargetLimb?.name}</span> • Phím tắt:{' '}
-              <span className="font-mono text-[#fbbf24]">{activeActorIdx === 0 ? '[1..5]' : '[1..4]'}</span>
+            <div className="text-[#a3998f] shrink-0 hidden md:block">
+              Lượt: <span className="text-[#c5a059] font-semibold">{actingName}</span> • Vũ khí:{' '}
+              <span className="text-[#d3d3d3] font-semibold">{activeWeapon.name}</span> • Mục tiêu:{' '}
+              <span className="text-[#c96b6b] font-semibold">{currentTargetLimb?.name}</span> • Phím tắt:{' '}
+              <span className="font-mono text-[#c5a059]">{activeActorIdx === 0 ? '[1..5]' : '[1..4]'}</span>
             </div>
           </div>
         </div>
 
-        {/* LOWER 32% CLASSIC SILVER-BORDERED CONTROL DOCK */}
+        {/* LOWER 32% DARK FANTASY CONTROL DOCK */}
         <div className="h-[32%] w-full bg-[#08070b] p-2.5 flex gap-2.5">
           {/* LEFT BOX (220px): Vertical Serif Command Buttons with Number Hotkeys */}
-          <div className="w-[220px] shrink-0 bg-[#0d0b12] border-2 border-[#a8a29e] p-1.5 flex flex-col justify-between gap-1">
+          <div className="w-[220px] shrink-0 df-panel p-2 flex flex-col justify-between gap-1">
             {!activeCombatEnemy.defeated ? (
               <>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[#fbbf24] px-1 truncate border-b border-[#2e2633] pb-0.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#c5a059] px-1 truncate border-b border-[#3a3a3a] pb-0.5">
                   Lượt: {actingName}
                 </div>
                 <button
+                  disabled={isPureTankTurn}
                   onClick={() => {
+                    if (isPureTankTurn) return;
                     setCombatMenuMode('main');
                     runCombatTurn('ATTACK', { limbId: selectedLimbId });
                   }}
-                  className={`w-full py-1 px-2.5 text-left text-xs font-bold border transition cursor-pointer truncate ${
-                    combatMenuMode === 'main'
-                      ? 'bg-[#2b1216] border-[#f87171] text-[#fef2f2]'
-                      : 'bg-[#14111a] border-[#3f3847] text-[#d6c5ad] hover:border-[#a8a29e]'
+                  className={`w-full py-1 px-2.5 text-left text-xs font-bold truncate ${
+                    isPureTankTurn
+                      ? 'df-btn opacity-45 cursor-not-allowed'
+                      : combatMenuMode === 'main'
+                      ? 'df-btn-active cursor-pointer'
+                      : 'df-btn cursor-pointer'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  [1] ⚔ Đ.Thường ({currentTargetLimb?.name})
+                  {isPureTankTurn
+                    ? '[1] 🔒 Khóa Công (Thuần Thủ)'
+                    : `[1] ⚔ Đ.Thường (${currentTargetLimb?.name})`}
                 </button>
                 <button
                   onClick={() => setCombatMenuMode((m) => (m === 'skills' ? 'main' : 'skills'))}
-                  className={`w-full py-1 px-2.5 text-left text-xs font-bold border transition cursor-pointer ${
-                    combatMenuMode === 'skills'
-                      ? 'bg-[#241432] border-[#c084fc] text-[#f3e8ff]'
-                      : 'bg-[#14111a] border-[#3f3847] text-[#d6c5ad] hover:border-[#a8a29e]'
+                  className={`w-full py-1 px-2.5 text-left text-xs font-bold cursor-pointer ${
+                    combatMenuMode === 'skills' ? 'df-btn-active' : 'df-btn'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
@@ -4329,17 +4756,17 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => runCombatTurn('GUARD')}
-                  className="w-full py-1 px-2.5 text-left text-xs font-bold bg-[#14111a] border border-[#3f3847] text-[#d6c5ad] hover:border-[#a8a29e] cursor-pointer"
+                  className={`w-full py-1 px-2.5 text-left text-xs font-bold cursor-pointer ${
+                    isPureTankTurn ? 'df-btn-active' : 'df-btn'
+                  }`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  [3] 🛡 P.Thủ (+DEF)
+                  {isPureTankTurn ? '[3] 🛡 Khiên Linh Hồn (+Đội)' : '[3] 🛡 P.Thủ (+DEF)'}
                 </button>
                 <button
                   onClick={() => setCombatMenuMode((m) => (m === 'items' ? 'main' : 'items'))}
-                  className={`w-full py-1 px-2.5 text-left text-xs font-bold border transition cursor-pointer ${
-                    combatMenuMode === 'items'
-                      ? 'bg-[#291d12] border-[#fbbf24] text-[#fef3c7]'
-                      : 'bg-[#14111a] border-[#3f3847] text-[#d6c5ad] hover:border-[#a8a29e]'
+                  className={`w-full py-1 px-2.5 text-left text-xs font-bold cursor-pointer ${
+                    combatMenuMode === 'items' ? 'df-btn-active' : 'df-btn'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
@@ -4349,14 +4776,14 @@ export default function App() {
                   <>
                     <button
                       onClick={() => runCombatTurn('TALK')}
-                      className="w-full py-1 px-2.5 text-left text-xs font-bold bg-[#14111a] border border-[#3f3847] text-[#6ee7b7] hover:border-[#a8a29e] cursor-pointer"
+                      className="w-full py-1 px-2.5 text-left text-xs font-bold df-btn text-[#9ab08e] cursor-pointer"
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     >
                       [5] 💬 Trò Chuyện
                     </button>
                     <button
                       onClick={() => runCombatTurn('FLEE')}
-                      className="w-full py-1 px-2.5 text-left text-xs font-bold bg-[#14111a] border border-[#3f3847] text-[#9ca3af] hover:border-[#a8a29e] cursor-pointer"
+                      className="w-full py-1 px-2.5 text-left text-xs font-bold df-btn text-[#a3998f] cursor-pointer"
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     >
                       🏃 Bỏ Chạy
@@ -4366,13 +4793,10 @@ export default function App() {
               </>
             ) : (
               <div className="my-auto text-center space-y-2 p-2">
-                <div className="text-xs font-bold uppercase text-[#fbbf24]">Chiến Thắng!</div>
+                <div className="text-xs font-bold uppercase text-[#c5a059]">Chiến Thắng!</div>
                 <button
-                  onClick={() => {
-                    setActiveEnemyUid(null);
-                    setScreen('playing');
-                  }}
-                  className="w-full py-2 bg-[#15803d] hover:bg-[#16a34a] text-white font-bold text-xs uppercase cursor-pointer"
+                  onClick={() => handleCombatEnd({ defeatedEnemyUid: activeCombatEnemy.uid })}
+                  className="w-full py-2 df-btn-bronze font-bold text-xs uppercase cursor-pointer"
                 >
                   Thu Chiến Lợi Phẩm
                 </button>
@@ -4381,16 +4805,16 @@ export default function App() {
           </div>
 
           {/* RIGHT BOX: Dynamic Sub-Menu OR Horizontal Party Status Table */}
-          <div className="flex-1 bg-[#0d0b12] border-2 border-[#a8a29e] p-2.5 overflow-y-auto flex flex-col justify-between">
+          <div className="flex-1 df-panel p-2.5 overflow-y-auto flex flex-col justify-between">
             {combatMenuMode === 'skills' && !activeCombatEnemy.defeated ? (
               <div className="space-y-2">
-                <div className="flex items-center justify-between border-b border-[#2e2633] pb-1">
-                  <span className="text-xs font-bold uppercase text-[#c084fc]">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
+                  <span className="text-xs font-bold uppercase text-[#c5a059]">
                     Chọn Kỹ Năng — {actingName} (Nhắm vào: {currentTargetLimb?.name})
                   </span>
                   <button
                     onClick={() => setCombatMenuMode('main')}
-                    className="text-xs text-[#9ca3af] hover:text-white cursor-pointer"
+                    className="text-xs text-[#a3998f] hover:text-[#d3d3d3] cursor-pointer"
                   >
                     [Đóng]
                   </button>
@@ -4414,15 +4838,15 @@ export default function App() {
                           runCombatTurn('SKILL', { limbId: selectedLimbId, skillId: sk.id });
                           setCombatMenuMode('main');
                         }}
-                        className="p-2 bg-[#16121e] hover:bg-[#221a30] border border-[#4c3963] text-left text-xs disabled:opacity-40 cursor-pointer"
+                        className="p-2 df-card text-left text-xs disabled:opacity-40 cursor-pointer"
                       >
-                        <div className="flex justify-between font-bold text-[#e9d5ff]">
+                        <div className="flex justify-between font-bold text-[#c5a059]">
                           <span>
                             {sk.name} (Lv.{lv})
                           </span>
                           <span>-{sk.mindCost} Tâm Trí</span>
                         </div>
-                        <div className="text-[11px] text-[#a89882]">{sk.descLv1}</div>
+                        <div className="text-[11px] text-[#d3d3d3]">{sk.descLv1}</div>
                       </button>
                     );
                   })}
@@ -4430,13 +4854,13 @@ export default function App() {
               </div>
             ) : combatMenuMode === 'items' && !activeCombatEnemy.defeated ? (
               <div className="space-y-2">
-                <div className="flex items-center justify-between border-b border-[#2e2633] pb-1">
-                  <span className="text-xs font-bold uppercase text-[#fbbf24]">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
+                  <span className="text-xs font-bold uppercase text-[#c5a059]">
                     Chọn Vật Phẩm Thực Dụng ({actingName})
                   </span>
                   <button
                     onClick={() => setCombatMenuMode('main')}
-                    className="text-xs text-[#9ca3af] hover:text-white cursor-pointer"
+                    className="text-xs text-[#a3998f] hover:text-[#d3d3d3] cursor-pointer"
                   >
                     [Đóng]
                   </button>
@@ -4454,14 +4878,14 @@ export default function App() {
                             runCombatTurn('ITEM', { limbId: selectedLimbId, itemId });
                             setCombatMenuMode('main');
                           }}
-                          className="p-1.5 bg-[#16131a] hover:bg-[#261f29] border border-[#4d3f35] flex items-center gap-2 text-left text-xs cursor-pointer"
+                          className="p-1.5 df-card flex items-center gap-2 text-left text-xs cursor-pointer"
                         >
                           <ItemArtworkCanvas itemOrWeaponId={itemId} size={32} />
                           <div className="min-w-0">
-                            <div className="font-bold text-[#f3e5ab] truncate">
+                            <div className="font-bold text-[#c5a059] truncate">
                               {item.name} (x{count})
                             </div>
-                            <div className="text-[10px] text-[#a89882] truncate">{item.desc}</div>
+                            <div className="text-[10px] text-[#d3d3d3] truncate">{item.desc}</div>
                           </div>
                         </button>
                       );
@@ -4471,67 +4895,67 @@ export default function App() {
             ) : (
               /* DEFAULT: HORIZONTAL PARTY STATUS ROWS */
               <div className="space-y-2">
-                <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-wider text-[#a89882] border-b border-[#2b2530] pb-1">
+                <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-wider text-[#a3998f] border-b border-[#3a3a3a] pb-1">
                   <span>Đội Hình & Trạng Thái Tứ Chi</span>
                   <span>WASD chọn chi • Enter/Click 2 lần để Chém</span>
                 </div>
 
                 {/* Row 1: Main Character */}
                 <div
-                  className={`p-1.5 bg-[#14111a] border grid grid-cols-12 items-center gap-2 text-xs transition ${
+                  className={`p-1.5 grid grid-cols-12 items-center gap-2 text-xs ${
                     activeActorIdx === 0 && !activeCombatEnemy.defeated
-                      ? 'border-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.25)]'
-                      : 'border-[#3d3545]'
+                      ? 'df-card-active'
+                      : 'df-card'
                   }`}
                 >
                   <div className="col-span-3 flex flex-wrap items-center gap-1">
-                    <span className="font-bold text-[#f3e5ab] truncate">{player.name}</span>
+                    <span className="font-bold text-[#c5a059] truncate">{player.name}</span>
                     {activeActorIdx === 0 && !activeCombatEnemy.defeated && (
-                      <span className="px-1 py-0.5 bg-[#854d0e] border border-[#fbbf24] text-[9px] text-[#fef08a] font-bold">
+                      <span className="text-[9px] text-[#c5a059] font-bold">
                         [ĐANG CHỌN]
                       </span>
                     )}
                     {player.statuses.guarding && (
-                      <span className="px-1 py-0.5 bg-[#1e3a8a] text-[9px] text-white font-bold">[THỦ]</span>
+                      <span className="text-[9px] text-[#94a3b8] font-bold">[THỦ]</span>
                     )}
                     {player.statuses.bleeding && (
-                      <span className="px-1 py-0.5 bg-[#7f1d1d] border border-[#f87171] text-[9px] text-[#fecaca] font-bold">
+                      <span className="text-[9px] text-[#c96b6b] font-bold">
                         🩸 CHẢY MÁU
                       </span>
                     )}
                     {!player.statuses.bleeding && (player.statuses.bleedImmunityTurns || 0) > 0 && (
-                      <span className="px-1 py-0.5 bg-[#14532d] border border-[#4ade80] text-[9px] text-[#bbf7d0] font-bold">
+                      <span className="text-[9px] text-[#9ab08e] font-bold">
                         🩹 ĐÃ CẦM MÁU
                       </span>
                     )}
                     {player.hunger < 50 && !player.statuses.bleeding && (
-                      <span className="px-1 py-0.5 bg-[#14532d] text-[9px] text-[#86efac] font-bold">[NHANH]</span>
+                      <span className="text-[9px] text-[#9ab08e] font-bold">[NHANH]</span>
                     )}
                   </div>
                   <div className="col-span-3">
                     <div className="flex justify-between text-[10px] mb-0.5">
-                      <span className="text-[#fca5a5]">Sinh Lực</span>
-                      <span className="font-mono">
+                      <span className="text-[#c96b6b]">Sinh Lực</span>
+                      <span className="font-mono text-[#d3d3d3]">
                         {player.hp}/{player.maxHp}
                       </span>
                     </div>
-                    <div className="w-full h-2 bg-[#241316] border border-[#5c232a]">
+                    <div className="w-full h-2 bg-[#1a0b0d] border border-[#5e1414]">
                       <div
-                        className="h-full bg-[#dc2626]"
+                        className="h-full bg-[#8b0000]"
                         style={{ width: `${Math.max(0, Math.min(100, (player.hp / Math.max(1, player.maxHp)) * 100))}%` }}
                       />
                     </div>
                   </div>
                   <div className="col-span-2">
                     <div className="flex justify-between text-[10px] mb-0.5">
-                      <span className="text-[#93c5fd]">Tâm Trí</span>
-                      <span className="font-mono">
+                      <span className="text-[#94a3b8]">Tâm Trí</span>
+                      <span className="font-mono text-[#d3d3d3]">
                         {player.mind}/{player.maxMind}
                       </span>
                     </div>
-                    <div className="w-full h-2 bg-[#121c2d] border border-[#274472]">
+                    <div className="w-full h-2 bg-[#11161d] border border-[#3a4a5e]">
                       <div
-                        className="h-full bg-[#2563eb]"
+                        className="h-full bg-[#4d627a]"
                         style={{ width: `${Math.max(0, Math.min(100, (player.mind / Math.max(1, player.maxMind)) * 100))}%` }}
                       />
                     </div>
@@ -4552,10 +4976,10 @@ export default function App() {
                           key={k}
                           className={`px-1.5 py-0.5 text-[10px] border ${
                             !intact
-                              ? 'bg-[#2e1115] border-[#991b1b] text-[#fca5a5] line-through'
+                              ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b] line-through'
                               : inf
-                              ? 'bg-[#2b1f11] border-[#854d0e] text-[#fde047]'
-                              : 'bg-[#122117] border-[#285436] text-[#86efac]'
+                              ? 'bg-[#261d0e] border-[#c5a059] text-[#c5a059]'
+                              : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
                           }`}
                         >
                           {label}
@@ -4573,68 +4997,67 @@ export default function App() {
                   return (
                     <div
                       key={ally.id}
-                      className={`p-1.5 bg-[#14111a] border grid grid-cols-12 items-center gap-2 text-xs transition ${
+                      className={`p-1.5 grid grid-cols-12 items-center gap-2 text-xs ${
                         isDead
-                          ? 'border-[#2b1d20] opacity-55'
+                          ? 'df-well opacity-45'
                           : isTurn
-                          ? 'border-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.25)]'
-                          : 'border-[#3d3545]'
+                          ? 'df-card-active'
+                          : 'df-card'
                       }`}
                     >
                       <div className="col-span-3 flex flex-wrap items-center gap-1">
-                        <span className="font-bold text-[#e9d5ff] truncate">{ally.name}</span>
+                        <span className="font-bold text-[#d3d3d3] truncate">{ally.name}</span>
                         {isTurn && (
-                          <span className="px-1 py-0.5 bg-[#854d0e] border border-[#fbbf24] text-[9px] text-[#fef08a] font-bold">
+                          <span className="text-[9px] text-[#c5a059] font-bold">
                             [ĐANG CHỌN]
                           </span>
                         )}
-                        <span
-                          className={`px-1 py-0.5 text-[9px] font-bold ${
-                            ally.isUndeadSummon
-                              ? 'bg-[#2b1133] border border-[#9333ea] text-[#e9d5ff]'
-                              : 'bg-[#3b1d5e] text-[#e9d5ff]'
-                          }`}
-                        >
+                        <span className="text-[9px] font-bold text-[#a889b8]">
                           {ally.isUndeadSummon ? '[CHIÊU HỒN]' : '[ĐỒNG ĐỘI]'}
                         </span>
+                        {isPureTankSummon(ally) && (
+                          <span className="px-1 py-0.5 bg-[#191620] border border-[#3a3a3a] text-[9px] text-[#d3d3d3] font-bold">
+                            [THUẦN THỦ]
+                          </span>
+                        )}
                         {ally.guarding && (
-                          <span className="px-1 py-0.5 bg-[#1e3a8a] text-[9px] text-white font-bold">[THỦ]</span>
+                          <span className="px-1 py-0.5 bg-[#1b1714] border border-[#c5a059] text-[9px] text-[#c5a059] font-bold">[THỦ]</span>
                         )}
                         {(ally.stunnedTurns || 0) > 0 && (
-                          <span className="px-1 py-0.5 bg-[#451a03] border border-[#f59e0b] text-[9px] text-[#fde68a] font-bold">
+                          <span className="px-1 py-0.5 bg-[#291e0e] border border-[#c5a059] text-[9px] text-[#e5cfa0] font-bold">
                             [CHOÁNG]
                           </span>
                         )}
                         {isFrenzied && (
-                          <span className="px-1 py-0.5 bg-[#7f1d1d] border border-[#f87171] text-[9px] text-[#fecaca] font-bold">
+                          <span className="px-1 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[9px] text-[#d3d3d3] font-bold">
                             {ally.isUndeadSummon ? '[CUỒNG LOẠN]' : '[HOẢNG LOẠN]'}
                           </span>
                         )}
                       </div>
                       <div className="col-span-3">
                         <div className="flex justify-between text-[10px] mb-0.5">
-                          <span className="text-[#fca5a5]">Sinh Lực</span>
-                          <span className="font-mono">
+                          <span className="text-[#c96b6b]">Sinh Lực</span>
+                          <span className="font-mono text-[#d3d3d3]">
                             {ally.hp}/{ally.maxHp}
                           </span>
                         </div>
-                        <div className="w-full h-2 bg-[#241316] border border-[#5c232a]">
+                        <div className="w-full h-2 bg-[#1a0a0d] border border-[#3a3a3a]">
                           <div
-                            className="h-full bg-[#dc2626]"
+                            className="h-full bg-[#8b0000]"
                             style={{ width: `${Math.max(0, Math.min(100, (ally.hp / Math.max(1, ally.maxHp)) * 100))}%` }}
                           />
                         </div>
                       </div>
                       <div className="col-span-2">
                         <div className="flex justify-between text-[10px] mb-0.5">
-                          <span className="text-[#93c5fd]">Tâm Trí</span>
-                          <span className="font-mono">
+                          <span className="text-[#a3b2c4]">Tâm Trí</span>
+                          <span className="font-mono text-[#d3d3d3]">
                             {ally.mind}/{ally.maxMind}
                           </span>
                         </div>
-                        <div className="w-full h-2 bg-[#121c2d] border border-[#274472]">
+                        <div className="w-full h-2 bg-[#11151d] border border-[#3a3a3a]">
                           <div
-                            className="h-full bg-[#2563eb]"
+                            className="h-full bg-[#5b6f8a]"
                             style={{ width: `${Math.max(0, Math.min(100, (ally.mind / Math.max(1, ally.maxMind)) * 100))}%` }}
                           />
                         </div>
@@ -4655,10 +5078,10 @@ export default function App() {
                               key={k}
                               className={`px-1.5 py-0.5 text-[10px] border ${
                                 !intact
-                                  ? 'bg-[#2e1115] border-[#991b1b] text-[#fca5a5] line-through'
+                                  ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b] line-through'
                                   : inf
-                                  ? 'bg-[#2b1f11] border-[#854d0e] text-[#fde047]'
-                                  : 'bg-[#122117] border-[#285436] text-[#86efac]'
+                                  ? 'bg-[#261d0e] border-[#c5a059] text-[#c5a059]'
+                                  : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
                               }`}
                             >
                               {label}
@@ -4686,58 +5109,90 @@ export default function App() {
   return (
     <div className="h-screen w-screen bg-[#070609] text-[#e7dcc8] flex flex-col overflow-hidden select-none">
       {/* Minimalist Gothic Top Status Bar */}
-      <header className="bg-[#0e0b12] border-b border-[#2d2326] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <span className="px-2 py-0.5 bg-[#1b1521] border border-[#4a3759] text-[#d8b4fe]" title="Đá Năng Lượng">
-            Đá Năng Lượng: <b>{player.energyStones}</b>
-          </span>
-          <span className="px-2 py-0.5 bg-[#1c1914] border border-[#574932] text-[#fde68a]" title="Đồng Bạc">
-            Bạc: <b>{player.silverCoins}</b>
-          </span>
-          <span
-            className={`px-2 py-0.5 border ${
-              player.corruption > 0
-                ? 'bg-[#2e1018] border-[#dc2626] text-[#fda4af]'
-                : 'bg-[#101f15] border-[#285436] text-[#86efac]'
+      <header className="bg-[#0d0b0f] border-b border-[#3a3a3a] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <div
+            className={`w-36 sm:w-44 h-2.5 overflow-hidden border ${
+              player.corruption >= 60
+                ? 'bg-[#170b1c] border-[#8b0000]'
+                : player.corruption > 0
+                ? 'bg-[#1c0d12] border-[#8b0000]'
+                : 'bg-[#0e1410] border-[#3a3a3a]'
             }`}
-            title="Mức độ Tha Hóa"
           >
-            Tha Hóa: <b>{player.corruption}</b>
-          </span>
-          <span
-            className="px-2 py-0.5 bg-[#15121c] border border-[#4a3b47] text-[#e7dcc8] flex items-center gap-1.5"
-            title={
-              player.party.length > 0
-                ? `Đội hình: ${player.name}, ${player.party.map((a) => `${a.name} (${a.hp}/${a.maxHp})`).join(', ')}`
-                : `Đội hình: ${player.name}`
-            }
+            <div
+              className="h-full transition-all duration-300"
+              style={{
+                width: `${Math.max(10, Math.min(100, player.corruption))}%`,
+                backgroundColor: '#2d4530',
+                backgroundImage:
+                  player.corruption <= 0
+                    ? 'none'
+                    : 'linear-gradient(90deg, #2d4530 0%, #8b0000 55%, #5b2e6e 100%)',
+                backgroundSize: '176px 100%',
+              }}
+            />
+          </div>
+          {/* Compact 3-God Affinity Status Badges */}
+          <div
+            className="flex items-center gap-1"
+            title="Thiện cảm với 3 Vị Thần — Dùng để học phép nhánh Thánh Mẫu, Hư Vô và Ác Quỷ tại Bàn Thờ Hexen"
           >
-            <Users className="w-3 h-3 text-[#c084fc]" />
-            <span>
-              Đội Hình: <b>{1 + player.party.length}/4</b>
-            </span>
-            {player.party.slice(0, 3).map((ally) => (
+            {(
+              [
+                {
+                  key: 'holyMother' as const,
+                  icon: '✝',
+                  name: 'Thánh Mẫu',
+                  val: player.affinities?.holyMother || 0,
+                  locked: player.holyMagicLocked,
+                  activeClass: 'bg-[#261d0e] border-[#c5a059] text-[#dfd2b4]',
+                  idleClass: 'bg-[#110f14] border-[#3a3a3a] text-[#8d857b]',
+                },
+                {
+                  key: 'primordialVoid' as const,
+                  icon: '🌌',
+                  name: 'Hư Vô Nguyên Thủy',
+                  val: player.affinities?.primordialVoid || 0,
+                  locked: false,
+                  activeClass: 'bg-[#1d1226] border-[#8e6ca3] text-[#d3d3d3]',
+                  idleClass: 'bg-[#110f14] border-[#3a3a3a] text-[#8d857b]',
+                },
+                {
+                  key: 'demonicPact' as const,
+                  icon: '🩸',
+                  name: 'Giao Kèo Ác Quỷ',
+                  val: player.affinities?.demonicPact || 0,
+                  locked: false,
+                  activeClass: 'bg-[#2b0c10] border-[#8b0000] text-[#d3d3d3]',
+                  idleClass: 'bg-[#110f14] border-[#3a3a3a] text-[#8d857b]',
+                },
+              ] as const
+            ).map((g) => (
               <span
-                key={ally.id}
-                className={`inline-flex items-center gap-1 text-[10px] ${
-                  ally.hp > 0 ? 'text-[#d8b4fe]' : 'text-[#6e5a5f] line-through'
+                key={g.key}
+                title={`${g.name}: Thiện cảm ${g.val}${
+                  g.locked ? ' (Đã bị khóa do nuốt xác)' : ''
+                }`}
+                className={`px-1.5 py-0.5 border font-mono text-[10px] leading-none flex items-center gap-1 transition-all ${
+                  g.locked
+                    ? 'bg-[#1a0b0d] border-[#8b0000] text-[#7f4950] line-through'
+                    : g.val > 0
+                    ? g.activeClass
+                    : g.idleClass
+                } ${
+                  recentAffinityPillar === g.key
+                    ? 'ring-2 ring-[#c5a059] scale-105 animate-pulse'
+                    : ''
                 }`}
               >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    ally.hp <= 0
-                      ? 'bg-[#dc2626]'
-                      : ally.hp / Math.max(1, ally.maxHp) > 0.5
-                      ? 'bg-[#4ade80]'
-                      : 'bg-[#f59e0b]'
-                  }`}
-                />
-                <span className="hidden xl:inline max-w-[84px] truncate">{ally.name}</span>
+                <span>{g.icon}</span>
+                <span>{g.val}</span>
               </span>
             ))}
-          </span>
+          </div>
           {(isPlayerPanicking(player) || player.party.some((a) => a.hp > 0 && a.mind < 30)) && (
-            <span className="px-2 py-0.5 bg-[#7f1d1d] border border-[#f87171] text-[#fef2f2] font-bold animate-pulse">
+            <span className="px-2 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[#d3d3d3] font-bold animate-pulse">
               😱 HOẢNG LOẠN
             </span>
           )}
@@ -4747,32 +5202,32 @@ export default function App() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setActiveModal('inventory')}
-            className="px-2.5 py-1 bg-[#1b161f] hover:bg-[#28202e] border border-[#4a3b47] text-[11px] font-semibold text-[#e7dcc8] flex items-center gap-1 cursor-pointer"
+            className="df-btn px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
           >
-            <Backpack className="w-3.5 h-3.5 text-[#fbbf24]" /> Túi [I]
+            <Backpack className="w-3.5 h-3.5 text-[#c5a059]" /> Túi [I]
           </button>
           <button
             onClick={() => setActiveModal('lore')}
-            className="px-2.5 py-1 bg-[#1b161f] hover:bg-[#28202e] border border-[#4a3b47] text-[11px] font-semibold text-[#e7dcc8] flex items-center gap-1 cursor-pointer"
+            className="df-btn px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
           >
-            <BookOpen className="w-3.5 h-3.5 text-[#38bdf8]" /> Sách ({player.readBookIds.length}/{CONFIG.BOOKS.length}) [L]
+            <BookOpen className="w-3.5 h-3.5 text-[#c5a059]" /> Sách ({player.readBookIds.length}/{CONFIG.BOOKS.length}) [L]
           </button>
           <button
             onClick={() => setActiveModal('guide')}
-            className="px-2.5 py-1 bg-[#1b161f] hover:bg-[#28202e] border border-[#4a3b47] text-[11px] font-semibold text-[#e7dcc8] flex items-center gap-1 cursor-pointer"
+            className="df-btn px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
             title="Sách Hướng Dẫn Sinh Tồn [?]"
           >
-            <HelpCircle className="w-3.5 h-3.5 text-[#fbbf24]" /> Cẩm Nang [?]
+            <HelpCircle className="w-3.5 h-3.5 text-[#c5a059]" /> Cẩm Nang [?]
           </button>
           <button
             onClick={() => {
               sfx.muted = !muted;
               setMuted(!muted);
             }}
-            className="p-1 bg-[#1b161f] hover:bg-[#28202e] border border-[#4a3b47] text-xs cursor-pointer"
+            className="df-btn p-1.5 text-xs cursor-pointer"
             title="Bật/Tắt Âm Thanh"
           >
-            {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+            {muted ? <VolumeX className="w-3.5 h-3.5 text-[#d3d3d3]" /> : <Volume2 className="w-3.5 h-3.5 text-[#c5a059]" />}
           </button>
         </div>
       </header>
@@ -4781,19 +5236,62 @@ export default function App() {
       <div className="flex-1 min-h-0 max-w-[1440px] w-full mx-auto p-2.5 flex flex-col">
         <div className="w-full h-full min-h-0 flex flex-col gap-2">
           {/* Canvas Container */}
-          <div className="relative flex-1 min-h-0 flex flex-col border-2 border-[#4d3c36] bg-[#050407] shadow-2xl overflow-hidden">
+          <div className="relative flex-1 min-h-0 flex flex-col df-panel overflow-hidden">
             {/* Top-Left Area Name Banner */}
-            <div className="absolute top-2 left-2 z-10 bg-[#0d0a10]/90 border border-[#8c785c] px-2.5 py-1 pointer-events-none">
-              <div className="text-[9px] uppercase tracking-widest text-[#fbbf24]">Khu Vực</div>
+            <div className="absolute top-2.5 left-2.5 z-10 df-well px-3 py-1 pointer-events-none">
+              <div className="text-[9px] uppercase tracking-widest text-[#c5a059]">Khu Vực</div>
               <div
-                className="text-xs sm:text-sm font-bold text-[#f5ebd6]"
+                className="text-xs sm:text-sm font-bold text-[#d3d3d3]"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
                 {areaBannerText}
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 flex items-center justify-center bg-[#050407] p-1">
+            {/* God Affinity Increase Notification Toast */}
+            {affinityToast && (
+              <div
+                key={affinityToast.id}
+                className={`absolute top-3 left-1/2 -translate-x-1/2 z-40 max-w-md w-[92%] sm:w-auto px-4 py-2.5 df-panel flex items-start justify-between gap-3 ${
+                  affinityToast.pillar === 'holyMother'
+                    ? 'text-[#dfd2b4]'
+                    : affinityToast.pillar === 'primordialVoid'
+                    ? 'text-[#d3d3d3]'
+                    : 'text-[#d68888]'
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-[#c5a059]">
+                    <span>
+                      {affinityToast.pillar === 'holyMother'
+                        ? '✝'
+                        : affinityToast.pillar === 'primordialVoid'
+                        ? '🌌'
+                        : '🩸'}
+                    </span>
+                    <span>
+                      Thiện cảm {affinityToast.godName} đã tăng! ({affinityToast.prevVal} →{' '}
+                      {affinityToast.nextVal})
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-[#d3d3d3]">
+                    {affinityToast.unlockedSkills.length > 0
+                      ? `✨ Khai mở tại Bàn Thờ Hexen: ${affinityToast.unlockedSkills.join(', ')}`
+                      : `🔮 Cộng hưởng thần lực đạt bậc ${affinityToast.nextVal}.`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAffinityToast(null)}
+                  className="text-xs opacity-70 hover:opacity-100 px-1 cursor-pointer text-[#d3d3d3]"
+                  aria-label="Đóng thông báo thiện cảm"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <div className="relative flex-1 min-h-0 flex items-center justify-center bg-[#050407] p-1 overflow-hidden">
               <DungeonMapViewport
                 room={currentRoom}
                 player={player}
@@ -4811,26 +5309,18 @@ export default function App() {
                     handleTileInteraction();
                   }
                 }}
-                onUpdateEnemies={(updater) => {
-                  const roomId = currentRoom.id;
-                  setWorld((prev) => {
-                    const r = prev.rooms[roomId];
-                    if (!r) return prev;
-                    return {
-                      ...prev,
-                      rooms: {
-                        ...prev.rooms,
-                        [roomId]: {
-                          ...r,
-                          enemies: updater(r.enemies),
-                        },
-                      },
-                    };
-                  });
-                }}
                 onEnemyCollidePlayer={(enemy) => {
                   startCombatWithEnemy(enemy);
                 }}
+              />
+              {/* Continuous Pale Light-Gray Drifting Mist Ambient Overlays */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-[-8%] z-10 df-explore-mist-a"
+              />
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-[-10%] z-10 df-explore-mist-b"
               />
             </div>
 
@@ -4839,7 +5329,7 @@ export default function App() {
               <div className="absolute inset-x-4 bottom-8 z-30">
                 {/* Docked Right-Side Choice Window (Flush above the right side of the bottom dialogue box) */}
                 {interactionMenu ? (
-                  <div className="ml-auto w-fit min-w-[310px] max-w-[540px] mb-[2px] bg-[#1a1417]/96 border-2 border-[#a89f96] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),0_10px_32px_rgba(0,0,0,0.95)] px-3.5 py-2.5 space-y-1">
+                  <div className="ml-auto w-fit min-w-[310px] max-w-[540px] mb-[2px] df-panel px-3.5 py-2.5 space-y-1">
                     {interactionMenu.choices.map((choice, idx) => {
                       const isSelected = idx === interactionMenu.selectedIndex;
                       return (
@@ -4854,15 +5344,15 @@ export default function App() {
                           onClick={() => choice.onSelect()}
                           className={`w-full text-left px-4 py-1.5 font-serif text-sm sm:text-base tracking-wide transition cursor-pointer ${
                             isSelected
-                              ? 'text-white font-semibold'
-                              : 'text-[#e5ddd3] hover:text-white'
+                              ? 'text-[#f3e6c4] font-semibold'
+                              : 'text-[#d3d3d3]/75 hover:text-[#f3e6c4]'
                           }`}
                           style={
                             isSelected
                               ? {
                                   background:
-                                    'radial-gradient(ellipse at center, rgba(37, 99, 235, 0.92) 0%, rgba(29, 78, 216, 0.62) 55%, rgba(15, 23, 42, 0) 100%)',
-                                  textShadow: '0 0 8px rgba(191, 219, 254, 0.65)',
+                                    'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
+                                  textShadow: '0 0 8px rgba(197, 160, 89, 0.55)',
                                 }
                               : undefined
                           }
@@ -4873,15 +5363,15 @@ export default function App() {
                     })}
                   </div>
                 ) : (
-                  <div className="ml-auto w-fit min-w-[230px] mb-[2px] bg-[#1a1417]/96 border-2 border-[#a89f96] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),0_10px_32px_rgba(0,0,0,0.95)] px-3.5 py-2">
+                  <div className="ml-auto w-fit min-w-[230px] mb-[2px] df-panel px-3.5 py-2">
                     <button
                       type="button"
                       onClick={() => setLogOverlayVisible(false)}
-                      className="w-full text-left px-4 py-1 font-serif text-sm sm:text-base tracking-wide text-white font-semibold cursor-pointer"
+                      className="w-full text-left px-4 py-1 font-serif text-sm sm:text-base tracking-wide text-[#f3e6c4] font-semibold cursor-pointer"
                       style={{
                         background:
-                          'radial-gradient(ellipse at center, rgba(37, 99, 235, 0.92) 0%, rgba(29, 78, 216, 0.62) 55%, rgba(15, 23, 42, 0) 100%)',
-                        textShadow: '0 0 8px rgba(191, 219, 254, 0.65)',
+                          'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
+                        textShadow: '0 0 8px rgba(197, 160, 89, 0.55)',
                       }}
                     >
                       Tiếp tục hành trình [F]
@@ -4890,7 +5380,7 @@ export default function App() {
                 )}
 
                 {/* Bottom RPG Dialogue Box with Gothic Illuminated Drop-Cap Nameplate ([L]EVI style) */}
-                <div className="bg-[#1a1417]/95 border-2 border-[#a89f96] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),0_12px_40px_rgba(0,0,0,0.96)] px-5 py-3.5 min-h-[112px] flex flex-col justify-between">
+                <div className="df-panel px-5 py-3.5 min-h-[112px] flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       {(() => {
@@ -4900,13 +5390,13 @@ export default function App() {
                         return (
                           <div className="inline-flex items-end gap-1 select-none">
                             <span
-                              className="w-6 h-6 bg-[#f5efe6] text-[#09070a] border border-[#3d342f] font-black text-base flex items-center justify-center leading-none shadow-sm"
+                              className="w-6 h-6 bg-[#d3d3d3] text-[#09070a] border border-[#c5a059] font-black text-base flex items-center justify-center leading-none shadow-sm"
                               style={{ fontFamily: "'Cormorant Garamond', serif" }}
                             >
                               {firstChar}
                             </span>
                             <span
-                              className="text-xs sm:text-sm font-bold tracking-[0.14em] text-[#f5efe6] uppercase leading-none pb-0.5"
+                              className="text-xs sm:text-sm font-bold tracking-[0.14em] text-[#c5a059] uppercase leading-none pb-0.5"
                               style={{ fontFamily: "'Cormorant Garamond', serif" }}
                             >
                               {restChars}
@@ -4914,7 +5404,7 @@ export default function App() {
                           </div>
                         );
                       })()}
-                      <span className="text-[10px] text-[#b8afa6] font-mono">
+                      <span className="text-[10px] text-[#9b8f82] font-mono">
                         {interactionMenu
                           ? '[W/S] Chọn • [F / Enter] Xác nhận • [ESC] Đóng'
                           : '[F / ESC] Đóng'}
@@ -4922,7 +5412,7 @@ export default function App() {
                     </div>
 
                     {interactionMenu ? (
-                      <div className="text-sm sm:text-base font-serif text-[#f5efe6] leading-relaxed">
+                      <div className="text-sm sm:text-base font-serif text-[#d3d3d3] leading-relaxed">
                         {interactionMenu.description.startsWith('“') ||
                         interactionMenu.description.startsWith('"')
                           ? interactionMenu.description
@@ -4934,7 +5424,7 @@ export default function App() {
                           <div
                             key={i}
                             className={`leading-snug ${
-                              i === 0 ? 'text-[#f5efe6] font-semibold' : 'text-[#b8afa6] text-xs'
+                              i === 0 ? 'text-[#d3d3d3] font-semibold' : 'text-[#9b8f82] text-xs'
                             }`}
                           >
                             • {log}
@@ -4967,7 +5457,8 @@ export default function App() {
       {activeModal === 'inventory' && (() => {
         const safeInvIdx = selectedInvMemberIdx <= player.party.length ? selectedInvMemberIdx : 0;
         const selectedAlly = safeInvIdx > 0 ? player.party[safeInvIdx - 1] || null : null;
-        const isAllyLocked = Boolean(selectedAlly?.isUndeadSummon);
+        const isAllyLocked = isAllyGearLocked(selectedAlly);
+        const isSelectedPureTank = isPureTankSummon(selectedAlly);
         const allyComputed = selectedAlly ? getAllyComputedStats(selectedAlly, player) : null;
         const memberStats = selectedAlly && allyComputed
           ? {
@@ -5002,23 +5493,23 @@ export default function App() {
         const isSelectedUndead = Boolean(selectedAlly?.isUndeadSummon);
 
         const renderMemberSurvivalPanel = (compact = false) => (
-          <div className={`bg-[#120e17] border border-[#32283a] ${compact ? 'p-3' : 'p-2.5'} space-y-2`}>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#261f2c] pb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#fbbf24]">
+          <div className={`df-well ${compact ? 'p-3' : 'p-2.5'} space-y-2`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#3a3a3a]/60 pb-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#c5a059]">
                 Trạng Thái Sinh Tồn — {selectedMemberName}
               </span>
               <div className="flex items-center gap-1.5">
                 {memberMind < 30 && (
-                  <span className="px-1.5 py-0.5 bg-[#7f1d1d] border border-[#f87171] text-[10px] font-bold text-[#fef2f2]">
+                  <span className="px-1.5 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[10px] font-bold text-[#d3d3d3]">
                     Tâm Trí &lt; 30 (Hoảng Loạn)
                   </span>
                 )}
                 {!isSelectedUndead && memberHunger >= 80 ? (
-                  <span className="px-1.5 py-0.5 bg-[#450a0a] border border-[#dc2626] text-[10px] font-bold text-[#fca5a5]">
+                  <span className="px-1.5 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[10px] font-bold text-[#c96b6b]">
                     Đói ≥ 80 (Kiệt Sức)
                   </span>
                 ) : !isSelectedUndead && memberHunger >= 50 ? (
-                  <span className="px-1.5 py-0.5 bg-[#431407] border border-[#ea580c] text-[10px] font-bold text-[#fdba74]">
+                  <span className="px-1.5 py-0.5 bg-[#261d0e] border border-[#c5a059] text-[10px] font-bold text-[#c5a059]">
                     Đói ≥ 50 (Cồn Cào -25% ATK)
                   </span>
                 ) : null}
@@ -5028,16 +5519,16 @@ export default function App() {
               {/* Sinh Lực */}
               <div>
                 <div className="flex justify-between items-center text-[11px] mb-1">
-                  <span className="flex items-center gap-1 text-[#f87171] font-bold">
+                  <span className="flex items-center gap-1 text-[#c96b6b] font-bold">
                     <Heart className="w-3 h-3" /> Sinh Lực
                   </span>
-                  <span className="font-mono text-[#fee2e2]">
+                  <span className="font-mono text-[#d3d3d3]">
                     {memberHp}/{memberMaxHp}
                   </span>
                 </div>
-                <div className="w-full h-2 bg-[#241316] border border-[#5c232a]">
+                <div className="w-full h-2 bg-[#1a0a0d] border border-[#3a3a3a]">
                   <div
-                    className="h-full bg-[#dc2626] transition-all"
+                    className="h-full bg-[#8b0000] transition-all"
                     style={{ width: `${Math.max(0, Math.min(100, (memberHp / Math.max(1, memberMaxHp)) * 100))}%` }}
                   />
                 </div>
@@ -5046,72 +5537,101 @@ export default function App() {
               {/* Tâm Trí */}
               <div>
                 <div className="flex justify-between items-center text-[11px] mb-1">
-                  <span className="flex items-center gap-1 text-[#60a5fa] font-bold">
+                  <span className="flex items-center gap-1 text-[#a3b2c4] font-bold">
                     <Brain className="w-3 h-3" /> Tâm Trí
                   </span>
-                  <span className={`font-mono ${memberMind < 30 ? 'text-[#fca5a5] font-bold' : 'text-[#dbeafe]'}`}>
+                  <span className={`font-mono ${memberMind < 30 ? 'text-[#c96b6b] font-bold' : 'text-[#d3d3d3]'}`}>
                     {memberMind}/{memberMaxMind}
                   </span>
                 </div>
-                <div className="w-full h-2 bg-[#121c2d] border border-[#274472]">
+                <div className="w-full h-2 bg-[#11151d] border border-[#3a3a3a]">
                   <div
-                    className="h-full bg-[#2563eb] transition-all"
+                    className="h-full bg-[#5b6f8a] transition-all"
                     style={{ width: `${Math.max(0, Math.min(100, (memberMind / Math.max(1, memberMaxMind)) * 100))}%` }}
                   />
                 </div>
               </div>
 
               {/* Độ Đói */}
-              <div>
-                <div className="flex justify-between items-center text-[11px] mb-1">
-                  <span className="flex items-center gap-1 text-[#fbbf24] font-bold">
-                    <Utensils className="w-3 h-3" /> Độ Đói
-                  </span>
-                  {isSelectedUndead ? (
-                    <span className="text-[10px] italic text-[#d8b4fe]">Bất tử — Không cần ăn</span>
-                  ) : (
-                    <span className={`font-mono ${memberHunger >= 50 ? 'text-[#f87171] font-bold' : 'text-[#fef3c7]'}`}>
-                      {memberHunger}/100
-                    </span>
-                  )}
-                </div>
-                {isSelectedUndead ? (
-                  <div className="w-full h-2 bg-[#1e1226] border border-[#581c87]" />
-                ) : (
-                  <div className="w-full h-2 bg-[#261c10] border border-[#6b4c23]">
-                    <div
-                      className="h-full bg-[#d97706] transition-all"
-                      style={{ width: `${Math.max(0, Math.min(100, memberHunger))}%` }}
-                    />
+              {(() => {
+                const hungerDanger = !isSelectedUndead && memberHunger >= 80;
+                return (
+                  <div>
+                    <div className="flex justify-between items-center text-[11px] mb-1">
+                      <span
+                        className={`font-bold transition-colors ${
+                          hungerDanger ? 'text-[#ef4444]' : 'text-[#eab308]'
+                        }`}
+                      >
+                        Độ Đói
+                      </span>
+                      {isSelectedUndead ? (
+                        <span className="text-[10px] italic text-[#a889b8]">Bất tử — Không cần ăn</span>
+                      ) : (
+                        <span
+                          className={`font-mono font-bold ${
+                            hungerDanger
+                              ? 'text-[#ef4444]'
+                              : memberHunger >= 50
+                              ? 'text-[#f59e0b]'
+                              : 'text-[#e5c158]'
+                          }`}
+                        >
+                          {memberHunger}/100
+                        </span>
+                      )}
+                    </div>
+                    {isSelectedUndead ? (
+                      <div className="flex items-center gap-2">
+                        <HungerBowlIcon className="w-4 h-4 shrink-0 opacity-40" />
+                        <div className="flex-1 h-2 bg-[#1a1220] border border-[#3a3a3a]" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <HungerBowlIcon className="w-4 h-4 shrink-0" isDanger={hungerDanger} />
+                        <div
+                          className={`flex-1 h-2 border transition-colors ${
+                            hungerDanger
+                              ? 'bg-[#26090b] border-[#b91c1c]'
+                              : 'bg-[#1d170f] border-[#6b531c]'
+                          }`}
+                        >
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              hungerDanger
+                                ? 'bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.85)]'
+                                : 'bg-[#eab308]'
+                            }`}
+                            style={{ width: `${Math.max(0, Math.min(100, memberHunger))}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
             </div>
           </div>
         );
 
         return (
           <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-            <div className="max-w-4xl w-full bg-[#110d14] border-2 border-[#a8a29e] p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="max-w-4xl w-full df-panel p-6 space-y-4 max-h-[92vh] overflow-y-auto">
               {/* Top Navigation Tabs */}
-              <div className="flex flex-wrap items-center justify-between border-b border-[#382e32] pb-3 gap-2">
+              <div className="flex flex-wrap items-center justify-between border-b border-[#3a3a3a] pb-3 gap-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => setInvTab('equip')}
-                    className={`px-3 py-1.5 text-xs font-bold uppercase border cursor-pointer ${
-                      invTab === 'equip'
-                        ? 'bg-[#7f1d1d] border-[#f87171] text-white'
-                        : 'bg-[#1a1520] border-[#3d3345] text-[#a89882]'
+                    className={`px-3 py-1.5 text-xs font-bold uppercase cursor-pointer ${
+                      invTab === 'equip' ? 'df-btn-active' : 'df-btn'
                     }`}
                   >
                     Trang Bị, Giải Phẫu &amp; 6 Chỉ Số
                   </button>
                   <button
                     onClick={() => setInvTab('items')}
-                    className={`px-3 py-1.5 text-xs font-bold uppercase border cursor-pointer ${
-                      invTab === 'items'
-                        ? 'bg-[#7f1d1d] border-[#f87171] text-white'
-                        : 'bg-[#1a1520] border-[#3d3345] text-[#a89882]'
+                    className={`px-3 py-1.5 text-xs font-bold uppercase cursor-pointer ${
+                      invTab === 'items' ? 'df-btn-active' : 'df-btn'
                     }`}
                   >
                     Túi Đồ Thực Dụng &amp; Giả Kim
@@ -5119,10 +5639,8 @@ export default function App() {
                   {isAmputating && (
                     <button
                       onClick={() => setInvTab('saw')}
-                      className={`px-3 py-1.5 text-xs font-bold uppercase border cursor-pointer ${
-                        invTab === 'saw'
-                          ? 'bg-[#7f1d1d] border-[#f87171] text-white'
-                          : 'bg-[#1a1520] border-[#3d3345] text-[#a89882]'
+                      className={`px-3 py-1.5 text-xs font-bold uppercase cursor-pointer ${
+                        invTab === 'saw' ? 'df-btn-active' : 'df-btn'
                       }`}
                     >
                       Cưa Xương &amp; Giải Phẫu
@@ -5131,7 +5649,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => setActiveModal(null)}
-                  className="px-3 py-1 bg-[#261e24] text-xs font-bold border border-[#524046] cursor-pointer"
+                  className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
                 >
                   Đóng [ESC]
                 </button>
@@ -5147,51 +5665,69 @@ export default function App() {
                     setPreviewItemId(player.equippedWeapon);
                     setInvFeedback(null);
                   }}
-                  className={`p-2 border text-left text-xs transition cursor-pointer space-y-1.5 ${
-                    safeInvIdx === 0
-                      ? 'bg-[#2b151a] border-[#fbbf24] text-[#fef3c7]'
-                      : 'bg-[#09070c] border-[#2e242c] text-[#a89882] hover:border-[#6e5a44]'
+                  className={`p-2.5 text-left text-xs cursor-pointer space-y-1.5 ${
+                    safeInvIdx === 0 ? 'df-card-active text-[#dfd2b4]' : 'df-card text-[#9b8f82]'
                   }`}
                 >
                   <div className="font-bold truncate flex items-center justify-between gap-1">
                     <span className="truncate">★ {player.name}</span>
-                    <span className="text-[9px] text-[#fbbf24] shrink-0">[CHÍNH]</span>
+                    <span className="text-[9px] text-[#c5a059] shrink-0">[CHÍNH]</span>
                   </div>
                   <div className="space-y-1 text-[9px] font-mono">
                     <div>
-                      <div className="flex justify-between text-[#fca5a5]">
+                      <div className="flex justify-between text-[#c96b6b]">
                         <span>Sinh Lực</span>
                         <span>{player.hp}/{player.maxHp}</span>
                       </div>
-                      <div className="w-full h-1 bg-[#241316] border border-[#5c232a]">
+                      <div className="w-full h-1 bg-[#1a0a0d] border border-[#3a3a3a]">
                         <div
-                          className="h-full bg-[#dc2626]"
+                          className="h-full bg-[#8b0000]"
                           style={{ width: `${Math.max(0, Math.min(100, (player.hp / Math.max(1, player.maxHp)) * 100))}%` }}
                         />
                       </div>
                     </div>
                     <div>
-                      <div className="flex justify-between text-[#93c5fd]">
+                      <div className="flex justify-between text-[#a3b2c4]">
                         <span>Tâm Trí</span>
                         <span>{player.mind}/{player.maxMind}</span>
                       </div>
-                      <div className="w-full h-1 bg-[#121c2d] border border-[#274472]">
+                      <div className="w-full h-1 bg-[#11151d] border border-[#3a3a3a]">
                         <div
-                          className="h-full bg-[#2563eb]"
+                          className="h-full bg-[#5b6f8a]"
                           style={{ width: `${Math.max(0, Math.min(100, (player.mind / Math.max(1, player.maxMind)) * 100))}%` }}
                         />
                       </div>
                     </div>
                     <div>
-                      <div className="flex justify-between text-[#fcd34d]">
+                      <div
+                        className={`flex justify-between items-center ${
+                          player.hunger >= 80 ? 'text-[#ef4444] font-bold' : 'text-[#eab308]'
+                        }`}
+                      >
                         <span>Đói</span>
                         <span>{player.hunger}</span>
                       </div>
-                      <div className="w-full h-1 bg-[#261c10] border border-[#6b4c23]">
-                        <div
-                          className="h-full bg-[#d97706]"
-                          style={{ width: `${Math.max(0, Math.min(100, player.hunger))}%` }}
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <HungerBowlIcon
+                          className="w-3 h-3 shrink-0"
+                          isDanger={player.hunger >= 80}
                         />
+                        <div
+                          className={`flex-1 h-1 border ${
+                            player.hunger >= 80
+                              ? 'bg-[#26090b] border-[#b91c1c]'
+                              : 'bg-[#1d170f] border-[#6b531c]'
+                          }`}
+                        >
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              player.hunger >= 80
+                                ? 'bg-[#ef4444] shadow-[0_0_6px_rgba(239,68,68,0.85)]'
+                                : 'bg-[#eab308]'
+                            }`}
+                            style={{ width: `${Math.max(0, Math.min(100, player.hunger))}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -5202,7 +5738,7 @@ export default function App() {
                     return (
                       <div
                         key={`empty_${slotIdx}`}
-                        className="p-2 border border-dashed border-[#27202b] bg-[#08060a] text-[11px] text-[#574c5e] flex items-center justify-center"
+                        className="p-2 df-well opacity-45 text-[11px] text-[#7a7066] flex items-center justify-center"
                       >
                         [Ô Đồng Đội #{slotIdx + 1} Trống]
                       </div>
@@ -5216,61 +5752,79 @@ export default function App() {
                       type="button"
                       onClick={() => {
                         setSelectedInvMemberIdx(slotIdx + 1);
-                        setPreviewItemId(ally.weaponId);
+                        setPreviewItemId(ally.weaponId || ally.equippedBody || 'rotten_wood_shield');
                         setInvFeedback(null);
                       }}
-                      className={`p-2 border text-left text-xs transition cursor-pointer space-y-1.5 ${
-                        active
-                          ? 'bg-[#241630] border-[#fbbf24] text-[#fef3c7]'
-                          : 'bg-[#09070c] border-[#2e242c] text-[#a89882] hover:border-[#6e5a44]'
+                      className={`p-2.5 text-left text-xs cursor-pointer space-y-1.5 ${
+                        active ? 'df-card-active text-[#dfd2b4]' : 'df-card text-[#9b8f82]'
                       }`}
                     >
                       <div className="font-bold truncate flex items-center justify-between gap-1">
                         <span className="truncate">{ally.name}</span>
-                        <span className="text-[9px] text-[#e9d5ff] shrink-0">
+                        <span className="text-[9px] text-[#a889b8] shrink-0">
                           {ally.isUndeadSummon ? '[CHIÊU HỒN]' : '[ĐỒNG ĐỘI]'}
                         </span>
                       </div>
                       <div className="space-y-1 text-[9px] font-mono">
                         <div>
-                          <div className="flex justify-between text-[#fca5a5]">
+                          <div className="flex justify-between text-[#c96b6b]">
                             <span>Sinh Lực</span>
                             <span>{ally.hp}/{ally.maxHp}</span>
                           </div>
-                          <div className="w-full h-1 bg-[#241316] border border-[#5c232a]">
+                          <div className="w-full h-1 bg-[#1a0a0d] border border-[#3a3a3a]">
                             <div
-                              className="h-full bg-[#dc2626]"
+                              className="h-full bg-[#8b0000]"
                               style={{ width: `${Math.max(0, Math.min(100, (ally.hp / Math.max(1, ally.maxHp)) * 100))}%` }}
                             />
                           </div>
                         </div>
                         <div>
-                          <div className="flex justify-between text-[#93c5fd]">
+                          <div className="flex justify-between text-[#a3b2c4]">
                             <span>Tâm Trí</span>
                             <span>{ally.mind}/{ally.maxMind}</span>
                           </div>
-                          <div className="w-full h-1 bg-[#121c2d] border border-[#274472]">
+                          <div className="w-full h-1 bg-[#11151d] border border-[#3a3a3a]">
                             <div
-                              className="h-full bg-[#2563eb]"
+                              className="h-full bg-[#5b6f8a]"
                               style={{ width: `${Math.max(0, Math.min(100, (ally.mind / Math.max(1, ally.maxMind)) * 100))}%` }}
                             />
                           </div>
                         </div>
                         {ally.isUndeadSummon ? (
-                          <div className="text-[9px] italic text-[#d8b4fe] pt-0.5">
+                          <div className="text-[9px] italic text-[#a889b8] pt-0.5">
                             Bất tử — Không cần ăn
                           </div>
                         ) : (
                           <div>
-                            <div className="flex justify-between text-[#fcd34d]">
+                            <div
+                              className={`flex justify-between items-center ${
+                                allyHunger >= 80 ? 'text-[#ef4444] font-bold' : 'text-[#eab308]'
+                              }`}
+                            >
                               <span>Đói</span>
                               <span>{allyHunger}</span>
                             </div>
-                            <div className="w-full h-1 bg-[#261c10] border border-[#6b4c23]">
-                              <div
-                                className="h-full bg-[#d97706]"
-                                style={{ width: `${Math.max(0, Math.min(100, allyHunger))}%` }}
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <HungerBowlIcon
+                                className="w-3 h-3 shrink-0"
+                                isDanger={allyHunger >= 80}
                               />
+                              <div
+                                className={`flex-1 h-1 border ${
+                                  allyHunger >= 80
+                                    ? 'bg-[#26090b] border-[#b91c1c]'
+                                    : 'bg-[#1d170f] border-[#6b531c]'
+                                }`}
+                              >
+                                <div
+                                  className={`h-full transition-all duration-300 ${
+                                    allyHunger >= 80
+                                      ? 'bg-[#ef4444] shadow-[0_0_6px_rgba(239,68,68,0.85)]'
+                                      : 'bg-[#eab308]'
+                                  }`}
+                                  style={{ width: `${Math.max(0, Math.min(100, allyHunger))}%` }}
+                                />
+                              </div>
                             </div>
                           </div>
                         )}
@@ -5282,17 +5836,17 @@ export default function App() {
               )}
 
               {/* Top Header: 64x64 Vector Artwork + Detailed Lore Description */}
-              <div className="p-3.5 bg-[#09070c] border border-[#4a3e3d] flex items-center gap-4">
+              <div className="p-3.5 df-well flex items-center gap-4">
                 <ItemArtworkCanvas itemOrWeaponId={previewItemId} size={64} />
                 <div className="space-y-1 text-xs">
-                  <div className="text-sm font-bold text-[#f3e5ab]">
+                  <div className="text-sm font-bold text-[#c5a059]">
                     {CONFIG.WEAPONS[previewItemId]?.name ||
                       CONFIG.SHIELDS[previewItemId]?.name ||
                       GEAR_ITEMS[previewItemId]?.name ||
                       CONFIG.ITEMS[previewItemId]?.name ||
                       'Vật Phẩm Cổ Đại'}
                   </div>
-                  <p className="text-[#cfc0a9] leading-relaxed">
+                  <p className="text-[#d3d3d3] leading-relaxed">
                     {CONFIG.WEAPONS[previewItemId]?.desc ||
                       CONFIG.SHIELDS[previewItemId]?.desc ||
                       GEAR_ITEMS[previewItemId]?.desc ||
@@ -5304,11 +5858,11 @@ export default function App() {
               {invTab === 'equip' && (
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
                   {/* Left Column: 6 Character Stats + Integrated 6-Part Anatomy & Statuses */}
-                  <div className="md:col-span-5 bg-[#0b090e] border border-[#3b3136] p-4 space-y-4">
+                  <div className="md:col-span-5 df-well p-4 space-y-4">
                     <div className="space-y-3">
                       {renderMemberSurvivalPanel(false)}
-                      <div className="flex items-center justify-between border-b border-[#292226] pb-2">
-                        <span className="text-xs font-bold uppercase tracking-wider text-[#fbbf24]">
+                      <div className="flex items-center justify-between border-b border-[#3a3a3a]/60 pb-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[#c5a059]">
                           6 Chỉ Số — {selectedMemberName}
                         </span>
                       </div>
@@ -5324,27 +5878,27 @@ export default function App() {
                       ).map(([label, val]) => (
                         <div
                           key={label}
-                          className="flex items-center justify-between text-xs border-b border-[#1c171f] pb-1.5"
+                          className="flex items-center justify-between text-xs border-b border-[#3a3a3a]/40 pb-1.5"
                         >
-                          <span className="text-[#cfc0a9]">{label}</span>
-                          <span className="font-mono font-bold text-[#86efac]">
-                            {val} <span className="text-[10px] text-[#fbbf24]">▲</span>
+                          <span className="text-[#d3d3d3]">{label}</span>
+                          <span className="font-mono font-bold text-[#9ab08e]">
+                            {val} <span className="text-[10px] text-[#c5a059]">▲</span>
                           </span>
                         </div>
                       ))}
                     </div>
 
                     {/* Integrated 6-Part Anatomy & Active Body Statuses */}
-                    <div className="space-y-2 pt-2 border-t border-[#292226]">
+                    <div className="space-y-2 pt-2 border-t border-[#3a3a3a]/60">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-[#f3e5ab] flex items-center gap-1.5">
-                          <Shield className="w-3.5 h-3.5 text-[#dc2626]" /> Giải Phẫu 6 Bộ Phận
+                        <span className="text-xs font-bold uppercase tracking-wider text-[#c5a059] flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5 text-[#8b0000]" /> Giải Phẫu 6 Bộ Phận
                         </span>
-                        <span className="text-[10px] text-[#a89882]">Trạng thái cơ thể</span>
+                        <span className="text-[10px] text-[#9b8f82]">Trạng thái cơ thể</span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                        <div className="px-2 py-1 bg-[#101f15] border border-[#285436] text-[#86efac] flex justify-between">
+                        <div className="px-2 py-1 bg-[#121914] border border-[#3a3a3a] text-[#9ab08e] flex justify-between">
                           <span>Đầu</span>
                           <span className="font-mono font-bold">
                             {memberStatuses.blindedTurns > 0 ? 'MÙ' : 'OK'}
@@ -5353,8 +5907,8 @@ export default function App() {
                         <div
                           className={`px-2 py-1 border flex justify-between ${
                             memberStatuses.bleeding || memberStatuses.parasite
-                              ? 'bg-[#2b1f11] border-[#854d0e] text-[#fde047]'
-                              : 'bg-[#101f15] border-[#285436] text-[#86efac]'
+                              ? 'bg-[#261d0e] border-[#c5a059] text-[#c5a059]'
+                              : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
                           }`}
                         >
                           <span>Thân</span>
@@ -5377,10 +5931,10 @@ export default function App() {
                               key={limbKey}
                               className={`px-2 py-1 border flex justify-between ${
                                 !intact
-                                  ? 'bg-[#2e1115] border-[#991b1b] text-[#fca5a5] line-through'
+                                  ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b] line-through'
                                   : infected
-                                  ? 'bg-[#2b1f11] border-[#854d0e] text-[#fde047]'
-                                  : 'bg-[#101f15] border-[#285436] text-[#86efac]'
+                                  ? 'bg-[#261d0e] border-[#c5a059] text-[#c5a059]'
+                                  : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
                               }`}
                             >
                               <span>{limbLabel}</span>
@@ -5398,22 +5952,22 @@ export default function App() {
                         (!selectedAlly && player.holyMagicLocked)) && (
                         <div className="flex flex-wrap gap-1 pt-1">
                           {memberStatuses.bleeding && (
-                            <span className="px-1.5 py-0.5 bg-[#450a0a] border border-[#dc2626] text-[10px] text-[#fca5a5]">
+                            <span className="px-1.5 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[10px] text-[#c96b6b]">
                               🩸 Chảy máu
                             </span>
                           )}
                           {memberStatuses.poisoned && (
-                            <span className="px-1.5 py-0.5 bg-[#14532d] border border-[#22c55e] text-[10px] text-[#bbf7d0]">
+                            <span className="px-1.5 py-0.5 bg-[#121914] border border-[#3a3a3a] text-[10px] text-[#9ab08e]">
                               ☠️ Độc
                             </span>
                           )}
                           {memberStatuses.parasite && (
-                            <span className="px-1.5 py-0.5 bg-[#3b0764] border border-[#a855f7] text-[10px] text-[#e9d5ff]">
+                            <span className="px-1.5 py-0.5 bg-[#1d1226] border border-[#8e6ca3] text-[10px] text-[#d3d3d3]">
                               🪱 Ký sinh
                             </span>
                           )}
                           {!selectedAlly && player.holyMagicLocked && (
-                            <span className="px-1.5 py-0.5 bg-[#27272a] border border-[#71717a] text-[10px] text-[#d4d4d8]">
+                            <span className="px-1.5 py-0.5 bg-[#1a171c] border border-[#3a3a3a] text-[10px] text-[#d3d3d3]">
                               🔒 Khóa Phép Thánh
                             </span>
                           )}
@@ -5425,17 +5979,23 @@ export default function App() {
                   {/* Right Column: Action Bar (Trang Bị | Tự Mặc | Lột Đồ) + 5 Equipment Slots */}
                   <div className="md:col-span-7 space-y-3">
                     {invFeedback && (
-                      <div className="p-2 bg-[#1c1318] border border-[#fbbf24] text-xs text-[#fef08a]">
+                      <div className="p-2 df-well border-[#c5a059] text-xs text-[#dfd2b4]">
                         {invFeedback}
                       </div>
                     )}
-                    {isAllyLocked && (
-                      <div className="p-2.5 bg-[#211026] border border-[#a855f7] text-xs text-[#e9d5ff]">
-                        💀 Thuộc hạ Chiêu Hồn bị khóa cứng trang bị sau khi chết — không thể thay đổi vũ khí hay giáp trụ.
+                    {isAllyLocked ? (
+                      <div className="p-2.5 df-well border-[#8e6ca3] text-xs text-[#d3d3d3]">
+                        {isSelectedPureTank
+                          ? '👻 Oán Linh Thuần Phòng Thủ giữ nguyên bản thể linh hồn — không thể thay đổi vũ khí hay giáp trụ (tự động bảo vệ đội hình bằng Khiên Linh Hồn).'
+                          : '💀 Đệ tử Chiêu Hồn đã tan rã thành tro bụi và rơi toàn bộ trang bị về kho đồ.'}
                       </div>
-                    )}
-                    <div className="flex items-center gap-2 bg-[#16121c] border border-[#3d3242] p-2">
-                      <span className="text-xs font-bold text-[#f3e5ab] px-2">Thao tác:</span>
+                    ) : selectedAlly?.isUndeadSummon ? (
+                      <div className="p-2.5 df-well border-[#c5a059]/60 text-xs text-[#d3d3d3]">
+                        💀⚔️ Đệ tử Chiêu Hồn có thể trang bị &amp; nâng cấp từ kho chung — toàn bộ trang bị đang mặc sẽ tự động thu hồi về kho khi đệ tử tử trận!
+                      </div>
+                    ) : null}
+                    <div className="flex items-center gap-2 df-well p-2">
+                      <span className="text-xs font-bold text-[#c5a059] px-2">Thao tác:</span>
                       <button
                         disabled={isAllyLocked}
                         onClick={() => {
@@ -5443,12 +6003,22 @@ export default function App() {
                             setPlayer((prev) => {
                               const nextParty = [...prev.party];
                               const ally = nextParty[safeInvIdx - 1];
-                              if (!ally || ally.isUndeadSummon) return prev;
+                              if (!ally || isAllyGearLocked(ally)) return prev;
+                              const candidateWeapons = Array.from(
+                                new Set([...(ally.weaponId ? [ally.weaponId] : []), ...prev.unlockedWeapons])
+                              ).filter((id) => Boolean(CONFIG.WEAPONS[id]));
                               const bestWep =
-                                prev.unlockedWeapons[prev.unlockedWeapons.length - 1] || ally.weaponId;
+                                candidateWeapons.sort((a, b) => {
+                                  const wa = CONFIG.WEAPONS[a];
+                                  const wb = CONFIG.WEAPONS[b];
+                                  return wb.dmg[0] + wb.dmg[1] - (wa.dmg[0] + wa.dmg[1]);
+                                })[0] || ally.weaponId;
                               const tempAlly = { ...ally, weaponId: bestWep };
                               const validShield =
-                                prev.unlockedShields.find((sId) => canAllyEquipShield(tempAlly, sId).allowed) || null;
+                                prev.unlockedShields.find((sId) => canAllyEquipShield(tempAlly, sId).allowed) ||
+                                (ally.equippedShield && canAllyEquipShield(tempAlly, ally.equippedShield).allowed
+                                  ? ally.equippedShield
+                                  : null);
                               const validHead =
                                 prev.unlockedGear.find(
                                   (g) => GEAR_ITEMS[g]?.slot === 'head' && canAllyEquipGear(tempAlly, g).allowed
@@ -5471,7 +6041,7 @@ export default function App() {
                               };
                               return { ...prev, party: nextParty };
                             });
-                            addLog(`Đã Tự Mặc bộ trang bị tối ưu cho đồng đội [${selectedAlly.name}].`);
+                            addLog(`⚔️ [${selectedAlly.name}] đã khoác lên bộ trang bị tinh nhuệ nhất.`);
                             return;
                           }
                           const unlockCheck = canUnequipWeapon(player);
@@ -5514,11 +6084,11 @@ export default function App() {
                           });
                           addLog(
                             unlockCheck.allowed
-                              ? 'Đã Tự Mặc bộ trang bị tối ưu nhất phù hợp với cơ thể và nghề nghiệp.'
-                              : `⚠️ Giữ nguyên vũ khí bị nguyền đang khóa chặt vào tay; đã mặc tối ưu các giáp còn lại!`
+                              ? '⚔️ Đã khoác bộ trang bị tinh nhuệ nhất phù hợp với thể trạng.'
+                              : `⚠️ Lời nguyền giữ chặt vũ khí trên tay; đã khoác các mảnh giáp còn lại.`
                           );
                         }}
-                        className="px-3 py-1 bg-[#1e3a8a] hover:bg-[#1d4ed8] disabled:opacity-35 text-xs font-bold text-white cursor-pointer"
+                        className="df-btn-bronze px-3 py-1 disabled:opacity-35 text-xs font-bold cursor-pointer"
                       >
                         Tự Mặc
                       </button>
@@ -5529,7 +6099,7 @@ export default function App() {
                             setPlayer((prev) => {
                               const nextParty = [...prev.party];
                               const ally = nextParty[safeInvIdx - 1];
-                              if (!ally || ally.isUndeadSummon) return prev;
+                              if (!ally || isAllyGearLocked(ally)) return prev;
                               nextParty[safeInvIdx - 1] = {
                                 ...ally,
                                 equippedShield: null,
@@ -5539,7 +6109,7 @@ export default function App() {
                               };
                               return { ...prev, party: nextParty };
                             });
-                            addLog(`Đã tháo giáp phụ trợ của [${selectedAlly.name}].`);
+                            addLog(`🛡️ Đã gỡ bỏ giáp trụ phụ trợ của [${selectedAlly.name}].`);
                             return;
                           }
                           setPlayer((prev) => ({
@@ -5549,9 +6119,9 @@ export default function App() {
                             equippedBody: null,
                             equippedAccessory: null,
                           }));
-                          addLog('Đã Lột Đồ phụ trợ để giảm tải trọng.');
+                          addLog('🛡️ Đã gỡ bỏ giáp trụ phụ trợ để nhẹ bước trong bóng tối.');
                         }}
-                        className="px-3 py-1 bg-[#3f1d24] hover:bg-[#5c2430] disabled:opacity-35 text-xs font-bold text-[#fca5a5] cursor-pointer"
+                        className="df-btn-blood px-3 py-1 disabled:opacity-35 text-xs font-bold cursor-pointer"
                       >
                         Lột Đồ
                       </button>
@@ -5564,14 +6134,16 @@ export default function App() {
                           [
                             'weapon',
                             'V.Khí',
-                            (CONFIG.WEAPONS[curWpnId]?.name || 'Trống') +
+                            (isSelectedPureTank && !curWpnId
+                              ? 'Hộ Thể Linh Hồn'
+                              : CONFIG.WEAPONS[curWpnId]?.name || 'Trống') +
                               (!selectedAlly && player.bloodForgedWeapons?.includes(curWpnId)
                                 ? ' [Huyết Rèn +35%]'
                                 : '') +
                               (!selectedAlly && player.cursedLockedWeapon === curWpnId
                                 ? ' [🔒 KHÓA NGUYỀN]'
                                 : ''),
-                            curWpnId,
+                            curWpnId || 'rotten_wood_shield',
                           ],
                           [
                             'shield',
@@ -5605,26 +6177,24 @@ export default function App() {
                             setSelectedEquipSlot(slotKey);
                             setPreviewItemId(iconId);
                           }}
-                          className={`p-2.5 border flex items-center justify-between cursor-pointer ${
-                            selectedEquipSlot === slotKey
-                              ? 'bg-[#26151c] border-[#fbbf24]'
-                              : 'bg-[#0b090e] border-[#2e252c]'
+                          className={`p-2.5 flex items-center justify-between cursor-pointer ${
+                            selectedEquipSlot === slotKey ? 'df-card-active' : 'df-card'
                           }`}
                         >
                           <div className="flex items-center gap-3">
-                            <span className="w-16 text-xs font-bold uppercase text-[#a89882]">
+                            <span className="w-16 text-xs font-bold uppercase text-[#9b8f82]">
                               {slotLabel}
                             </span>
-                            <span className="text-xs font-bold text-[#f5ebd6]">{equippedName}</span>
+                            <span className="text-xs font-bold text-[#d3d3d3]">{equippedName}</span>
                           </div>
-                          <span className="text-[10px] text-[#fbbf24]">[Chọn đổi]</span>
+                          <span className="text-[10px] text-[#c5a059]">[Chọn đổi]</span>
                         </div>
                       ))}
                     </div>
 
                     {/* Available items for the selected slot */}
-                    <div className="p-3 bg-[#09070c] border border-[#2e252c] space-y-2">
-                      <div className="text-[11px] uppercase text-[#a89882]">
+                    <div className="p-3 df-well space-y-2">
+                      <div className="text-[11px] uppercase text-[#c5a059]">
                         Kho chung khả dụng cho ô [{selectedEquipSlot === 'body' ? 'THÂN' : selectedEquipSlot.toUpperCase()}]:
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -5633,6 +6203,7 @@ export default function App() {
                             const w = CONFIG.WEAPONS[wId];
                             if (!w) return null;
                             const isForged = !selectedAlly && player.bloodForgedWeapons?.includes(wId);
+                            const isEquippedHere = curWpnId === wId;
                             return (
                               <button
                                 key={wId}
@@ -5643,7 +6214,7 @@ export default function App() {
                                     setPlayer((p) => {
                                       const nextParty = [...p.party];
                                       const ally = nextParty[safeInvIdx - 1];
-                                      if (!ally || ally.isUndeadSummon) return p;
+                                      if (!ally || isAllyGearLocked(ally)) return p;
                                       const needsDropShield = w.hands === 2;
                                       nextParty[safeInvIdx - 1] = {
                                         ...ally,
@@ -5667,12 +6238,14 @@ export default function App() {
                                     cursedLockedWeapon: w.isCursed ? wId : p.cursedLockedWeapon,
                                   }));
                                 }}
-                                className="p-2 bg-[#16121b] hover:bg-[#241c2c] disabled:opacity-40 border border-[#433548] text-left text-xs cursor-pointer"
+                                className={`p-2 disabled:opacity-40 text-left text-xs cursor-pointer ${
+                                  isEquippedHere ? 'df-card-active' : 'df-card'
+                                }`}
                               >
-                                <div className="font-bold text-[#f3e5ab]">
+                                <div className="font-bold text-[#dfd2b4]">
                                   {w.name} {isForged ? '🩸' : ''} {w.isCursed ? '☠️' : ''}
                                 </div>
-                                <div className="text-[10px] text-[#86efac]">
+                                <div className="text-[10px] text-[#9ab08e]">
                                   ST: {w.dmg[0]}–{w.dmg[1]} {isForged ? '(+35% Huyết Rèn)' : ''}
                                 </div>
                               </button>
@@ -5686,6 +6259,7 @@ export default function App() {
                             const check = selectedAlly
                               ? canAllyEquipShield(selectedAlly, sId)
                               : canPlayerEquipShield(player, sId);
+                            const isEquippedHere = curShieldId === sId;
                             return (
                               <button
                                 key={sId}
@@ -5701,7 +6275,7 @@ export default function App() {
                                     setPlayer((p) => {
                                       const nextParty = [...p.party];
                                       const ally = nextParty[safeInvIdx - 1];
-                                      if (!ally || ally.isUndeadSummon) return p;
+                                      if (!ally || isAllyGearLocked(ally)) return p;
                                       nextParty[safeInvIdx - 1] = { ...ally, equippedShield: sId };
                                       return { ...p, party: nextParty };
                                     });
@@ -5710,18 +6284,20 @@ export default function App() {
                                   }
                                   setPlayer((p) => ({ ...p, equippedShield: sId }));
                                 }}
-                                className={`p-2 border text-left text-xs cursor-pointer disabled:opacity-40 ${
-                                  check.allowed
-                                    ? 'bg-[#16121b] hover:bg-[#241c2c] border-[#433548]'
-                                    : 'bg-[#1a1114] border-[#7f1d1d] opacity-75'
+                                className={`p-2 text-left text-xs cursor-pointer disabled:opacity-40 ${
+                                  isEquippedHere
+                                    ? 'df-card-active'
+                                    : check.allowed
+                                    ? 'df-card'
+                                    : 'df-card border-[#8b0000] opacity-65'
                                 }`}
                               >
-                                <div className="font-bold text-[#f3e5ab]">{s.name}</div>
-                                <div className="text-[10px] text-[#93c5fd]">
+                                <div className="font-bold text-[#dfd2b4]">{s.name}</div>
+                                <div className="text-[10px] text-[#a3b2c4]">
                                   Giảm {Math.round(s.guardReduction * 100)}% ST khi Thủ
                                 </div>
                                 {!check.allowed && (
-                                  <div className="text-[9px] text-[#fca5a5] mt-0.5">🔒 {check.reason}</div>
+                                  <div className="text-[9px] text-[#c96b6b] mt-0.5">🔒 {check.reason}</div>
                                 )}
                               </button>
                             );
@@ -5737,6 +6313,10 @@ export default function App() {
                               const check = selectedAlly
                                 ? canAllyEquipGear(selectedAlly, gId)
                                 : canPlayerEquipGear(player, gId);
+                              const isEquippedHere =
+                                (selectedEquipSlot === 'head' && curHeadId === gId) ||
+                                (selectedEquipSlot === 'body' && curBodyId === gId) ||
+                                (selectedEquipSlot === 'accessory' && curAccId === gId);
                               return (
                                 <button
                                   key={gId}
@@ -5752,7 +6332,7 @@ export default function App() {
                                       setPlayer((p) => {
                                         const nextParty = [...p.party];
                                         const ally = nextParty[safeInvIdx - 1];
-                                        if (!ally || ally.isUndeadSummon) return p;
+                                        if (!ally || isAllyGearLocked(ally)) return p;
                                         nextParty[safeInvIdx - 1] = {
                                           ...ally,
                                           equippedHead: selectedEquipSlot === 'head' ? gId : ally.equippedHead,
@@ -5777,18 +6357,20 @@ export default function App() {
                                           : p.equippedAccessory,
                                     }));
                                   }}
-                                  className={`p-2 border text-left text-xs cursor-pointer disabled:opacity-40 ${
-                                    check.allowed
-                                      ? 'bg-[#16121b] hover:bg-[#241c2c] border-[#433548]'
-                                      : 'bg-[#1a1114] border-[#7f1d1d] opacity-75'
+                                  className={`p-2 text-left text-xs cursor-pointer disabled:opacity-40 ${
+                                    isEquippedHere
+                                      ? 'df-card-active'
+                                      : check.allowed
+                                      ? 'df-card'
+                                      : 'df-card border-[#8b0000] opacity-65'
                                   }`}
                                 >
-                                  <div className="font-bold text-[#f3e5ab]">{g.name}</div>
-                                  <div className="text-[10px] text-[#86efac]">
+                                  <div className="font-bold text-[#dfd2b4]">{g.name}</div>
+                                  <div className="text-[10px] text-[#9ab08e]">
                                     DEF +{Math.round(g.physDef * 100)}% • M.DEF +{Math.round(g.magDef * 100)}%
                                   </div>
                                   {!check.allowed && (
-                                    <div className="text-[9px] text-[#fca5a5] mt-0.5">🔒 {check.reason}</div>
+                                    <div className="text-[9px] text-[#c96b6b] mt-0.5">🔒 {check.reason}</div>
                                   )}
                                 </button>
                               );
@@ -5802,11 +6384,11 @@ export default function App() {
               {invTab === 'items' && (
                 <div className="space-y-3">
                   {invFeedback && (
-                    <div className="p-2.5 bg-[#1c1318] border border-[#fbbf24] text-xs text-[#fef08a] flex items-center justify-between gap-2">
+                    <div className="p-2.5 df-well border-[#c5a059] text-xs text-[#dfd2b4] flex items-center justify-between gap-2">
                       <span>{invFeedback}</span>
                       <button
                         onClick={() => setInvFeedback(null)}
-                        className="text-[10px] text-[#a89882] hover:text-white cursor-pointer shrink-0"
+                        className="text-[10px] text-[#9b8f82] hover:text-[#d3d3d3] cursor-pointer shrink-0"
                       >
                         [Ẩn]
                       </button>
@@ -5817,7 +6399,7 @@ export default function App() {
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                     <div className="md:col-span-7 space-y-2">
-                      <div className="text-xs font-bold uppercase text-[#fbbf24]">
+                      <div className="text-xs font-bold uppercase text-[#c5a059]">
                         Vật Phẩm Thực Dụng Trong Túi
                       </div>
                       {Object.entries(player.inventory).map(([itemId, count]) => {
@@ -5827,18 +6409,18 @@ export default function App() {
                           <div
                             key={itemId}
                             onMouseEnter={() => setPreviewItemId(itemId)}
-                            className="p-3 bg-[#09070c] border border-[#352a30] hover:border-[#6e5a4f] flex items-center justify-between gap-3 text-xs transition"
+                            className="p-3 df-card flex items-center justify-between gap-3 text-xs"
                           >
                             <div className="flex items-start gap-3 min-w-0 flex-1">
                               <ItemArtworkCanvas itemOrWeaponId={itemId} size={44} />
                               <div className="min-w-0 flex-1 space-y-0.5">
-                                <div className="font-bold text-sm text-[#f3e5ab] flex items-center gap-2 flex-wrap">
+                                <div className="font-bold text-sm text-[#dfd2b4] flex items-center gap-2 flex-wrap">
                                   <span>{item.name}</span>
-                                  <span className="px-1.5 py-0.5 bg-[#1f1924] border border-[#52435c] text-[11px] font-mono text-[#fbbf24]">
+                                  <span className="px-1.5 py-0.5 bg-[#1a151b] border border-[#3a3a3a] text-[11px] font-mono text-[#c5a059]">
                                     x{count}
                                   </span>
                                 </div>
-                                <div className="text-xs text-[#b8a993] leading-snug">{item.desc}</div>
+                                <div className="text-xs text-[#9b8f82] leading-snug">{item.desc}</div>
                               </div>
                             </div>
                             {item.unlockSkillId ? (
@@ -5847,11 +6429,11 @@ export default function App() {
                                 const skDef = CONFIG.SKILLS.find((s) => s.id === skId);
                                 const alreadyUnlocked = (player.skillLevels[skId] || 0) >= 1;
                                 return alreadyUnlocked ? (
-                                  <span className="px-2.5 py-1 bg-[#142b1c] border border-[#22c55e] text-[10px] font-bold text-[#86efac] shrink-0">
+                                  <span className="px-2.5 py-1 bg-[#121914] border border-[#3a3a3a] text-[10px] font-bold text-[#9ab08e] shrink-0">
                                     Đã Mở Lv.{player.skillLevels[skId]}
                                   </span>
                                 ) : selectedAlly ? (
-                                  <span className="px-2 py-1 bg-[#18131d] border border-[#2f2538] text-[10px] text-[#a89882] shrink-0">
+                                  <span className="px-2 py-1 bg-[#141118] border border-[#3a3a3a] text-[10px] text-[#9b8f82] shrink-0">
                                     Chỉ Nhân Vật Chính
                                   </span>
                                 ) : (
@@ -5869,11 +6451,11 @@ export default function App() {
                                           [skId]: Math.max(1, prev.skillLevels[skId] || 0),
                                         },
                                       }));
-                                      const msg = `📜 Đã đọc [${item.name}] và mở khóa kỹ năng [${skDef?.name || skId} Lv.1]! Hãy đến Bàn Thờ Hexen để nâng cấp thêm.`;
+                                      const msg = `📜 Đã lĩnh hội [${item.name}], khai mở cổ thuật [${skDef?.name || skId}].`;
                                       setInvFeedback(msg);
                                       addLog(msg);
                                     }}
-                                    className="px-3 py-1.5 bg-[#581c87] hover:bg-[#6b21a8] border border-[#c084fc] text-[#f3e8ff] font-bold text-xs cursor-pointer shrink-0"
+                                    className="df-btn-bronze px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
                                   >
                                     📜 Lĩnh Hội (Mở Lv.1)
                                   </button>
@@ -5885,9 +6467,51 @@ export default function App() {
                                   setActiveModal(null);
                                   promptCrackedWallExplosion();
                                 }}
-                                className="px-3 py-1.5 bg-[#7c2d12] hover:bg-[#9a3412] border border-[#fb923c]/50 text-white font-bold text-xs cursor-pointer shrink-0"
+                                className="df-btn-blood px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
                               >
                                 Nổ Tường [F]
+                              </button>
+                            ) : itemId === 'rotten_meat' ? (
+                              <button
+                                onClick={() => {
+                                  const curRoomId = world.currentRoomId;
+                                  setPlayer((prev) => ({
+                                    ...prev,
+                                    inventory: {
+                                      ...prev.inventory,
+                                      rotten_meat: Math.max(0, (prev.inventory.rotten_meat || 0) - 1),
+                                    },
+                                  }));
+                                  setWorld((prev) => {
+                                    const curRoom = prev.rooms[curRoomId];
+                                    if (!curRoom) return prev;
+                                    const remaining = (curRoom.decoys || []).filter(
+                                      (d) => !(d.x === playerPos.x && d.y === playerPos.y) && d.turnsLeft > 0
+                                    );
+                                    return {
+                                      ...prev,
+                                      rooms: {
+                                        ...prev.rooms,
+                                        [curRoomId]: {
+                                          ...curRoom,
+                                          decoys: [
+                                            ...remaining,
+                                            { x: playerPos.x, y: playerPos.y, turnsLeft: 18 },
+                                          ],
+                                        },
+                                      },
+                                    };
+                                  });
+                                  const msg =
+                                    '🥩 Đã đặt [Thịt Thối] xuống nền đá lạnh. Mùi tanh nồng lan tỏa, thu hút lũ quái vật trong bóng tối.';
+                                  setInvFeedback(msg);
+                                  addLog(msg);
+                                  setActiveModal(null);
+                                  setLogOverlayVisible(true);
+                                }}
+                                className="df-btn-bronze px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
+                              >
+                                🥩 Đặt Mồi Nhử
                               </button>
                             ) : itemId === 'bone_saw' ? (
                               <button
@@ -5898,7 +6522,7 @@ export default function App() {
                                   setInvFeedback(null);
                                   setInvTab('saw');
                                 }}
-                                className="px-3 py-1.5 bg-[#7f1d1d] hover:bg-[#991b1b] border border-[#f87171]/40 text-white font-bold text-xs cursor-pointer shrink-0"
+                                className="df-btn-blood px-3 py-1.5 font-bold text-xs cursor-pointer shrink-0"
                               >
                                 Dùng
                               </button>
@@ -5920,13 +6544,23 @@ export default function App() {
                                     logs.forEach((l) => addLog(l));
                                   }
                                 }}
-                                className="px-3 py-1.5 bg-[#14532d] hover:bg-[#166534] disabled:opacity-35 border border-[#4ade80]/40 text-white font-bold text-xs cursor-pointer shrink-0"
+                                className="df-btn-bronze px-3 py-1.5 disabled:opacity-35 font-bold text-xs cursor-pointer shrink-0"
                               >
                                 {selectedAlly ? `Dùng cho ${selectedAlly.name}` : 'Dùng'}
                               </button>
-                            ) : (
-                              <span className="px-2 py-1 bg-[#18131d] border border-[#2f2538] text-[10px] text-[#a89882] shrink-0">
+                            ) : item.combatUsable ? (
+                              <span className="px-2 py-1 bg-[#141118] border border-[#3a3a3a] text-[10px] text-[#9b8f82] shrink-0">
                                 Dùng trong Trận
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 bg-[#141118] border border-[#3a3a3a] text-[10px] text-[#9b8f82] shrink-0">
+                                {item.category === 'currency'
+                                  ? 'Tiền Tệ'
+                                  : item.category === 'key'
+                                  ? 'Chìa Khóa'
+                                  : item.category === 'stone'
+                                  ? 'Tinh Thạch'
+                                  : 'Cổ Vật / Công Cụ'}
                               </span>
                             )}
                           </div>
@@ -5936,7 +6570,7 @@ export default function App() {
 
                     {/* Alchemy Crafting */}
                     <div className="md:col-span-5 space-y-2">
-                      <div className="text-xs font-bold uppercase text-[#c084fc]">
+                      <div className="text-xs font-bold uppercase text-[#c5a059]">
                         Bàn Pha Chế Giả Kim
                       </div>
                       {CONFIG.RECIPES.map((rec) => {
@@ -5946,11 +6580,11 @@ export default function App() {
                         return (
                           <div
                             key={rec.id}
-                            className="p-3 bg-[#09070c] border border-[#2d2428] flex items-center justify-between text-xs"
+                            className="p-3 df-card flex items-center justify-between text-xs gap-2"
                           >
                             <div>
-                              <div className="font-bold text-[#f3e5ab]">{rec.name}</div>
-                              <div className="text-[11px] text-[#9c8c76]">{rec.desc}</div>
+                              <div className="font-bold text-[#dfd2b4]">{rec.name}</div>
+                              <div className="text-[11px] text-[#9b8f82]">{rec.desc}</div>
                             </div>
                             <button
                               disabled={!canCraft}
@@ -5963,9 +6597,9 @@ export default function App() {
                                   nextInv[rec.resultItemId] = (nextInv[rec.resultItemId] || 0) + 1;
                                   return { ...prev, inventory: nextInv };
                                 });
-                                addLog(`⚗️ Đã pha chế thành công: ${rec.name}!`);
+                                addLog(`⚗️ Điều chế thành công [${CONFIG.ITEMS[rec.resultItemId]?.name || rec.name}].`);
                               }}
-                              className="px-3 py-1.5 bg-[#4c1d95] hover:bg-[#5b21b6] disabled:opacity-35 text-white font-bold cursor-pointer shrink-0"
+                              className="df-btn-bronze px-3 py-1.5 disabled:opacity-35 font-bold cursor-pointer shrink-0"
                             >
                               Pha Chế
                             </button>
@@ -6001,35 +6635,35 @@ export default function App() {
                   ).length;
 
                 return (
-                  <div className="space-y-4 bg-[#0b080d] border border-[#4a232a] p-4">
+                  <div className="space-y-4 df-well border-[#8b0000]/60 p-4">
                     {/* 3-Step Surgical Progress Header */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2e1e24] pb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#3a3a3a]/60 pb-3">
                       <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
                         <span
                           className={`px-2 py-1 border ${
                             sawStep === 1
-                              ? 'bg-[#7f1d1d] border-[#f87171] text-white'
-                              : 'bg-[#1b141a] border-[#3d2d34] text-[#cfc0a9]'
+                              ? 'bg-[#2e0b0f] border-[#8b0000] text-[#dfd2b4]'
+                              : 'bg-[#151217] border-[#3a3a3a] text-[#9b8f82]'
                           }`}
                         >
                           Bước 1: Chọn Thành Viên
                         </span>
-                        <span className="text-[#6e5a5f]">→</span>
+                        <span className="text-[#7a7066]">→</span>
                         <span
                           className={`px-2 py-1 border ${
                             sawStep === 2
-                              ? 'bg-[#7f1d1d] border-[#f87171] text-white'
-                              : 'bg-[#120d14] border-[#2c2128] text-[#7c6e73]'
+                              ? 'bg-[#2e0b0f] border-[#8b0000] text-[#dfd2b4]'
+                              : 'bg-[#110e14] border-[#3a3a3a] text-[#7a7066]'
                           }`}
                         >
                           Bước 2: Sơ Đồ 4 Chi
                         </span>
-                        <span className="text-[#6e5a5f]">→</span>
+                        <span className="text-[#7a7066]">→</span>
                         <span
                           className={`px-2 py-1 border ${
                             sawStep === 2
-                              ? 'bg-[#450a0a] border-[#dc2626] text-[#fca5a5]'
-                              : 'bg-[#120d14] border-[#2c2128] text-[#7c6e73]'
+                              ? 'bg-[#261114] border-[#8b0000] text-[#c96b6b]'
+                              : 'bg-[#110e14] border-[#3a3a3a] text-[#7a7066]'
                           }`}
                         >
                           Bước 3: Cắt Bỏ Chi Nhiễm Trùng (-12 Sinh Lực)
@@ -6042,19 +6676,19 @@ export default function App() {
                           setSawTargetMemberIdx(null);
                           setInvTab('items');
                         }}
-                        className="px-2.5 py-1 bg-[#1b161f] hover:bg-[#28202e] border border-[#4a3b47] text-[11px] text-[#e7dcc8] cursor-pointer"
+                        className="df-btn px-2.5 py-1 text-[11px] cursor-pointer"
                       >
                         ← Quay lại Túi Đồ
                       </button>
                     </div>
 
                     {invFeedback && (
-                      <div className="p-2.5 bg-[#1c1014] border border-[#dc2626] text-xs text-[#fecaca] flex items-center justify-between gap-2">
+                      <div className="p-2.5 df-well border-[#8b0000] text-xs text-[#dfd2b4] flex items-center justify-between gap-2">
                         <span>{invFeedback}</span>
                         <button
                           type="button"
                           onClick={() => setInvFeedback(null)}
-                          className="text-[10px] text-[#a89882] hover:text-white cursor-pointer shrink-0"
+                          className="text-[10px] text-[#9b8f82] hover:text-[#d3d3d3] cursor-pointer shrink-0"
                         >
                           [Ẩn]
                         </button>
@@ -6064,7 +6698,7 @@ export default function App() {
                     {/* STEP 1: Select Party Member */}
                     {sawStep === 1 && (
                       <div className="space-y-3">
-                        <p className="text-xs text-[#cfc0a9]">
+                        <p className="text-xs text-[#d3d3d3]">
                           Chọn thành viên trong đội cần phẫu thuật bằng <b>Cưa Xương Rỉ Máu (x{player.inventory.bone_saw || 0})</b>:
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -6079,22 +6713,22 @@ export default function App() {
                                   setSelectedInvMemberIdx(0);
                                   setInvFeedback(null);
                                 }}
-                                className="p-3 bg-[#150e14] hover:bg-[#241319] border border-[#6e3b42] hover:border-[#f87171] text-left space-y-2 transition cursor-pointer"
+                                className="p-3 df-card text-left space-y-2 cursor-pointer"
                               >
                                 <div className="flex items-center justify-between gap-1">
-                                  <span className="font-bold text-xs text-[#fef3c7] truncate">
+                                  <span className="font-bold text-xs text-[#dfd2b4] truncate">
                                     ★ {player.name}
                                   </span>
-                                  <span className="text-[9px] text-[#fbbf24] shrink-0">[CHÍNH]</span>
+                                  <span className="text-[9px] text-[#c5a059] shrink-0">[CHÍNH]</span>
                                 </div>
-                                <div className="text-[11px] font-mono text-[#fca5a5]">
+                                <div className="text-[11px] font-mono text-[#c96b6b]">
                                   Sinh Lực: <b>{player.hp}/{player.maxHp}</b>
                                 </div>
                                 <div
                                   className={`text-[10px] px-1.5 py-0.5 border inline-block ${
                                     infCount > 0
-                                      ? 'bg-[#450a0a] border-[#ef4444] text-[#fecaca] font-bold'
-                                      : 'bg-[#101f15] border-[#285436] text-[#86efac]'
+                                      ? 'bg-[#2e0b0f] border-[#8b0000] text-[#dfd2b4] font-bold'
+                                      : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
                                   }`}
                                 >
                                   {infCount > 0 ? `⚠ ${infCount} Chi Nhiễm Trùng` : 'Không nhiễm trùng'}
@@ -6110,7 +6744,7 @@ export default function App() {
                               return (
                                 <div
                                   key={`saw_empty_${slotIdx}`}
-                                  className="p-3 border border-dashed border-[#27202b] bg-[#08060a] text-[11px] text-[#574c5e] flex items-center justify-center"
+                                  className="p-3 df-well opacity-45 text-[11px] text-[#7a7066] flex items-center justify-center"
                                 >
                                   [Ô Đồng Đội #{slotIdx + 1} Trống]
                                 </div>
@@ -6128,28 +6762,28 @@ export default function App() {
                                   setSelectedInvMemberIdx(slotIdx + 1);
                                   setInvFeedback(null);
                                 }}
-                                className="p-3 bg-[#120e17] hover:bg-[#22162b] disabled:opacity-45 border border-[#4a3b57] hover:border-[#f87171] text-left space-y-2 transition cursor-pointer disabled:cursor-not-allowed"
+                                className="p-3 df-card disabled:opacity-45 text-left space-y-2 cursor-pointer disabled:cursor-not-allowed"
                               >
                                 <div className="flex items-center justify-between gap-1">
-                                  <span className="font-bold text-xs text-[#f5ebd6] truncate">
+                                  <span className="font-bold text-xs text-[#dfd2b4] truncate">
                                     {ally.name}
                                   </span>
-                                  <span className="text-[9px] text-[#e9d5ff] shrink-0">
+                                  <span className="text-[9px] text-[#a889b8] shrink-0">
                                     {ally.isUndeadSummon ? '[CHIÊU HỒN]' : '[ĐỒNG ĐỘI]'}
                                   </span>
                                 </div>
-                                <div className="text-[11px] font-mono text-[#fca5a5]">
+                                <div className="text-[11px] font-mono text-[#c96b6b]">
                                   Sinh Lực: <b>{ally.hp}/{ally.maxHp}</b>
                                 </div>
                                 <div
                                   className={`text-[10px] px-1.5 py-0.5 border inline-block ${
                                     ally.isUndeadSummon
-                                      ? 'bg-[#1c1324] border-[#581c87] text-[#d8b4fe]'
+                                      ? 'bg-[#1d1226] border-[#8e6ca3] text-[#d3d3d3]'
                                       : ally.hp <= 0
-                                      ? 'bg-[#1f1315] border-[#7f1d1d] text-[#fca5a5]'
+                                      ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b]'
                                       : infCount > 0
-                                      ? 'bg-[#450a0a] border-[#ef4444] text-[#fecaca] font-bold'
-                                      : 'bg-[#101f15] border-[#285436] text-[#86efac]'
+                                      ? 'bg-[#2e0b0f] border-[#8b0000] text-[#dfd2b4] font-bold'
+                                      : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
                                   }`}
                                 >
                                   {ally.isUndeadSummon
@@ -6170,10 +6804,10 @@ export default function App() {
                     {/* STEP 2 & 3: Display 4 Limbs of Selected Member & Click Infected Limb to Amputate */}
                     {sawStep === 2 && sawTargetMemberIdx !== null && (
                       <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2 bg-[#140d12] border border-[#3d2930] px-3 py-2">
-                          <div className="text-xs text-[#f5ebd6]">
-                            Đối tượng phẫu thuật: <b className="text-[#fbbf24]">{targetName}</b>{' '}
-                            <span className="font-mono text-[#fca5a5] ml-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2 df-well px-3 py-2">
+                          <div className="text-xs text-[#d3d3d3]">
+                            Đối tượng phẫu thuật: <b className="text-[#c5a059]">{targetName}</b>{' '}
+                            <span className="font-mono text-[#c96b6b] ml-2">
                               (Sinh Lực: {targetHp}/{targetMaxHp})
                             </span>
                           </div>
@@ -6183,13 +6817,13 @@ export default function App() {
                               setSawTargetMemberIdx(null);
                               setInvFeedback(null);
                             }}
-                            className="px-2.5 py-1 bg-[#1e1722] hover:bg-[#2b2130] border border-[#4c3e54] text-[11px] text-[#e7dcc8] cursor-pointer"
+                            className="df-btn px-2.5 py-1 text-[11px] cursor-pointer"
                           >
                             ← Đổi thành viên
                           </button>
                         </div>
 
-                        <p className="text-xs text-[#cfc0a9]">
+                        <p className="text-xs text-[#d3d3d3]">
                           Bấm trực tiếp vào chi đang <b>NHIỄM TRÙNG</b> để tiến hành cưa xương (mất <b>-12 Sinh Lực</b> và gây Chảy máu vết mổ):
                         </p>
 
@@ -6221,31 +6855,29 @@ export default function App() {
                                     addLog(res.message);
                                   }
                                 }}
-                                className={`p-3 border text-left space-y-2 transition ${
+                                className={`p-3 text-left space-y-2 ${
                                   canAmputate
-                                    ? 'bg-[#2b0f14] hover:bg-[#45141c] border-[#ef4444] cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.22)]'
-                                    : !intact
-                                    ? 'bg-[#09070a] border-[#261d22] opacity-55 cursor-not-allowed'
-                                    : 'bg-[#0c1410] border-[#233d2c] opacity-75 cursor-not-allowed'
+                                    ? 'df-card-active cursor-pointer'
+                                    : 'df-card opacity-55 cursor-not-allowed'
                                 }`}
                               >
-                                <div className="font-bold text-sm text-[#f3e5ab]">{label}</div>
+                                <div className="font-bold text-sm text-[#dfd2b4]">{label}</div>
                                 <div>
                                   {!intact ? (
-                                    <span className="px-2 py-0.5 bg-[#1f1315] border border-[#5c232a] text-[10px] font-bold text-[#9ca3af]">
+                                    <span className="px-2 py-0.5 bg-[#1f1315] border border-[#3a3a3a] text-[10px] font-bold text-[#9ca3af]">
                                       Đã mất
                                     </span>
                                   ) : infected ? (
-                                    <span className="px-2 py-0.5 bg-[#7f1d1d] border border-[#f87171] text-[10px] font-bold text-[#fef2f2] animate-pulse">
+                                    <span className="px-2 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[10px] font-bold text-[#dfd2b4] animate-pulse">
                                       NHIỄM TRÙNG
                                     </span>
                                   ) : (
-                                    <span className="px-2 py-0.5 bg-[#101f15] border border-[#285436] text-[10px] font-bold text-[#86efac]">
+                                    <span className="px-2 py-0.5 bg-[#121914] border border-[#3a3a3a] text-[10px] font-bold text-[#9ab08e]">
                                       Bình thường
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-[#cfc0a9]">
+                                <div className="text-[10px] text-[#9b8f82]">
                                   {!intact
                                     ? 'Chi đã bị cắt rời.'
                                     : infected
@@ -6271,17 +6903,17 @@ export default function App() {
       ======================================================================== */}
       {activeModal === 'lore' && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="max-w-4xl w-full bg-[#120e17] border-2 border-[#8c7853] p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#2e2428] pb-3">
+          <div className="max-w-4xl w-full df-panel p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-3">
               <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-[#fbbf24]" />
-                <h2 className="text-lg font-bold uppercase tracking-wider text-[#f3e5ab]">
+                <BookOpen className="w-5 h-5 text-[#c5a059]" />
+                <h2 className="text-lg font-bold uppercase tracking-wider text-[#dfd2b4]">
                   Thư Viện Trang Giấy Da Dê Cổ ({player.readBookIds.length}/{CONFIG.BOOKS.length} Cuộn Đã Mở)
                 </h2>
               </div>
               <button
                 onClick={() => setActiveModal(null)}
-                className="px-3 py-1 bg-[#261e24] text-xs font-bold border border-[#524046] cursor-pointer"
+                className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
               >
                 Đóng [ESC]
               </button>
@@ -6298,12 +6930,12 @@ export default function App() {
                       key={book.id}
                       disabled={!unlocked}
                       onClick={() => setSelectedLoreBookId(book.id)}
-                      className={`w-full text-left p-2.5 border text-xs transition ${
+                      className={`w-full text-left p-2.5 text-xs transition ${
                         !unlocked
-                          ? 'bg-[#09070c] border-[#1f1922] text-[#574c5e] cursor-not-allowed'
+                          ? 'df-well opacity-45 text-[#7a7066] cursor-not-allowed'
                           : active
-                          ? 'bg-[#2b2118] border-[#fbbf24] text-[#fef3c7] cursor-pointer'
-                          : 'bg-[#120f17] border-[#33293a] text-[#d6c5ad] hover:border-[#8c7853] cursor-pointer'
+                          ? 'df-card-active text-[#dfd2b4] cursor-pointer'
+                          : 'df-card text-[#d3d3d3] cursor-pointer'
                       }`}
                     >
                       {unlocked ? (
@@ -6330,12 +6962,12 @@ export default function App() {
 
                   if (!isUnlocked) {
                     return (
-                      <div className="h-full min-h-[320px] bg-[#0a080d] border border-[#2c2229] flex flex-col items-center justify-center p-6 text-center space-y-2">
+                      <div className="h-full min-h-[320px] df-well flex flex-col items-center justify-center p-6 text-center space-y-2">
                         <ItemArtworkCanvas itemOrWeaponId="ancient_parchment" size={64} />
-                        <div className="text-sm font-bold text-[#9c8c76]">
+                        <div className="text-sm font-bold text-[#c5a059]">
                           CUỘN SÁCH DA DÊ NÀY CHƯA ĐƯỢC TÌM THẤY
                         </div>
-                        <p className="text-xs text-[#6e5f68] max-w-sm">
+                        <p className="text-xs text-[#9b8f82] max-w-sm">
                           Hãy lục soát các Kệ Sách Cổ (Bookshelf) trong Đại Giáo Đường Goethe để mở
                           khóa tri thức giải phẫu và cổ ngữ này.
                         </p>
@@ -6345,16 +6977,14 @@ export default function App() {
 
                   return (
                     <div
-                      className="p-6 border-4 border-[#6e5233] text-[#26190d] space-y-4 shadow-inner"
+                      className="p-6 df-parchment-frame text-[#26190d] space-y-4"
                       style={{
-                        background:
-                          'radial-gradient(circle at 50% 45%, #e7d4b5 0%, #cfb48c 70%, #a8895c 100%)',
                         fontFamily: "'Cormorant Garamond', serif",
                       }}
                     >
                       <div className="flex items-center justify-between border-b-2 border-[#6e5233]/50 pb-2">
                         <div>
-                          <div className="text-xs uppercase tracking-widest font-bold text-[#6e261a]">
+                          <div className="text-xs uppercase tracking-widest font-bold text-[#8b0000]">
                             Ấn Bản Cổ Tự #{book.vol} • {book.floorHint}
                           </div>
                           <h3 className="text-2xl font-bold text-[#1f1308]">{book.title}</h3>
@@ -6379,12 +7009,12 @@ export default function App() {
       ======================================================================== */}
       {activeModal === 'hexen' && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="max-w-5xl w-full bg-[#120e17] border-2 border-[#6d28d9] p-4 space-y-3 max-h-[88vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#2e2438] pb-2">
+          <div className="max-w-5xl w-full df-panel p-4 space-y-3 max-h-[88vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-2">
               <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-[#c084fc]" />
-                <h2 className="text-base font-bold uppercase tracking-wider text-[#f3e5ab]">
-                  Bàn Thờ Hexen – Thần Lực & Kỹ Năng (Đá NL: {player.energyStones})
+                <Flame className="w-4 h-4 text-[#8b0000]" />
+                <h2 className="text-base font-bold uppercase tracking-wider text-[#c5a059]">
+                  Bàn Thờ Hexen – Thần Lực &amp; Kỹ Năng (Đá NL: {player.energyStones})
                 </h2>
               </div>
               <button
@@ -6392,72 +7022,62 @@ export default function App() {
                   setHexenFeedback(null);
                   setActiveModal(null);
                 }}
-                className="px-3 py-1 bg-[#261e24] text-xs font-bold border border-[#524046] cursor-pointer"
+                className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
               >
                 Đóng [ESC]
               </button>
             </div>
 
             {hexenFeedback && (
-              <div className="p-2 bg-[#1b1224] border border-[#c084fc] text-xs text-[#f3e8ff]">
+              <div className="p-2 df-well border-[#c5a059] text-xs text-[#dfd2b4]">
                 {hexenFeedback}
               </div>
             )}
 
-            {/* 3 Cosmic Pillars Affinity & Holy/Void Rituals Bar */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 bg-[#09070d] border border-[#322440] p-2.5 text-xs">
+            {/* 3 Cosmic Pillars Affinity Bar (Earned purely through in-world actions) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 df-well p-2.5 text-xs">
               {(
                 [
                   [
                     'holyMother',
                     '✝ Thánh Mẫu (Trật Tự)',
                     player.affinities?.holyMother || 0,
-                    'Cần để học phép Trật Tự, Tái Tạo Chi Thể & Trục Xuất.',
-                    'border-[#eab308] text-[#fef08a]',
+                    'Tăng qua hành động: Khắc ấn Vòng Tròn Cổ Đại (khi giữ mình thuần khiết), cứu Giáo Sĩ Mù hoặc giải thoát Thánh Tử 12.',
+                    'text-[#c5a059]',
                   ],
                   [
                     'primordialVoid',
                     '🌌 Hư Vô Nguyên Thủy',
                     player.affinities?.primordialVoid || 0,
-                    'Mở khóa Cổng Hư Vô dịch chuyển & phép Vực Sao (-10 Tâm Trí).',
-                    'border-[#9333ea] text-[#e9d5ff]',
+                    'Tăng qua hành động: Thiền định Khe Nứt Chướng Khí Hư Vô hoặc giải mã Cổ Thư cùng Kẻ Chép Sử.',
+                    'text-[#a889b8]',
                   ],
                   [
                     'demonicPact',
                     '🩸 Giao Kèo Ác Quỷ',
                     player.affinities?.demonicPact || 0,
-                    'Cường hóa Huyết Thuật nhưng cộng +10 Tha Hóa.',
-                    'border-[#dc2626] text-[#fca5a5]',
+                    'Tăng qua hành động: Huyết tế Vòng Tròn Máu, Nuốt Xác Quái, Huyết Rèn hoặc rút máu Thánh Tử 12.',
+                    'text-[#c96b6b]',
                   ],
                 ] as const
               ).map(([pillarKey, label, lv, desc, col]) => (
-                <div key={pillarKey} className={`p-2.5 bg-[#120e18] border ${col} space-y-1.5`}>
-                  <div className="flex justify-between font-bold">
+                <div
+                  key={pillarKey}
+                  className={`p-2.5 space-y-1 ${lv > 0 ? 'df-card-active' : 'df-card'}`}
+                >
+                  <div className={`flex justify-between font-bold ${col}`}>
                     <span>{label}</span>
-                    <span className="font-mono">Affinity {lv}</span>
+                    <span className="font-mono">Thiện cảm {lv}</span>
                   </div>
-                  <p className="text-[11px] text-[#a89882]">{desc}</p>
-                  <button
-                    disabled={player.energyStones < 1}
-                    onClick={() => {
-                      const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
-                      const res = prayAffinityAtHexen(pCopy, pillarKey);
-                      setPlayer(pCopy);
-                      setHexenFeedback(res.message);
-                      addLog(res.message);
-                    }}
-                    className="w-full py-1 bg-[#2a1d3d] hover:bg-[#3e295c] disabled:opacity-35 border border-[#6d28d9] text-[11px] font-bold text-white cursor-pointer"
-                  >
-                    Cầu Nguyện / Hiến Tế (-1 Đá NL)
-                  </button>
+                  <p className="text-[11px] text-[#d3d3d3]/85 leading-snug">{desc}</p>
                 </div>
               ))}
             </div>
 
             {/* Lower Character Arc Nodes + Limb Regrowth + Exorcism + 3-Floor Void Portal */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-[#09070d] border border-[#322440] p-3 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 df-well p-3 text-xs">
               <div className="md:col-span-6 space-y-2">
-                <div className="font-bold uppercase text-[#fbbf24]">
+                <div className="font-bold uppercase text-[#c5a059]">
                   Cung Thấp: Cường Hóa Chỉ Số Nội Tại (1 Đá Năng Lượng / Nốt)
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -6481,10 +7101,10 @@ export default function App() {
                           setHexenFeedback(res.message);
                           addLog(res.message);
                         }}
-                        className={`p-2 border text-left text-[11px] font-bold cursor-pointer ${
+                        className={`p-2 text-left text-[11px] font-bold cursor-pointer ${
                           owned
-                            ? 'bg-[#142b1c] border-[#22c55e] text-[#86efac]'
-                            : 'bg-[#17121f] hover:bg-[#241b30] border-[#4c3766] text-[#f3e5ab] disabled:opacity-40'
+                            ? 'df-card-active text-[#c5a059]'
+                            : 'df-card text-[#d3d3d3] disabled:opacity-40'
                         }`}
                       >
                         {owned ? `✓ ${label}` : label}
@@ -6495,8 +7115,8 @@ export default function App() {
               </div>
 
               <div className="md:col-span-6 space-y-2">
-                <div className="font-bold uppercase text-[#e9d5ff]">
-                  Nghi Thức Thánh Mẫu & Cổng Dịch Chuyển Hư Vô 3 Tầng
+                <div className="font-bold uppercase text-[#c5a059]">
+                  Nghi Thức Thánh Mẫu &amp; Cổng Dịch Chuyển Hư Vô 3 Tầng
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {player.cursedLockedWeapon && (
@@ -6508,7 +7128,7 @@ export default function App() {
                         setHexenFeedback(res.message);
                         addLog(res.message);
                       }}
-                      className="px-2.5 py-1.5 bg-[#854d0e] hover:bg-[#a16207] text-white font-bold text-[11px] cursor-pointer"
+                      className="df-btn-bronze px-2.5 py-1.5 font-bold text-[11px] cursor-pointer"
                     >
                       ✝ Trục Xuất Vũ Khí Nguyền (-1 Đá NL)
                     </button>
@@ -6532,7 +7152,7 @@ export default function App() {
                           setHexenFeedback(res.message);
                           addLog(res.message);
                         }}
-                        className="px-2.5 py-1.5 bg-[#065f46] hover:bg-[#047857] text-white font-bold text-[11px] cursor-pointer"
+                        className="df-btn-bronze px-2.5 py-1.5 font-bold text-[11px] cursor-pointer"
                       >
                         🌟 Tái Tạo [{lbl}] (-2 Đá NL, -25 Tâm Trí)
                       </button>
@@ -6550,8 +7170,8 @@ export default function App() {
                       onClick={() => {
                         setActiveModal(null);
                         triggerCoinToss(
-                          'CỔNG DỊCH CHUYỂN HƯ VÔ',
-                          'Tung Đồng Xu Vàng trước khi bước vào khe nứt Hư Vô: Thắng dịch chuyển bình an; Thua bị Chướng Khí cào xé (-12 Sinh Lực, -15 Tâm Trí) khi xuyên không gian!',
+                          'CỔNG HƯ VÔ',
+                          '',
                           (won) => {
                             if (!won) {
                               setPlayer((prev) => ({
@@ -6559,15 +7179,15 @@ export default function App() {
                                 hp: Math.max(5, prev.hp - 12),
                                 mind: Math.max(0, prev.mind - 15),
                               }));
-                              addLog('⚠️ Khe nứt Hư Vô cào rách thể xác khi dịch chuyển (-12 Sinh Lực, -15 Tâm Trí)!');
+                              addLog('⚠️ Khe nứt Hư Vô cào rách da thịt trong khoảnh khắc xuyên qua không gian!');
                             } else {
-                              addLog('🌀✨ Bước qua Cổng Hư Vô an toàn tuyệt đối!');
+                              addLog('🌀✨ Bước qua Cổng Hư Vô bình yên vô sự!');
                             }
                             movePlayerToRoom(destId, 'spawn');
                           }
                         );
                       }}
-                      className="px-2.5 py-1.5 bg-[#3b0764] hover:bg-[#581c87] disabled:opacity-35 border border-[#a855f7] text-[#f3e8ff] font-bold text-[11px] cursor-pointer"
+                      className="df-btn px-2.5 py-1.5 disabled:opacity-35 font-bold text-[11px] cursor-pointer"
                     >
                       {label}
                     </button>
@@ -6582,20 +7202,27 @@ export default function App() {
                 const branchSkills = CONFIG.SKILLS.filter((s) => s.branch === branchName);
                 const branchColor =
                   branchName === 'Chiến Kỹ'
-                    ? 'border-[#d97706] text-[#fbbf24]'
+                    ? 'border-[#c5a059] text-[#c5a059]'
                     : branchName === 'Thánh Mẫu'
-                    ? 'border-[#eab308] text-[#fef08a]'
+                    ? 'border-[#c5a059] text-[#dfd2b4]'
                     : branchName === 'Ác Quỷ'
-                    ? 'border-[#dc2626] text-[#f87171]'
-                    : 'border-[#9333ea] text-[#c084fc]';
+                    ? 'border-[#8b0000] text-[#c96b6b]'
+                    : 'border-[#8e6ca3] text-[#a889b8]';
 
                 return (
                   <div
                     key={branchName}
-                    className="bg-[#0b0811] border border-[#2f233d] p-3 flex flex-col justify-start relative"
+                    className="df-well p-3 flex flex-col justify-start relative"
                   >
-                    <div className={`text-xs font-bold uppercase tracking-wider border-b pb-2 mb-3 text-center ${branchColor}`}>
-                      Nhánh {branchName}
+                    <div className={`border-b pb-2 mb-3 text-center ${branchColor}`}>
+                      <div className="text-xs font-bold uppercase tracking-wider">
+                        Nhánh {branchName}
+                      </div>
+                      <div className="text-[10px] text-[#9b8f82] mt-0.5">
+                        {branchName === 'Chiến Kỹ'
+                          ? 'Mở Lv.1 qua Cuộn Bí Kíp (Kệ Sách)'
+                          : 'Học & nâng bằng Thiện cảm + Đá NL'}
+                      </div>
                     </div>
 
                     <div className="space-y-4 relative">
@@ -6603,6 +7230,9 @@ export default function App() {
                         const curLv = player.skillLevels[sk.id] || 0;
                         const lockedByDevour =
                           sk.branch === 'Thánh Mẫu' && player.holyMagicLocked;
+                        const reqAff = sk.requiredAffinity;
+                        const curAff = reqAff ? player.affinities?.[reqAff.pillar] || 0 : 0;
+                        const affMet = !reqAff || curAff >= reqAff.level;
 
                         return (
                           <div key={sk.id} className="relative">
@@ -6617,22 +7247,26 @@ export default function App() {
                                   y1="0"
                                   x2="12"
                                   y2="20"
-                                  stroke={curLv > 0 ? '#c084fc' : '#3b2d4a'}
+                                  stroke={curLv > 0 ? '#c5a059' : '#3a3a3a'}
                                   strokeWidth="2.5"
                                 />
                               </svg>
                             )}
 
                             <div
-                              className={`p-2.5 border text-xs transition ${
-                                curLv > 0
-                                  ? 'bg-[#1b1326] border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.2)]'
-                                  : 'bg-[#09070c] border-[#2c2138]'
+                              className={`p-2.5 text-xs ${
+                                curLv > 0 ? 'df-card-active' : 'df-card'
                               }`}
                             >
                               <div className="flex justify-between items-center gap-1">
-                                <span className="font-bold text-[#f3e5ab]">{sk.name}</span>
-                                <span className="font-mono text-[10px] px-1.5 py-0.5 bg-[#241933] text-[#e9d5ff]">
+                                <span className="font-bold text-[#dfd2b4]">{sk.name}</span>
+                                <span
+                                  className={`font-mono text-[10px] px-1.5 py-0.5 border ${
+                                    curLv > 0
+                                      ? 'bg-[#2e0b0f] border-[#c5a059] text-[#c5a059]'
+                                      : 'bg-[#141116] border-[#3a3a3a] text-[#9b8f82]'
+                                  }`}
+                                >
                                   Lv.{curLv}/3
                                 </span>
                               </div>
@@ -6644,8 +7278,8 @@ export default function App() {
                                     <div
                                       className={`w-5 h-4 text-[9px] font-mono flex items-center justify-center border ${
                                         curLv >= pip
-                                          ? 'bg-[#7e22ce] border-[#fde047] text-white font-bold'
-                                          : 'bg-[#120e17] border-[#3b2d4a] text-[#6e5f68]'
+                                          ? 'bg-[#8b0000] border-[#c5a059] text-[#f3e6c4] font-bold'
+                                          : 'bg-[#0d0a0e] border-[#3a3a3a] text-[#6e645b]'
                                       }`}
                                     >
                                       L{pip}
@@ -6653,7 +7287,7 @@ export default function App() {
                                     {pip < 3 && (
                                       <div
                                         className={`flex-1 h-0.5 ${
-                                          curLv >= pip + 1 ? 'bg-[#fde047]' : 'bg-[#2c2138]'
+                                          curLv >= pip + 1 ? 'bg-[#c5a059]' : 'bg-[#3a3a3a]'
                                         }`}
                                       />
                                     )}
@@ -6661,46 +7295,60 @@ export default function App() {
                                 ))}
                               </div>
 
-                              <p className="text-[11px] text-[#a89882] leading-snug">
+                              <p className="text-[11px] text-[#d3d3d3]/85 leading-snug">
                                 {curLv <= 1 ? sk.descLv1 : curLv === 2 ? sk.descLv2 : sk.descLv3}
                               </p>
 
+                              {reqAff && curLv === 0 && (
+                                <div
+                                  className={`text-[10px] mt-1 font-mono ${
+                                    affMet ? 'text-[#9ab08e]' : 'text-[#c96b6b]'
+                                  }`}
+                                >
+                                  {affMet ? '✓' : '•'} Yêu cầu Thiện cảm {branchName} ≥ {reqAff.level} (Hiện có: {curAff})
+                                </div>
+                              )}
+
                               {lockedByDevour && (
-                                <div className="text-[10px] text-[#f87171] mt-1">
+                                <div className="text-[10px] text-[#c96b6b] mt-1">
                                   * Khóa do Nuốt Chửng Xác Quái!
                                 </div>
                               )}
 
-                              <div className="mt-2 pt-1.5 border-t border-[#1e1629] flex items-center justify-between gap-1">
-                                <span className="text-[10px] text-[#fbbf24]">-{sk.mindCost} Tâm Trí</span>
+                              <div className="mt-2 pt-1.5 border-t border-[#3a3a3a]/60 flex items-center justify-between gap-1">
+                                <span className="text-[10px] text-[#c5a059]">-{sk.mindCost} Tâm Trí</span>
                                 {curLv >= 3 ? (
-                                  <span className="text-[10px] text-[#4ade80] font-bold">TỐI ĐA</span>
-                                ) : curLv === 0 ? (
+                                  <span className="text-[10px] text-[#c5a059] font-bold">TỐI ĐA</span>
+                                ) : curLv === 0 && !reqAff ? (
                                   <span
-                                    className="text-[10px] text-[#a89882] italic text-right"
+                                    className="text-[10px] text-[#9b8f82] italic text-right"
                                     title="Tìm Cuộn Bí Kíp trên Kệ Sách và đọc trong Túi [I] để mở khóa Lv.1"
                                   >
                                     🔒 Đọc Cuộn Bí Kíp (Túi [I])
+                                  </span>
+                                ) : curLv === 0 && reqAff && (!affMet || lockedByDevour) ? (
+                                  <span className="text-[10px] text-[#9b8f82] italic text-right">
+                                    {lockedByDevour
+                                      ? '🔒 Đã bị Thánh Mẫu khước từ'
+                                      : `🔒 Cần Thiện cảm ≥ ${reqAff.level}`}
                                   </span>
                                 ) : (
                                   <button
                                     disabled={player.energyStones < 1 || lockedByDevour}
                                     onClick={() => {
-                                      setPlayer((prev) => ({
-                                        ...prev,
-                                        energyStones: prev.energyStones - 1,
-                                        skillLevels: {
-                                          ...prev.skillLevels,
-                                          [sk.id]: (prev.skillLevels[sk.id] || 0) + 1,
-                                        },
-                                      }));
-                                      const msg = `🔮 Đã nâng cấp kỹ năng [${sk.name}] lên Lv.${curLv + 1} tại Bàn Thờ Hexen!`;
-                                      setHexenFeedback(msg);
-                                      addLog(msg);
+                                      const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+                                      const res = learnOrUpgradeHexenSkill(pCopy, sk.id);
+                                      if (res.success) {
+                                        setPlayer(pCopy);
+                                      }
+                                      setHexenFeedback(res.message);
+                                      addLog(res.message);
                                     }}
-                                    className="px-2.5 py-1 bg-[#6d28d9] hover:bg-[#7c3aed] disabled:opacity-35 text-white font-bold text-[10px] cursor-pointer"
+                                    className="df-btn-blood px-2.5 py-1 disabled:opacity-35 font-bold text-[10px] cursor-pointer"
                                   >
-                                    Nâng Lv.{curLv + 1} (-1 Đá NL)
+                                    {curLv === 0
+                                      ? 'Học Lv.1 (-1 Đá NL)'
+                                      : `Nâng Lv.${curLv + 1} (-1 Đá NL)`}
                                   </button>
                                 )}
                               </div>
@@ -6727,17 +7375,17 @@ export default function App() {
       ======================================================================== */}
       {activeModal === 'saves' && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="max-w-lg w-full bg-[#120e17] border-2 border-[#47383d] p-5 space-y-3">
-            <div className="flex items-center justify-between border-b border-[#2e2428] pb-2">
+          <div className="max-w-lg w-full df-panel p-5 space-y-3">
+            <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-2">
               <div className="flex items-center gap-2">
-                <Save className="w-4 h-4 text-[#4ade80]" />
-                <h2 className="text-sm font-bold uppercase tracking-wider text-[#f3e5ab]">
+                <Save className="w-4 h-4 text-[#c5a059]" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-[#dfd2b4]">
                   Giường Đá Lưu Trữ – 5 Ô Hồ Sơ (Seed: {world.seed})
                 </h2>
               </div>
               <button
                 onClick={() => setActiveModal(null)}
-                className="px-3 py-1 bg-[#261e24] text-xs font-bold border border-[#524046] cursor-pointer"
+                className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
               >
                 Đóng
               </button>
@@ -6749,19 +7397,21 @@ export default function App() {
                 return (
                   <div
                     key={idx}
-                    className="p-2.5 bg-[#09070c] border border-[#2d2428] flex items-center justify-between gap-2 text-xs"
+                    className={`p-2.5 flex items-center justify-between gap-2 text-xs ${
+                      slot ? 'df-card' : 'df-well'
+                    }`}
                   >
                     <div>
-                      <div className="font-bold text-[#f3e5ab]">
+                      <div className="font-bold text-[#dfd2b4]">
                         Ô LƯU #{idx + 1}{' '}
-                        {slot?.player?.name ? <span className="text-[#fbbf24]">— {slot.player.name}</span> : null}
+                        {slot?.player?.name ? <span className="text-[#c5a059]">— {slot.player.name}</span> : null}
                       </div>
                       {slot ? (
-                        <div className="text-[#9c8c76] mt-0.5 text-[11px]">
+                        <div className="text-[#9b8f82] mt-0.5 text-[11px]">
                           {slot.timestamp} • Phòng {slot.world.currentRoomId} • Sinh Lực {slot.player.hp}/{slot.player.maxHp}
                         </div>
                       ) : (
-                        <div className="text-[#5e5246] italic text-[11px]">Ô Trống — Có thể tạo Hồ Sơ Lưu mới</div>
+                        <div className="text-[#7a7066] italic text-[11px]">Ô Trống — Có thể tạo Hồ Sơ Lưu mới</div>
                       )}
                     </div>
                     <div className="flex gap-1.5 shrink-0">
@@ -6771,7 +7421,7 @@ export default function App() {
                           setActiveModal(null);
                           setLogOverlayVisible(true);
                         }}
-                        className="px-2.5 py-1 bg-[#15803d] hover:bg-[#16a34a] text-white font-bold cursor-pointer"
+                        className="df-btn-bronze px-2.5 py-1 font-bold cursor-pointer"
                       >
                         {slot ? 'Lưu Đè' : 'Lưu Mới'}
                       </button>
@@ -6779,13 +7429,13 @@ export default function App() {
                         <>
                           <button
                             onClick={() => loadFromSlot(idx)}
-                            className="px-2.5 py-1 bg-[#1e293b] hover:bg-[#334155] text-white font-bold cursor-pointer"
+                            className="df-btn px-2.5 py-1 font-bold cursor-pointer"
                           >
                             Tải Lại
                           </button>
                           <button
                             onClick={() => deleteSaveSlot(idx)}
-                            className="px-2 py-1 bg-[#3f161b] hover:bg-[#5c1c24] border border-[#7f1d1d] text-[#fca5a5] cursor-pointer"
+                            className="df-btn-blood px-2 py-1 cursor-pointer"
                           >
                             Xóa
                           </button>
@@ -6805,12 +7455,12 @@ export default function App() {
       ======================================================================== */}
       {activeModal === 'guide' && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="max-w-3xl w-full bg-[#120e17] border-2 border-[#b45309] p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-[0_0_50px_rgba(180,83,9,0.28)]">
-            <div className="flex items-center justify-between border-b border-[#3b2c26] pb-3">
+          <div className="max-w-3xl w-full df-panel p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-3">
               <div className="flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-[#fbbf24]" />
+                <HelpCircle className="w-5 h-5 text-[#c5a059]" />
                 <h2
-                  className="text-xl font-bold uppercase tracking-wider text-[#fde68a]"
+                  className="text-xl font-bold uppercase tracking-wider text-[#dfd2b4]"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
                   📖 Sách Cẩm Nang Sinh Tồn – Thung Lũng Xương Tàn
@@ -6818,7 +7468,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => setActiveModal(null)}
-                className="px-3 py-1 bg-[#261e24] hover:bg-[#382b34] text-xs font-bold border border-[#524046] cursor-pointer"
+                className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
               >
                 Đóng [ESC]
               </button>
@@ -6828,65 +7478,57 @@ export default function App() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 onClick={() => setGuideTab('lore')}
-                className={`py-2 px-2.5 border text-xs font-bold uppercase tracking-wider cursor-pointer transition ${
-                  guideTab === 'lore'
-                    ? 'bg-[#4c1d24] border-[#fbbf24] text-[#fef3c7]'
-                    : 'bg-[#17121d] border-[#382d42] text-[#a89882] hover:text-white'
+                className={`py-2 px-2.5 text-xs font-bold uppercase tracking-wider cursor-pointer ${
+                  guideTab === 'lore' ? 'df-btn-active' : 'df-btn'
                 }`}
               >
                 0. Biên Niên Sử
               </button>
               <button
                 onClick={() => setGuideTab('move')}
-                className={`py-2 px-2.5 border text-xs font-bold uppercase tracking-wider cursor-pointer transition ${
-                  guideTab === 'move'
-                    ? 'bg-[#7c2d12] border-[#fbbf24] text-[#fef3c7]'
-                    : 'bg-[#17121d] border-[#382d42] text-[#a89882] hover:text-white'
+                className={`py-2 px-2.5 text-xs font-bold uppercase tracking-wider cursor-pointer ${
+                  guideTab === 'move' ? 'df-btn-active' : 'df-btn'
                 }`}
               >
                 1. Di Chuyển [F]
               </button>
               <button
                 onClick={() => setGuideTab('combat')}
-                className={`py-2 px-2.5 border text-xs font-bold uppercase tracking-wider cursor-pointer transition ${
-                  guideTab === 'combat'
-                    ? 'bg-[#7f1d1d] border-[#fbbf24] text-[#fef3c7]'
-                    : 'bg-[#17121d] border-[#382d42] text-[#a89882] hover:text-white'
+                className={`py-2 px-2.5 text-xs font-bold uppercase tracking-wider cursor-pointer ${
+                  guideTab === 'combat' ? 'df-btn-active' : 'df-btn'
                 }`}
               >
                 2. Chặt Chi [1..5]
               </button>
               <button
                 onClick={() => setGuideTab('survival')}
-                className={`py-2 px-2.5 border text-xs font-bold uppercase tracking-wider cursor-pointer transition ${
-                  guideTab === 'survival'
-                    ? 'bg-[#3b1d5e] border-[#fbbf24] text-[#fef3c7]'
-                    : 'bg-[#17121d] border-[#382d42] text-[#a89882] hover:text-white'
+                className={`py-2 px-2.5 text-xs font-bold uppercase tracking-wider cursor-pointer ${
+                  guideTab === 'survival' ? 'df-btn-active' : 'df-btn'
                 }`}
               >
-                3. Sinh Tồn & Lọ
+                3. Sinh Tồn &amp; Lọ
               </button>
             </div>
 
             {/* Tab 0: Biên Niên Sử (Spoiler-Free) */}
             {guideTab === 'lore' && (
-              <div className="bg-[#0b0910] border border-[#2f242c] p-3 grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px] leading-snug text-[#e5d7c3]">
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#dc2626] space-y-1">
-                  <div className="font-bold text-[#fca5a5] uppercase">3 Tầng Thung Lũng</div>
+              <div className="df-well p-3 grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px] leading-snug text-[#d3d3d3]">
+                <div className="p-2.5 df-card space-y-1">
+                  <div className="font-bold text-[#c96b6b] uppercase">3 Tầng Thung Lũng</div>
                   <p>• <b>Tầng 1:</b> Lâu Đài Hắc Ám đổ nát phủ bóng xuống kinh thành.</p>
                   <p>• <b>Tầng 2:</b> Đại Giáo Đường Goethe nơi chướng khí bắt đầu dâng cao.</p>
                   <p>• <b>Tầng 3:</b> Vực Sao lạnh lẽo ẩn giấu vết rách tận đáy địa tầng.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#fbbf24] space-y-1">
-                  <div className="font-bold text-[#fde68a] uppercase">Các Thế Lực Cổ Xưa</div>
+                <div className="p-2.5 df-card space-y-1">
+                  <div className="font-bold text-[#c5a059] uppercase">Các Thế Lực Cổ Xưa</div>
                   <p>• <b>Thánh Mẫu:</b> Đức tin cũ kỹ còn sót lại trên những bàn thờ rỉ máu.</p>
                   <p>• <b>Hư Vô &amp; Ác Quỷ:</b> Nguồn sức mạnh cấm kỵ bào mòn lý trí và tâm hồn.</p>
                   <p>• <b>Bản Ghi Cổ:</b> Lục tìm trang da dê trên kệ sách để ghép nối sự thật.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#a855f7] space-y-1">
-                  <div className="font-bold text-[#e9d5ff] uppercase">Tổ Đội &amp; Lựa Chọn</div>
+                <div className="p-2.5 df-card space-y-1">
+                  <div className="font-bold text-[#a889b8] uppercase">Tổ Đội &amp; Lựa Chọn</div>
                   <p>• Chiêu mộ đồng đội sống sót hoặc dùng Chiêu Hồn Thuật lập đội tối đa 4 người.</p>
                   <p>• Mọi hành động tàn nhẫn hay cứu rỗi dọc đường đều xoay chuyển số phận cuối cùng.</p>
                 </div>
@@ -6895,24 +7537,24 @@ export default function App() {
 
             {/* Tab 1: Di chuyển & Tương tác */}
             {guideTab === 'move' && (
-              <div className="bg-[#0b0910] border border-[#2f242c] p-3 grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[11px] leading-snug text-[#e5d7c3]">
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#fbbf24]">
-                  <div className="font-bold text-[#fde68a] uppercase mb-0.5">WASD • Nhịp Sinh Tồn</div>
+              <div className="df-well p-3 grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[11px] leading-snug text-[#d3d3d3]">
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#c5a059] uppercase mb-0.5">WASD • Nhịp Sinh Tồn</div>
                   <p>Đi từng ô theo nhịp <b>220ms</b>. Mỗi bước tiêu hao nhẹ Độ Đói &amp; đẩy nhanh độc/chảy máu nếu chưa băng bó.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#38bdf8]">
-                  <div className="font-bold text-[#bae6fd] uppercase mb-0.5">[F] • Cạy Đồ &amp; NPC</div>
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#dfd2b4] uppercase mb-0.5">[F] • Cạy Đồ &amp; NPC</div>
                   <p>Nhấn <b>[F]</b> để tương tác Thùng, Rương, Kệ Sách, Bàn Thờ Hexen, xác quái hoặc đồng đội tiềm năng.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#c084fc]">
-                  <div className="font-bold text-[#e9d5ff] uppercase mb-0.5">[F] • Nổ Tường Nứt</div>
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#a889b8] uppercase mb-0.5">[F] • Nổ Tường Nứt</div>
                   <p>Đứng sát tường rạn nứt và nhấn <b>[F]</b> dùng <b>Lọ Nâu</b> để mở thông lối đi bí mật.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#4ade80]">
-                  <div className="font-bold text-[#bbf7d0] uppercase mb-0.5">Giường Lưu &amp; Đồng Xu</div>
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#9ab08e] uppercase mb-0.5">Giường Lưu &amp; Đồng Xu</div>
                   <p>Đoán đúng xu để hồi phục &amp; Lưu game (<b>Đồng Xu May Mắn</b> tung 2 xu; <b>Tâm Trí &lt; 30</b> mất quyền chọn xu!).</p>
                 </div>
               </div>
@@ -6920,24 +7562,24 @@ export default function App() {
 
             {/* Tab 2: Chiến thuật Chặt Chi */}
             {guideTab === 'combat' && (
-              <div className="bg-[#0b0910] border border-[#2f242c] p-3 grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[11px] leading-snug text-[#e5d7c3]">
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#fbbf24]">
-                  <div className="font-bold text-[#fde68a] uppercase mb-0.5">WASD + Enter • Phím [1..5]</div>
+              <div className="df-well p-3 grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[11px] leading-snug text-[#d3d3d3]">
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#c5a059] uppercase mb-0.5">WASD + Enter • Phím [1..5]</div>
                   <p>Chọn chi bằng WASD/chuột rồi Enter/Click lần 2 để chém. Phím nhanh: <b>[1] Đánh, [2] Kỹ Năng, [3] Thủ, [4] Vật Phẩm, [5] Nói</b>.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#f87171]">
-                  <div className="font-bold text-[#fecaca] uppercase mb-0.5">1. Chặt Tay Vũ Khí</div>
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#c96b6b] uppercase mb-0.5">1. Chặt Tay Vũ Khí</div>
                   <p>Phá tay cầm vũ khí của quái trước để tước đòn chí mạng và ngắt kỹ năng nguy hiểm.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#4ade80]">
-                  <div className="font-bold text-[#bbf7d0] uppercase mb-0.5">2. Chặt Chân → 95% Trúng Đầu</div>
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#9ab08e] uppercase mb-0.5">2. Chặt Chân → 95% Trúng Đầu</div>
                   <p>Quái mất chân sẽ quỵ ngã, đẩy tỉ lệ trúng <b>Đầu</b> lên <b>95%</b> để kết liễu nhanh.</p>
                 </div>
 
-                <div className="p-2.5 bg-[#16121c] border-l-2 border-[#fb923c]">
-                  <div className="font-bold text-[#fed7aa] uppercase mb-0.5">3. Thủ &amp; Vũ Khí Nguyền</div>
+                <div className="p-2.5 df-card">
+                  <div className="font-bold text-[#c5a059] uppercase mb-0.5">3. Thủ &amp; Vũ Khí Nguyền</div>
                   <p>Dùng <b>[P.Thủ] / Thế Thủ</b> khi Boss tụ lực đỏ. <b>Vũ khí Nguyền</b> khóa tay &amp; phản chủ khi <b>Tâm Trí &lt; 40</b>.</p>
                 </div>
               </div>
@@ -6945,43 +7587,43 @@ export default function App() {
 
             {/* Tab 3: 3 Thanh Sinh Tồn & Lọ Thực Dụng */}
             {guideTab === 'survival' && (
-              <div className="bg-[#0b0910] border border-[#2f242c] p-3 space-y-2.5 text-[11px] leading-snug text-[#e5d7c3]">
-                <div className="p-2 bg-[#16121c] border-l-2 border-[#fbbf24] flex flex-wrap gap-x-4 gap-y-0.5">
+              <div className="df-well p-3 space-y-2.5 text-[11px] leading-snug text-[#d3d3d3]">
+                <div className="p-2.5 df-card flex flex-wrap gap-x-4 gap-y-0.5">
                   <span>• <b>Đói ≥ 50%:</b> -25% Sát Thương; <b>≥ 90%:</b> Né &amp; Chí mạng = 0.</span>
                   <span>• <b>Tâm Trí &lt; 30:</b> Hoảng Loạn / Cuồng Loạn.</span>
                   <span>• <b>Nuốt xác:</b> -45% Đói, +20% Tha Hóa.</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div className="p-2 bg-[#16121c] border border-[#4d3b2c] flex items-center gap-2">
+                  <div className="p-2 df-card flex items-center gap-2">
                     <ItemArtworkCanvas itemOrWeaponId="brown_vial" size={30} />
                     <div>
-                      <div className="font-bold text-[#fde68a]">Lọ Nâu (Thuốc Nổ)</div>
-                      <p className="text-[10.5px] text-[#cfc0a9]">Phá Tường Nứt <b>[F]</b> hoặc nổ <b>650–850 sát thương</b>.</p>
+                      <div className="font-bold text-[#c5a059]">Lọ Nâu (Thuốc Nổ)</div>
+                      <p className="text-[10.5px] text-[#9b8f82]">Phá Tường Nứt <b>[F]</b> hoặc nổ <b>650–850 sát thương</b>.</p>
                     </div>
                   </div>
 
-                  <div className="p-2 bg-[#16121c] border border-[#5c2424] flex items-center gap-2">
+                  <div className="p-2 df-card flex items-center gap-2">
                     <ItemArtworkCanvas itemOrWeaponId="red_vial" size={30} />
                     <div>
-                      <div className="font-bold text-[#fca5a5]">Lọ Đỏ (Axit Mù Mắt)</div>
-                      <p className="text-[10.5px] text-[#cfc0a9]">Gây <b>Mù 3 lượt (-70% trúng)</b> &amp; bào 50% Giáp.</p>
+                      <div className="font-bold text-[#c96b6b]">Lọ Đỏ (Axit Mù Mắt)</div>
+                      <p className="text-[10.5px] text-[#9b8f82]">Gây <b>Mù 3 lượt (-70% trúng)</b> &amp; bào 50% Giáp.</p>
                     </div>
                   </div>
 
-                  <div className="p-2 bg-[#16121c] border border-[#364d59] flex items-center gap-2">
+                  <div className="p-2 df-card flex items-center gap-2">
                     <ItemArtworkCanvas itemOrWeaponId="blue_vial" size={30} />
                     <div>
-                      <div className="font-bold text-[#93c5fd]">Lọ Thuốc Xanh &amp; Lọ Trắng</div>
-                      <p className="text-[10.5px] text-[#cfc0a9]"><b>Xanh:</b> +50% Sinh Lực. <b>Trắng:</b> Xóa Độc, Nhiễm Trùng, Ký Sinh.</p>
+                      <div className="font-bold text-[#a3b2c4]">Lọ Thuốc Xanh &amp; Lọ Trắng</div>
+                      <p className="text-[10.5px] text-[#9b8f82]"><b>Xanh:</b> +50% Sinh Lực. <b>Trắng:</b> Xóa Độc, Nhiễm Trùng, Ký Sinh.</p>
                     </div>
                   </div>
 
-                  <div className="p-2 bg-[#16121c] border border-[#4c2863] flex items-center gap-2">
+                  <div className="p-2 df-card flex items-center gap-2">
                     <ItemArtworkCanvas itemOrWeaponId="purple_vial" size={30} />
                     <div>
-                      <div className="font-bold text-[#e9d5ff]">Lọ Tím &amp; Nhựa Cây Ngủ Say</div>
-                      <p className="text-[10.5px] text-[#cfc0a9]"><b>Tím:</b> Dễ cháy (<b>x2.5 Lửa/Thánh</b>) hoặc trốn 100%. <b>Nhựa Cây:</b> +30 Tâm Trí.</p>
+                      <div className="font-bold text-[#a889b8]">Lọ Tím &amp; Nhựa Cây Ngủ Say</div>
+                      <p className="text-[10.5px] text-[#9b8f82]"><b>Tím:</b> Dễ cháy (<b>x2.5 Lửa/Thánh</b>) hoặc trốn 100%. <b>Nhựa Cây:</b> +30 Tâm Trí.</p>
                     </div>
                   </div>
                 </div>
@@ -6996,17 +7638,16 @@ export default function App() {
       ======================================================================== */}
       {coinToss && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-[#120e14] border-2 border-[#a88642] p-6 text-center space-y-4 shadow-[0_0_50px_rgba(251,191,36,0.18)]">
-            <div className="text-xs uppercase tracking-[0.2em] text-[#d4af37] font-bold">
+          <div className="max-w-sm w-full df-panel p-6 text-center space-y-4">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-[#c5a059] font-bold">
               ĐỒNG XU ĐỊNH MỆNH {coinToss.isPanicAuto ? '• HOẢNG LOẠN' : ''}
             </div>
             <h3
-              className="text-2xl font-bold text-[#f5ebd6]"
+              className="text-2xl font-bold text-[#dfd2b4] tracking-wide uppercase"
               style={{ fontFamily: "'Cormorant Garamond', serif" }}
             >
               {coinToss.title}
             </h3>
-            <p className="text-xs text-[#cfc0a9] leading-relaxed">{coinToss.subtitle}</p>
 
             {/* 160x160 3D Embossed Gold Coin Canvas (or Dual 2-Coin Shift view) */}
             <div className="py-2 flex flex-col items-center justify-center gap-2">
@@ -7024,17 +7665,17 @@ export default function App() {
                   />
                 )}
               </div>
-              <div className="text-xs font-bold tracking-widest uppercase text-[#f3e5ab]">
-                {coinToss.resultSide
-                  ? coinToss.secondResultSide
-                    ? `XU THỨ NHẤT: ${coinToss.resultSide === 'HEADS' ? 'NGỬA' : 'SẤP'} • XU THỨ HAI: ${
+              {coinToss.resultSide && (
+                <div className="text-xs font-bold tracking-widest uppercase text-[#c5a059]">
+                  {coinToss.secondResultSide
+                    ? `${coinToss.resultSide === 'HEADS' ? 'NGỬA' : 'SẤP'} • ${
                         coinToss.secondResultSide === 'HEADS' ? 'NGỬA' : 'SẤP'
                       }`
                     : coinToss.resultSide === 'HEADS'
-                    ? 'MẶT NGỬA — CHÂN DUNG THÁNH MẪU'
-                    : 'MẶT SẤP — ẤN KÝ NHẬT THỰC GOETHE'
-                  : 'CHỌN MẶT NGỬA HOẶC MẶT SẤP'}
-              </div>
+                    ? 'MẶT NGỬA'
+                    : 'MẶT SẤP'}
+                </div>
+              )}
             </div>
 
             {!coinToss.chosenSide && !coinToss.isPanicAuto && (
@@ -7042,15 +7683,15 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={(e) => handleChooseCoinSide('HEADS', e.shiftKey || shiftHeld)}
-                    className="py-2.5 px-2 bg-[#4a2511] hover:bg-[#6b3518] border border-[#c8a258] text-xs font-bold uppercase text-[#f5ebd6] cursor-pointer"
+                    className="df-btn-bronze py-2.5 px-2 text-xs font-bold uppercase cursor-pointer"
                   >
-                    Mặt Ngửa (Thánh Mẫu) [A]
+                    Mặt Ngửa
                   </button>
                   <button
                     onClick={(e) => handleChooseCoinSide('TAILS', e.shiftKey || shiftHeld)}
-                    className="py-2.5 px-2 bg-[#4a2511] hover:bg-[#6b3518] border border-[#c8a258] text-xs font-bold uppercase text-[#f5ebd6] cursor-pointer"
+                    className="df-btn-bronze py-2.5 px-2 text-xs font-bold uppercase cursor-pointer"
                   >
-                    Mặt Sấp (Nhật Thực) [D]
+                    Mặt Sấp
                   </button>
                 </div>
 
@@ -7061,34 +7702,21 @@ export default function App() {
                       setCoinToss(null);
                       lp?.();
                     }}
-                    className="w-full py-2 bg-[#064e3b] hover:bg-[#065f46] border border-[#34d399]/60 text-xs font-bold text-[#ecfdf5] cursor-pointer"
+                    className="df-btn w-full py-2 text-xs font-bold text-[#dfd2b4] cursor-pointer"
                   >
-                    🗝️ Dùng Chìa Khóa Vạn Năng (Lockpick x{player.inventory.lockpick}) — Mở 100%
+                    🗝️ Chìa Khóa Vạn Năng (x{player.inventory.lockpick})
                   </button>
                 )}
               </div>
             )}
 
             {coinToss.outcomeText && (
-              <div className="space-y-3">
-                <div
-                  className={`p-3 border text-xs italic leading-relaxed ${
-                    coinToss.outcomeTier === 'lose'
-                      ? 'bg-[#1f0f14] border-[#7f1d1d] text-[#fca5a5]'
-                      : coinToss.outcomeTier === 'partial'
-                      ? 'bg-[#1f1911] border-[#a16207] text-[#fde68a]'
-                      : 'bg-[#1a1510] border-[#b48a3e] text-[#fef3c7]'
-                  }`}
-                >
-                  {coinToss.outcomeText}
-                </div>
-                <button
-                  onClick={confirmCoinTossOutcome}
-                  className="w-full py-2 bg-[#5c2c16] hover:bg-[#7c3b1d] border border-[#c8a258] text-[#f5ebd6] font-bold text-xs uppercase cursor-pointer"
-                >
-                  Chấp Nhận Định Mệnh [Enter]
-                </button>
-              </div>
+              <button
+                onClick={confirmCoinTossOutcome}
+                className="df-btn-blood w-full py-2.5 font-bold text-xs uppercase cursor-pointer"
+              >
+                Chấp Nhận
+              </button>
             )}
           </div>
         </div>

@@ -34,6 +34,7 @@ export interface EnemyTemplate {
   telegraphDesc: string;
   mechanicHint: string;
   dropEnergyStones: number;
+  dropLuckyCoins?: number;
   guaranteedDropItem?: string;
   guaranteedWeaponDrop?: string;
   limbs: LimbConfig[];
@@ -79,7 +80,7 @@ export interface ShieldDef {
 export interface UtilityItemDef {
   id: string;
   name: string;
-  category: 'vial' | 'herb' | 'crafted' | 'tool' | 'food' | 'key' | 'stone' | 'relic';
+  category: 'vial' | 'herb' | 'crafted' | 'tool' | 'food' | 'key' | 'stone' | 'relic' | 'currency';
   hpHeal?: number;
   hpHealPct?: number;
   mindHeal?: number;
@@ -102,6 +103,10 @@ export interface SkillDef {
   mindCost: number;
   hpCost?: number;
   corruptionGain?: number;
+  requiredAffinity?: {
+    pillar: 'holyMother' | 'primordialVoid' | 'demonicPact';
+    level: number;
+  };
   descLv1: string;
   descLv2: string;
   descLv3: string;
@@ -469,7 +474,7 @@ export const CONFIG = {
     },
     cursed_broken_bannerblade: {
       id: 'cursed_broken_bannerblade',
-      name: 'Gươm Gãy Kỵ Đoàn (Bị Nguyền)',
+      name: 'Gươm Gãy Kỵ Đoàn Bị Nguyền',
       tier: 2,
       hands: 1,
       dmg: [340, 440],
@@ -485,7 +490,7 @@ export const CONFIG = {
     },
     cursed_void_bone_scythe: {
       id: 'cursed_void_bone_scythe',
-      name: 'Lưỡi Hái Xương Vực Sao (Bị Nguyền)',
+      name: 'Lưỡi Hái Xương Vực Sao Bị Nguyền',
       tier: 3,
       hands: 2,
       dmg: [680, 880],
@@ -501,7 +506,7 @@ export const CONFIG = {
     },
     cursed_blood_bell: {
       id: 'cursed_blood_bell',
-      name: 'Chuông Đồng Đẫm Máu (Bị Nguyền)',
+      name: 'Chuông Đồng Đẫm Máu Bị Nguyền',
       tier: 2,
       hands: 1,
       dmg: [380, 490],
@@ -517,7 +522,7 @@ export const CONFIG = {
     },
     vaelis_torment_blade: {
       id: 'vaelis_torment_blade',
-      name: 'Trường Kiếm Thống Khổ Của Vaelis (Bị Nguyền)',
+      name: 'Trường Kiếm Thống Khổ Của Vaelis',
       tier: 3,
       hands: 2,
       dmg: [820, 1080],
@@ -553,7 +558,7 @@ export const CONFIG = {
   SHIELDS: {
     rotten_wood_shield: {
       id: 'rotten_wood_shield',
-      name: 'Khiên Gỗ Mục (Cũ)',
+      name: 'Khiên Gỗ Mục Cũ',
       defBonus: 4,
       slashReduction: 0.15,
       guardReduction: 0.65,
@@ -583,7 +588,7 @@ export const CONFIG = {
     },
     rotting_targe: {
       id: 'rotting_targe',
-      name: 'Khiên Gỗ Mục (Rotting Targe)',
+      name: 'Khiên Gỗ Mục',
       defBonus: 4,
       slashReduction: 0.15,
       guardReduction: 0.68,
@@ -593,7 +598,7 @@ export const CONFIG = {
     },
     rimmed_shield: {
       id: 'rimmed_shield',
-      name: 'Khiên Bọc Sắt (Rimmed Shield)',
+      name: 'Khiên Bọc Sắt',
       defBonus: 8,
       slashReduction: 0.25,
       guardReduction: 0.75,
@@ -603,7 +608,7 @@ export const CONFIG = {
     },
     legion_heater: {
       id: 'legion_heater',
-      name: 'Khiên Kỵ Đoàn (Legion Heater)',
+      name: 'Khiên Kỵ Đoàn',
       defBonus: 14,
       slashReduction: 0.40,
       guardReduction: 0.82,
@@ -613,7 +618,7 @@ export const CONFIG = {
     },
     widows_shield: {
       id: 'widows_shield',
-      name: 'Khiên Nhện Đen (Widow’s Shield)',
+      name: 'Khiên Nhện Đen',
       defBonus: 12,
       slashReduction: 0.25,
       guardReduction: 0.78,
@@ -623,7 +628,7 @@ export const CONFIG = {
     },
     aegis_of_order: {
       id: 'aegis_of_order',
-      name: 'Khiên Bạch Kim (Aegis of Order)',
+      name: 'Khiên Bạch Kim',
       defBonus: 20,
       slashReduction: 0.35,
       guardReduction: 0.88,
@@ -677,8 +682,8 @@ export const CONFIG = {
       name: 'Thịt Thối / Mồi Nhử',
       category: 'tool',
       combatUsable: true,
-      mapUsable: false,
-      desc: 'Ném cho các loài Quái thú (Sói, Trăn, Hổ Hư Vô, Fenrir) khiến chúng cúi xuống ăn và bỏ qua 1 lượt tấn công.',
+      mapUsable: true,
+      desc: 'Đặt xuống nền đá trên bản đồ để làm Mồi Nhử đánh lạc hướng quái (6 lượt), hoặc ném trong trận chiến khiến Quái thú cúi xuống ăn và bỏ qua 1 lượt.',
     },
     bone_saw: {
       id: 'bone_saw',
@@ -755,7 +760,7 @@ export const CONFIG = {
     },
     herbal_salve: {
       id: 'herbal_salve',
-      name: 'Cao Thảo Dược (Pha Chế)',
+      name: 'Cao Thảo Dược',
       category: 'crafted',
       hpHeal: 70,
       cureInfection: true,
@@ -766,7 +771,7 @@ export const CONFIG = {
     },
     holy_elixir: {
       id: 'holy_elixir',
-      name: 'Thánh Dược (Pha Chế)',
+      name: 'Thánh Dược',
       category: 'crafted',
       hpHeal: 50,
       mindHeal: 35,
@@ -776,7 +781,7 @@ export const CONFIG = {
     },
     sedative_draught: {
       id: 'sedative_draught',
-      name: 'Thuốc An Thần (Pha Chế)',
+      name: 'Thuốc An Thần',
       category: 'crafted',
       mindHeal: 50,
       cureHallucination: true,
@@ -829,7 +834,7 @@ export const CONFIG = {
     },
     blue_vial: {
       id: 'blue_vial',
-      name: 'Lọ Thuốc Xanh (Blue Vial)',
+      name: 'Lọ Thuốc Xanh',
       category: 'vial',
       hpHealPct: 0.5,
       combatUsable: true,
@@ -838,7 +843,7 @@ export const CONFIG = {
     },
     opium_vial: {
       id: 'opium_vial',
-      name: 'Lọ Thuốc Tím (Opium Vial)',
+      name: 'Lọ Thuốc Tím',
       category: 'vial',
       mindHeal: 30,
       cureHallucination: true,
@@ -858,15 +863,15 @@ export const CONFIG = {
     },
     lucky_coin: {
       id: 'lucky_coin',
-      name: 'Đồng Xu May Mắn (Lucky Coin)',
+      name: 'Đồng Xu May Mắn',
       category: 'tool',
       combatUsable: false,
       mapUsable: false,
-      desc: 'Cho phép tung 2 Đồng Xu Vàng cùng lúc trong thử thách định mệnh (chỉ cần 1 đồng xu trúng mặt chọn!).',
+      desc: 'Cực hiếm: chỉ tìm thấy trong Rương, Thùng tiếp tế, xác Thủ lĩnh/Trùm hoặc mua đắt đỏ từ Kẻ Buôn Lậu. Cho phép tung 2 Đồng Xu Vàng cùng lúc.',
     },
     lockpick: {
       id: 'lockpick',
-      name: 'Chìa Khóa Vạn Năng (Lockpick)',
+      name: 'Chìa Khóa Vạn Năng',
       category: 'tool',
       combatUsable: false,
       mapUsable: false,
@@ -900,7 +905,7 @@ export const CONFIG = {
     },
     holy_fire_oil: {
       id: 'holy_fire_oil',
-      name: 'Lọ Dầu Lửa Thánh (Pha Chế)',
+      name: 'Lọ Dầu Lửa Thánh',
       category: 'crafted',
       combatUsable: true,
       mapUsable: false,
@@ -908,7 +913,7 @@ export const CONFIG = {
     },
     void_acid_vial: {
       id: 'void_acid_vial',
-      name: 'Lọ Axit Hư Vô (Pha Chế)',
+      name: 'Lọ Axit Hư Vô',
       category: 'crafted',
       combatUsable: true,
       mapUsable: false,
@@ -916,7 +921,7 @@ export const CONFIG = {
     },
     stimulant_serum: {
       id: 'stimulant_serum',
-      name: 'Huyết Thanh Kích Thích (Pha Chế)',
+      name: 'Huyết Thanh Kích Thích',
       category: 'crafted',
       hpHeal: 35,
       mindHeal: 25,
@@ -1021,104 +1026,21 @@ export const CONFIG = {
       unlockSkillId: 'en_garde',
       desc: 'Cuộn giấy da dê cổ (Nhánh Chiến Kỹ). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Thế Thủ Phản Kích Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
     },
-    scroll_holy_light: {
-      id: 'scroll_holy_light',
-      name: 'Cuộn Bí Kíp: Thánh Quang',
-      category: 'relic',
+    energy_stone: {
+      id: 'energy_stone',
+      name: 'Đá Năng Lượng',
+      category: 'stone',
       combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'holy_light',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Thánh Mẫu). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Thánh Quang Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
+      mapUsable: false,
+      desc: 'Tinh thể năng lượng hắc ám kết tinh từ huyết mạch cổ. Dùng để dâng lễ và khắc ấn kỹ năng tại Bàn Thờ Hexen.',
     },
-    scroll_blessed_heal: {
-      id: 'scroll_blessed_heal',
-      name: 'Cuộn Bí Kíp: Phép Lành',
-      category: 'relic',
+    silver_coin: {
+      id: 'silver_coin',
+      name: 'Đồng Bạc',
+      category: 'currency',
       combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'blessed_heal',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Thánh Mẫu). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Phép Lành Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_divine_aegis: {
-      id: 'scroll_divine_aegis',
-      name: 'Cuộn Bí Kíp: Hộ Thể',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'divine_aegis',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Thánh Mẫu). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Hộ Thể Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_purification: {
-      id: 'scroll_purification',
-      name: 'Cuộn Bí Kíp: Thanh Tẩy',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'purification',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Thánh Mẫu). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Thanh Tẩy Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_flesh_rend: {
-      id: 'scroll_flesh_rend',
-      name: 'Cuộn Bí Kíp: Xé Xác',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'flesh_rend',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Ác Quỷ). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Xé Xác Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_blood_pact: {
-      id: 'scroll_blood_pact',
-      name: 'Cuộn Bí Kíp: Huyết Ước',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'blood_pact',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Ác Quỷ). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Huyết Ước Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_blood_drain: {
-      id: 'scroll_blood_drain',
-      name: 'Cuộn Bí Kíp: Hút Máu',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'blood_drain',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Ác Quỷ). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Hút Máu Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_necromancy: {
-      id: 'scroll_necromancy',
-      name: 'Cuộn Bí Kíp: Chiêu Hồn Thuật (Necromancy)',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'necromancy',
-      desc: 'Cuộn giấy da dê khâu bằng gân người (Nhánh Ác Quỷ). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Chiêu Hồn Thuật — đánh thức thi hài tử trận dậy chiến đấu trong Tổ Đội.',
-    },
-    scroll_void_bite: {
-      id: 'scroll_void_bite',
-      name: 'Cuộn Bí Kíp: Hư Vô Cắn',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'void_bite',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Hư Vô). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Hư Vô Cắn Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_veil_of_blindness: {
-      id: 'scroll_veil_of_blindness',
-      name: 'Cuộn Bí Kíp: Che Mắt',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'veil_of_blindness',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Hư Vô). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Che Mắt Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
-    },
-    scroll_obliterate: {
-      id: 'scroll_obliterate',
-      name: 'Cuộn Bí Kíp: Xóa Sổ',
-      category: 'relic',
-      combatUsable: false,
-      mapUsable: true,
-      unlockSkillId: 'obliterate',
-      desc: 'Cuộn giấy da dê cổ (Nhánh Hư Vô). Bấm [Lĩnh Hội] trong Túi Đồ để mở khóa Xóa Sổ Lv.1, sau đó nâng cấp tại Bàn Thờ Hexen.',
+      mapUsable: false,
+      desc: 'Đồng bạc cổ lưu hành trong Thung Lũng Xương Tàn. Dùng để giao dịch mua vật phẩm với Kẻ Buôn Lậu.',
     },
   } as Record<string, UtilityItemDef>,
 
@@ -1127,57 +1049,57 @@ export const CONFIG = {
     {
       id: 'recipe_herbal_salve',
       resultItemId: 'herbal_salve',
-      name: 'Cao Thảo Dược (+70 Sinh Lực, Xóa Nhiễm Trùng)',
+      name: 'Cao Thảo Dược',
       ingredients: { green_herb: 1, red_herb: 1 },
-      desc: 'Kết hợp 1 Thảo Dược Xanh + 1 Thảo Dược Đỏ.',
+      desc: '1 Thảo Dược Xanh + 1 Thảo Dược Đỏ (+70 Sinh Lực, Xóa Nhiễm Trùng).',
     },
     {
       id: 'recipe_holy_elixir',
       resultItemId: 'holy_elixir',
-      name: 'Thánh Dược (+50 Sinh Lực, +35 Tâm Trí)',
+      name: 'Thánh Dược',
       ingredients: { red_herb: 1, holy_water: 1 },
-      desc: 'Kết hợp 1 Thảo Dược Đỏ + 1 Nước Thánh.',
+      desc: '1 Thảo Dược Đỏ + 1 Nước Thánh (+50 Sinh Lực, +35 Tâm Trí).',
     },
     {
       id: 'recipe_sedative_draught',
       resultItemId: 'sedative_draught',
-      name: 'Thuốc An Thần (+50 Tâm Trí, Xóa Ảo Giác)',
+      name: 'Thuốc An Thần',
       ingredients: { calm_flower: 1, holy_water: 1 },
-      desc: 'Kết hợp 1 Hoa Tĩnh Tâm + 1 Nước Thánh.',
+      desc: '1 Hoa Tĩnh Tâm + 1 Nước Thánh (+50 Tâm Trí, Xóa Ảo Giác).',
     },
     {
       id: 'recipe_bandage_poultice',
       resultItemId: 'herbal_salve',
-      name: 'Cao Dán Cầm Máu (Viễn Chinh)',
+      name: 'Cao Dán Cầm Máu Viễn Chinh',
       ingredients: { bandage: 1, red_herb: 1 },
-      desc: 'Thảo Dược Chí Viễn Chinh: 1 Băng Gạc + 1 Thảo Dược Đỏ.',
+      desc: '1 Băng Gạc + 1 Thảo Dược Đỏ (+70 Sinh Lực, Cầm máu).',
     },
     {
       id: 'recipe_holy_fire_oil',
       resultItemId: 'holy_fire_oil',
-      name: 'Lọ Dầu Lửa Thánh (+Thiêu Đốt 180/lượt)',
+      name: 'Lọ Dầu Lửa Thánh',
       ingredients: { purple_vial: 1, holy_water: 1 },
-      desc: 'Sổ Tay Giả Kim Giáo Đường: 1 Lọ Tím + 1 Nước Thánh.',
+      desc: '1 Lọ Tím + 1 Nước Thánh (Thiêu đốt 180/lượt).',
     },
     {
       id: 'recipe_void_acid',
       resultItemId: 'void_acid_vial',
-      name: 'Lọ Axit Hư Vô (Xuyên Giáp 70%)',
+      name: 'Lọ Axit Hư Vô',
       ingredients: { red_vial: 1, brown_vial: 1 },
-      desc: 'Bản Thảo Cấm Thần Y: 1 Lọ Đỏ + 1 Lọ Nâu.',
+      desc: '1 Lọ Đỏ + 1 Lọ Nâu (Xuyên giáp 70%).',
     },
     {
       id: 'recipe_stimulant_serum',
       resultItemId: 'stimulant_serum',
-      name: 'Huyết Thanh Kích Thích (+35 Sinh Lực, +25 Tâm Trí, +60% Sát thương)',
+      name: 'Huyết Thanh Kích Thích',
       ingredients: { blue_vial: 1, blood_vial: 1 },
-      desc: 'Bản Thảo Cấm Thần Y: 1 Lọ Thuốc Xanh + 1 Bình Máu.',
+      desc: '1 Lọ Thuốc Xanh + 1 Bình Máu (+35 Sinh Lực, +25 Tâm Trí, +60% Sát thương).',
     },
   ] as RecipeDef[],
 
   // Hexen Skills (Lv1 -> Lv3)
   SKILLS: [
-    // Chiến Kỹ
+    // Chiến Kỹ (Mở khóa Lv.1 qua Cuộn Bí Kíp trên Kệ Sách hoặc khởi đầu nghề)
     {
       id: 'whirlwind_slash',
       name: 'Nhát Chém Xoáy',
@@ -1196,21 +1118,22 @@ export const CONFIG = {
       descLv2: 'Khóa 1 bộ phận trong 3 lượt, giảm 30% Giáp và gây 260 sát thương.',
       descLv3: 'Khóa 2 bộ phận trong 3 lượt, giảm 50% Giáp và gây 350 sát thương.',
     },
-    // Thánh Mẫu
     {
-      id: 'holy_light',
-      name: 'Thánh Quang',
-      branch: 'Thánh Mẫu',
-      mindCost: 8,
-      descLv1: 'Phóng luồng sáng phán xét gây 450–600 sát thương Thánh (x2 nếu mục tiêu Dính Dầu).',
-      descLv2: 'Gây 600–780 sát thương Thánh và làm mù nhẹ 1 lượt.',
-      descLv3: 'Gây 780–1.000 sát thương Thánh xuyên giáp và đốt cháy tà vật.',
+      id: 'en_garde',
+      name: 'Thế Thủ Phản Kích',
+      branch: 'Chiến Kỹ',
+      mindCost: 6,
+      descLv1: 'Giảm 65% sát thương nhận vào và chém phản kích 100% sát thương vũ khí.',
+      descLv2: 'Giảm 75% sát thương và chém phản kích 130% sát thương vũ khí.',
+      descLv3: 'Giảm 85% sát thương, chặn đứt chi và phản kích 160% sát thương Chí Mạng.',
     },
+    // Thánh Mẫu (Mở khóa tại Bàn Thờ Hexen bằng Thiện cảm Thánh Mẫu)
     {
       id: 'blessed_heal',
       name: 'Phép Lành',
       branch: 'Thánh Mẫu',
       mindCost: 10,
+      requiredAffinity: { pillar: 'holyMother', level: 1 },
       descLv1: 'Hồi +45 Sinh Lực, cầm máu lập tức (không mọc lại chi đã đứt).',
       descLv2: 'Hồi +65 Sinh Lực, cầm máu và xóa Nhiễm Trùng.',
       descLv3: 'Hồi +90 Sinh Lực, cầm máu, xóa Nhiễm Trùng và tăng +20% Giáp 2 lượt.',
@@ -1220,6 +1143,7 @@ export const CONFIG = {
       name: 'Hộ Thể',
       branch: 'Thánh Mẫu',
       mindCost: 7,
+      requiredAffinity: { pillar: 'holyMother', level: 1 },
       descLv1: 'Tạo khiên ánh sáng giảm 75% sát thương nhận vào trong 2 lượt.',
       descLv2: 'Giảm 82% sát thương nhận vào trong 3 lượt và chặn đứt chi.',
       descLv3: 'Giảm 88% sát thương trong 3 lượt, chặn đứt chi và phản 200 sát thương Thánh.',
@@ -1229,17 +1153,29 @@ export const CONFIG = {
       name: 'Thanh Tẩy',
       branch: 'Thánh Mẫu',
       mindCost: 6,
+      requiredAffinity: { pillar: 'holyMother', level: 2 },
       descLv1: 'Xóa sạch Độc, Ký sinh trùng, Nhiễm trùng và hồi +15 Sinh Lực.',
       descLv2: 'Xóa mọi trạng thái xấu, hồi +30 Sinh Lực và miễn nhiễm Độc/Ký sinh 2 lượt.',
       descLv3: 'Xóa mọi trạng thái xấu, hồi +45 Sinh Lực, +15 Tâm Trí và miễn nhiễm 3 lượt.',
     },
-    // Ác Quỷ (+10 Tha Hóa)
+    {
+      id: 'holy_light',
+      name: 'Thánh Quang',
+      branch: 'Thánh Mẫu',
+      mindCost: 8,
+      requiredAffinity: { pillar: 'holyMother', level: 2 },
+      descLv1: 'Phóng luồng sáng phán xét gây 450–600 sát thương Thánh (x2 nếu mục tiêu Dính Dầu).',
+      descLv2: 'Gây 600–780 sát thương Thánh và làm mù nhẹ 1 lượt.',
+      descLv3: 'Gây 780–1.000 sát thương Thánh xuyên giáp và đốt cháy tà vật.',
+    },
+    // Ác Quỷ (+10 Tha Hóa — Mở khóa tại Bàn Thờ Hexen bằng Thiện cảm Ác Quỷ)
     {
       id: 'flesh_rend',
       name: 'Xé Xác',
       branch: 'Ác Quỷ',
       mindCost: 6,
       corruptionGain: 10,
+      requiredAffinity: { pillar: 'demonicPact', level: 1 },
       descLv1: 'Gây 350 sát thương + Chảy máu 180 dmg/lượt (+10 Tha Hóa).',
       descLv2: 'Gây 480 sát thương + Chảy máu 250 dmg/lượt (+10 Tha Hóa).',
       descLv3: 'Gây 620 sát thương + Chảy máu 320 dmg/lượt và phá 40% Giáp (+10 Tha Hóa).',
@@ -1251,6 +1187,7 @@ export const CONFIG = {
       mindCost: 5,
       hpCost: 15,
       corruptionGain: 10,
+      requiredAffinity: { pillar: 'demonicPact', level: 1 },
       descLv1: 'Hiến 15 Sinh Lực + 5 Tâm Trí: Nhân đôi (x2.0) sát thương đòn đánh kế tiếp.',
       descLv2: 'Hiến 12 Sinh Lực + 5 Tâm Trí: Nhân x2.3 sát thương đòn kế + tất cả đòn đều Chí mạng.',
       descLv3: 'Hiến 10 Sinh Lực + 5 Tâm Trí: Nhân x2.6 sát thương đòn kế + hút lại 20 Sinh Lực khi chém.',
@@ -1261,26 +1198,29 @@ export const CONFIG = {
       branch: 'Ác Quỷ',
       mindCost: 8,
       corruptionGain: 10,
+      requiredAffinity: { pillar: 'demonicPact', level: 2 },
       descLv1: 'Gây 380 sát thương Huyết thuật và hồi +25 Sinh Lực cho bản thân.',
       descLv2: 'Gây 520 sát thương và hồi +38 Sinh Lực (x1.5 nếu quái đang Chảy máu).',
       descLv3: 'Gây 680 sát thương và hồi +55 Sinh Lực (x1.5 nếu quái đang Chảy máu).',
     },
     {
       id: 'necromancy',
-      name: 'Chiêu Hồn Thuật (Necromancy)',
+      name: 'Chiêu Hồn Thuật',
       branch: 'Ác Quỷ',
       mindCost: 15,
       corruptionGain: 12,
+      requiredAffinity: { pillar: 'demonicPact', level: 2 },
       descLv1: 'Nghi thức cấm kỵ: Tiêu hao 15 Tâm Trí (+12 Tha Hóa) ngoài bản đồ để dựng dậy 1 xác chết đã gục ngã làm thuộc hạ chiến đấu trong Tổ Đội.',
       descLv2: 'Thuộc hạ Chiêu Hồn được tăng +20% Sinh Lực tối đa và +15% Sát thương trong trận.',
       descLv3: 'Thuộc hạ Chiêu Hồn được tăng +40% Sinh Lực tối đa, +30% Sát thương và hồi phục nhẹ Tâm Trí mỗi trận.',
     },
-    // Hư Vô
+    // Hư Vô (Mở khóa tại Bàn Thờ Hexen bằng Thiện cảm Hư Vô)
     {
       id: 'void_bite',
       name: 'Hư Vô Cắn',
       branch: 'Hư Vô',
       mindCost: 9,
+      requiredAffinity: { pillar: 'primordialVoid', level: 1 },
       descLv1: 'Triệu hồi hàm răng không gian gây 500 sát thương chuẩn xuyên mọi Giáp.',
       descLv2: 'Gây 680 sát thương chuẩn xuyên Giáp lên bất kỳ bộ phận nào.',
       descLv3: 'Gây 880 sát thương chuẩn xuyên Giáp và làm suy yếu đòn báo trước của quái.',
@@ -1290,6 +1230,7 @@ export const CONFIG = {
       name: 'Che Mắt',
       branch: 'Hư Vô',
       mindCost: 7,
+      requiredAffinity: { pillar: 'primordialVoid', level: 1 },
       descLv1: 'Phủ sương mù hư vô giảm 60% chính xác của quái trong 2 lượt.',
       descLv2: 'Giảm 70% chính xác của quái trong 3 lượt + tăng 15% Né tránh.',
       descLv3: 'Giảm 80% chính xác của quái trong 3 lượt + khóa đòn chí mạng báo trước.',
@@ -1299,18 +1240,10 @@ export const CONFIG = {
       name: 'Xóa Sổ',
       branch: 'Hư Vô',
       mindCost: 12,
+      requiredAffinity: { pillar: 'primordialVoid', level: 2 },
       descLv1: 'Tiêu hủy lập tức bộ phận quái có Sinh Lực hiện tại <= 400 (hoặc gây 400 dmg chuẩn).',
       descLv2: 'Tiêu hủy lập tức bộ phận quái có Sinh Lực hiện tại <= 650 (hoặc gây 550 dmg chuẩn).',
       descLv3: 'Tiêu hủy lập tức bộ phận quái có Sinh Lực hiện tại <= 900 (hoặc gây 720 dmg chuẩn).',
-    },
-    {
-      id: 'en_garde',
-      name: 'Thế Thủ Phản Kích (En Garde)',
-      branch: 'Chiến Kỹ',
-      mindCost: 6,
-      descLv1: 'Giảm 65% sát thương nhận vào và chém phản kích 100% sát thương vũ khí.',
-      descLv2: 'Giảm 75% sát thương và chém phản kích 130% sát thương vũ khí.',
-      descLv3: 'Giảm 85% sát thương, chặn đứt chi và phản kích 160% sát thương Chí Mạng.',
     },
   ] as SkillDef[],
 
@@ -1614,6 +1547,7 @@ export const CONFIG = {
       telegraphDesc: 'Nữ Tu Khóc Ra Sáp nghiến bánh xe gỗ mục lao tới, khuôn mặt phủ mạng sáp trắng phun dòng sáp sôi làm mù mắt và bỏng nặng!',
       mechanicHint: 'Cơ chế: Chặt đứt Tay Phải Bẻ Ngược hoặc phá Khung Bánh Xe Gỗ Mục để ngăn bà ta lăn nghiến và phun sáp!',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'holy_elixir',
       guaranteedWeaponDrop: 'estoc_rapier',
       limbs: [
@@ -1641,6 +1575,7 @@ export const CONFIG = {
       telegraphDesc: 'Con mắt khổng lồ giữa Khiên Tháp đảo tròn khóa mục tiêu, còn Tay Phải giơ cao Chùy Chiến Bạch Kim chuẩn bị giáng xuống!',
       mechanicHint: 'Cơ chế: Thân bọc giáp bạch kim giảm 60% sát thương! Hãy chặt Chân Trái rỉ bùn máu đen để hắn quỳ xuống lộ Đầu.',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'crypt_key_f2',
       guaranteedWeaponDrop: 'claymore_greatsword',
       limbs: [
@@ -1669,6 +1604,7 @@ export const CONFIG = {
       telegraphDesc: 'Chiếc lư hương vàng khổng lồ thay cho đầu tỏa khói máu ngạt thở, 4 cánh tay trắng bệch giơ Kinh Văn Da Người và Trượng Chuông Máu giáng đòn phán xét!',
       mechanicHint: 'BOSS TẦNG 2: Cặp Tay Trái giữ Kinh Văn Da Người chặn 80% đòn vào Thân/Đầu! Bắt buộc phải chặt đứt Cặp Tay Trái trước.',
       dropEnergyStones: 3,
+      dropLuckyCoins: 2,
       guaranteedDropItem: 'knight_ring',
       guaranteedWeaponDrop: 'armor_breaker_mace',
       limbs: [
@@ -1832,6 +1768,7 @@ export const CONFIG = {
       telegraphDesc: 'Sau lớp Mặt Nạ Sắt vang lên tiếng thở khò khè rợn người, Tay Trái vung Xích Móc Sắt kéo bạn vào quỹ đạo của Đại Phủ Chặt Đầu!',
       mechanicHint: 'Chặt Tay Phải (Đại Phủ Chặt Đầu) để triệt tiêu đòn chém chí mạng, hoặc tạt Lọ Đỏ làm mù Đầu Mặt Nạ Sắt! Hạ gục rơi Cưa Xích Rỉ Máu.',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'castle_key_f1',
       guaranteedWeaponDrop: 'blood_chainsaw',
       limbs: [
@@ -1859,6 +1796,7 @@ export const CONFIG = {
       telegraphDesc: 'Vorath giơ cao Khiên Tháp Rỉ Máu che kín Thân và Đầu, trong khi Tay Phải vung Trọng Kiếm Đen tích tụ hắc khí chuẩn bị bổ đôi giáp trụ!',
       mechanicHint: 'Tay Trái cầm Khiên Tháp Rỉ Máu che chắn 80% sát thương vào Thân và Đầu! Phải chặt vỡ Tay Trái trước mới đánh xuyên giáp được!',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'red_vial',
       guaranteedWeaponDrop: 'black_reaper_scythe',
       limbs: [
@@ -1886,6 +1824,7 @@ export const CONFIG = {
       telegraphDesc: 'Nữ Tế Seraphina gõ Trượng Xương xuống nền đá, bóp nát Cụm Tim Huyết Tinh để hút dòng máu đang chảy của bạn tự hồi +1.000 Sinh Lực!',
       mechanicHint: 'Nếu bạn đang Chảy máu, Seraphina sẽ hút máu hồi 1.000 Sinh Lực! Dùng Băng Gạc cầm máu ngay và chặt Tay Trái (Cụm Tim Huyết Tinh).',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'holy_elixir',
       guaranteedWeaponDrop: 'ancient_rune_holysword',
       limbs: [
@@ -1914,6 +1853,7 @@ export const CONFIG = {
       telegraphDesc: 'Đầu Ghép Đa Mặt của Grendel gầm rống, Bướu Chướng Khí phồng căng khi nó vung đồng thời Càng Xương Khổng Lồ và Cánh Tay Búa Thịt bổ liên hoàn 2 đòn!',
       mechanicHint: 'Đánh 2 lần mỗi lượt! Có thể ném Thịt Thối đánh lạc hướng cơn đói 1 lượt hoặc chặt Càng Xương / Cánh Tay Búa Thịt.',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'brown_vial',
       guaranteedWeaponDrop: 'demon_lord_sledge',
       limbs: [
@@ -1944,6 +1884,7 @@ export const CONFIG = {
       telegraphDesc: 'Ngai Vàng Xương Sắt gầm vang! Các ống dẫn huyết mạch bơm máu đỏ rực vào giáp cổ của Vaelis, tụ luồng Thánh Quang Hắc Ám quét sạch toàn bộ Tổ Đội!',
       mechanicHint: 'BOSS NGỰ NGAI: Phải chặt đứt ít nhất 1 trong 3 bộ phận hộ vệ (Cánh Tay Cơ Khí Trái, Cánh Tay Nghi Lễ Phải hoặc Chùm Xúc Tu Hư Vô) mới có thể tấn công Thân Giáp và Đầu Vaelis! Chặt Ống Dẫn Huyết Mạch Tủy Sống để cắt hồi 120 Sinh Lực/lượt và làm Vaelis choáng 1 lượt.',
       dropEnergyStones: 5,
+      dropLuckyCoins: 2,
       guaranteedDropItem: 'void_core',
       guaranteedWeaponDrop: 'vaelis_eclipse_blade',
       limbs: [
@@ -2150,6 +2091,7 @@ export const CONFIG = {
       telegraphDesc: 'Lồng ngực banh rộng rung lên từng hồi, bộ rễ xương máu siết chặt và tán cây quả tim thịt há toác chuẩn bị Nuốt Chửng bạn!',
       mechanicHint: 'Cơ chế 3A: Phải chặt đứt Bộ Rễ Xương & Gân Máu trước lượt 2, hoặc ném Thịt Thối / Lọ Nâu vào Tán Cây Quả Tim khi nó báo đòn!',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'void_key_f3',
       guaranteedWeaponDrop: 'void_shortblade',
       limbs: [
@@ -2176,6 +2118,7 @@ export const CONFIG = {
       telegraphDesc: '4 bộ phận hóa thạch khổng lồ cùng thanh Đại Kiếm Đá Vôi dính liền cánh tay phải đồng loạt giáng xuống sàn đá cổ ngữ!',
       mechanicHint: 'Cơ chế 3B: 4 bộ phận hóa thạch bảo vệ Đầu Nửa Đá Vôi! Bắt buộc phải chặt đứt ít nhất 2 bộ phận đá mới tấn công được Đầu.',
       dropEnergyStones: 2,
+      dropLuckyCoins: 1,
       guaranteedDropItem: 'elixir_of_ancients',
       guaranteedWeaponDrop: 'heavy_lumber_axe',
       limbs: [
@@ -2206,6 +2149,7 @@ export const CONFIG = {
       telegraphDesc: 'Mảng bầu trời đêm rách toạc bên trong Sứ Giả xoay cuồng, Khối Đầu Vô Diện và Chùm Mắt Không Mí phóng tia phân rã nguyên thủy!',
       mechanicHint: 'BOSS TẦNG 3: Thực thể 2 Nguồn Sát Thương! Chặt Chùm Mắt Không Mí (Phụ) để xóa đòn tia phân rã, hoặc chặt Đôi Tay Tinh Thể Tím.',
       dropEnergyStones: 3,
+      dropLuckyCoins: 2,
       guaranteedDropItem: 'reconstruction_scroll',
       guaranteedWeaponDrop: 'ancient_rune_holysword',
       limbs: [

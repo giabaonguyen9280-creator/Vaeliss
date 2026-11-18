@@ -44,7 +44,7 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
         {
           id: 'fk_s1_smith',
           label: 'Rèn kiếm cô độc nơi lò rèn cũ',
-          effectText: 'Nhận [Trường Kiếm Thép Tốt] + Kỹ năng [Thế Thủ Phản Kích (En Garde)]',
+          effectText: 'Nhận [Trường Kiếm Thép Tốt] + Kỹ năng [Thế Thủ Phản Kích]',
           weapons: ['fine_steel_longsword'],
           equipWeapon: 'fine_steel_longsword',
           skills: ['en_garde'],
@@ -88,7 +88,7 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
         {
           id: 'fk_s2_cursed',
           label: 'Cờ hiệu thấm máu & đoản kiếm gãy bị nguyền',
-          effectText: '+10 Tha Hóa, +1 Cộng Hưởng Ác Quỷ, nhận [Gươm Gãy Kỵ Đoàn (Bị Nguyền)]',
+          effectText: '+10 Tha Hóa, +1 Cộng Hưởng Ác Quỷ, nhận [Gươm Gãy Kỵ Đoàn Bị Nguyền]',
           corruptionDelta: 10,
           affinityDelta: { demonicPact: 1 },
           weapons: ['cursed_broken_bannerblade'],
