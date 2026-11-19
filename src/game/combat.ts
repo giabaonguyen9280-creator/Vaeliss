@@ -487,6 +487,8 @@ export interface PlayerState {
   poisonCoatTurns?: number;
   fireCoatTurns?: number;
   stealthStepsTurns?: number;
+  torchTimer?: number;
+  torchMaxTimer?: number;
   stimulantBonusPct: number;
   affinities: {
     holyMother: number;
@@ -632,6 +634,8 @@ export function createInitialPlayer(classId: string, customName?: string): Playe
     poisonCoatTurns: 0,
     fireCoatTurns: 0,
     stealthStepsTurns: 0,
+    torchTimer: 120,
+    torchMaxTimer: 120,
     stimulantBonusPct: 0,
     affinities: {
       holyMother: 0,
@@ -1674,6 +1678,63 @@ export function markLivingAllyDead(player: PlayerState, ally: PartyAlly): void {
   const npcKey = ALLY_ID_TO_NPC_KEY[ally.id] || ally.id;
   player.npcLifecycle[npcKey] = 'dead';
   player.npcLifecycle[ally.id] = 'dead';
+}
+
+/**
+ * Permadeath Cleanup: Automatically removes every fallen companion (hp <= 0) from `player.party`,
+ * reclaims their worn equipment into the shared inventory pool, marks living NPCs as permanently dead,
+ * and emits a clear death notice. Main player (index 0) is untouched so Game Over triggers normally.
+ */
+export function pruneDeadCompanions(player: PlayerState, logs?: string[]): PartyAlly[] {
+  if (!player.party || player.party.length === 0) return [];
+  const fallen: PartyAlly[] = [];
+  const survivors: PartyAlly[] = [];
+
+  for (const ally of player.party) {
+    if (ally.hp > 0) {
+      survivors.push(ally);
+      continue;
+    }
+    fallen.push(ally);
+    if (ally.isUndeadSummon) {
+      reclaimUndeadSummonGear(player, ally, logs);
+    } else {
+      markLivingAllyDead(player, ally);
+      // Reclaim worn gear from fallen living companion into player's shared pool
+      if (ally.weaponId && ally.weaponId !== 'bite_headbutt' && CONFIG.WEAPONS[ally.weaponId]) {
+        if (!player.unlockedWeapons.includes(ally.weaponId)) {
+          player.unlockedWeapons.push(ally.weaponId);
+        }
+        ally.weaponId = '';
+      }
+      if (ally.equippedShield && CONFIG.SHIELDS[ally.equippedShield]) {
+        if (!player.unlockedShields.includes(ally.equippedShield)) {
+          player.unlockedShields.push(ally.equippedShield);
+        }
+        ally.equippedShield = null;
+      }
+      for (const slot of ['equippedHead', 'equippedBody', 'equippedAccessory'] as const) {
+        const gId = ally[slot];
+        if (gId && GEAR_ITEMS[gId]) {
+          if (!player.unlockedGear.includes(gId)) {
+            player.unlockedGear.push(gId);
+          }
+          ally[slot] = null;
+        }
+      }
+      if (player.dismissedCompanions) {
+        player.dismissedCompanions = player.dismissedCompanions.filter((c) => c.id !== ally.id);
+      }
+    }
+    if (logs) {
+      logs.push(`☠ [${ally.name}] đã gục ngã vĩnh viễn và rời khỏi đội hình...`);
+    }
+  }
+
+  if (fallen.length > 0) {
+    player.party = survivors;
+  }
+  return fallen;
 }
 
 export function leaveOrDismissPartyMember(
@@ -3336,6 +3397,16 @@ export function applySupportItemEffects(player: PlayerState, itemId: string, log
     player.hunger = Math.max(0, player.hunger - item.hungerRestore);
     logs.push(`🍖 [${item.name}] giảm ${item.hungerRestore} Cơn Đói.`);
   }
+  if (itemId === 'torch') {
+    player.torchTimer = 120;
+    player.torchMaxTimer = 120;
+    logs.push('🔥 Đã thắp sáng [Đuốc Sáng]! Ngọn lửa ấm áp xua tan bóng tối hầm ngục (120s).');
+  }
+  if (itemId === 'oil_lamp') {
+    player.torchTimer = 240;
+    player.torchMaxTimer = 240;
+    logs.push('🏮 Đã châm lửa [Đèn Dầu]! Nguồn sáng ổn định đẩy lùi bóng tối đặc quánh (240s).');
+  }
 }
 
 export function executePlayerGuard(
@@ -3824,6 +3895,9 @@ function finishCombatRoundWithEnemyTurn(
     }
   }
 
+  // Permadeath: immediately remove any fallen companion (hp <= 0) from player.party
+  pruneDeadCompanions(player, logs);
+
   const playerDefeated = player.hp <= 0 || player.headHp <= 0;
   const enemyWeaponSevered = isEnemyWeaponLimbSevered(enemy, tpl);
   const enemyCat: WeaponCategory = enemyWeaponSevered
@@ -3913,6 +3987,9 @@ export function resolveCombatCoinFlipOutcome(
     player.mind = Math.max(0, player.mind - 12);
     logs.push(`💀⚡ SẤP MẶT ĐỊNH MỆNH! Đòn xử tử xuyên thẳng qua giáp trụ (-${scaledDmg} Sinh Lực, -12 Lý Trí)!`);
   }
+
+  // Permadeath: immediately remove any fallen companion (hp <= 0) from player.party
+  pruneDeadCompanions(player, logs);
 
   return {
     logs,

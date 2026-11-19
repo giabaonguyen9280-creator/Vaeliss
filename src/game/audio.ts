@@ -16,7 +16,8 @@ export type SfxType =
   | 'ui_confirm'
   | 'explosion'
   | 'heal'
-  | 'hurt';
+  | 'hurt'
+  | 'enemy_alert';
 
 export interface AudioVisualSettings {
   bgmVolume: number; // 0..1
@@ -70,9 +71,11 @@ function loadStoredSettings(): AudioVisualSettings {
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
+  private masterFilter: BiquadFilterNode | null = null;
   private bgmGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  private isTabHidden: boolean = false;
 
   private settings: AudioVisualSettings = loadStoredSettings();
   private currentBgmMode: BgmMode | null = null;
@@ -120,8 +123,9 @@ class SoundEngine {
   private syncGains() {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    const effectiveBgm = this.settings.muted ? 0 : this.settings.bgmVolume * 0.42;
-    const effectiveSfx = this.settings.muted ? 0 : this.settings.sfxVolume;
+    const silenced = this.settings.muted || this.isTabHidden;
+    const effectiveBgm = silenced ? 0 : this.settings.bgmVolume * 0.42;
+    const effectiveSfx = silenced ? 0 : this.settings.sfxVolume;
     if (this.bgmGain) {
       this.bgmGain.gain.setTargetAtTime(effectiveBgm, now, 0.05);
     }
@@ -130,7 +134,21 @@ class SoundEngine {
     }
   }
 
+  public setTabHidden(hidden: boolean) {
+    this.isTabHidden = hidden;
+    this.syncGains();
+    if (!this.ctx) return;
+    if (hidden) {
+      if (this.ctx.state === 'running') {
+        this.ctx.suspend().catch(() => {});
+      }
+    } else if (!this.settings.muted && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+  }
+
   private ensureCtx(allowWhenMuted = false): AudioContext | null {
+    if (this.isTabHidden) return null;
     if ((!allowWhenMuted && this.settings.muted) || typeof window === 'undefined') return null;
     if (!this.ctx) {
       const AudioCtx =
@@ -138,10 +156,16 @@ class SoundEngine {
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return null;
       this.ctx = new AudioCtx();
+      this.masterFilter = this.ctx.createBiquadFilter();
+      this.masterFilter.type = 'lowpass';
+      this.masterFilter.frequency.value = 3100;
+      this.masterFilter.Q.value = 0.7;
+      this.masterFilter.connect(this.ctx.destination);
+
       this.bgmGain = this.ctx.createGain();
       this.sfxGain = this.ctx.createGain();
-      this.bgmGain.connect(this.ctx.destination);
-      this.sfxGain.connect(this.ctx.destination);
+      this.bgmGain.connect(this.masterFilter);
+      this.sfxGain.connect(this.masterFilter);
       this.syncGains();
     }
     if (this.ctx.state === 'suspended') {
@@ -165,6 +189,7 @@ class SoundEngine {
   }
 
   public unlockAndResume() {
+    if (this.isTabHidden) return;
     this.ensureCtx(true);
     if (this.currentBgmMode) {
       const mode = this.currentBgmMode;
@@ -741,6 +766,24 @@ class SoundEngine {
         g.connect(this.sfxGain!);
         osc.start(now + idx * 0.06);
         osc.stop(now + idx * 0.06 + 0.25);
+      });
+      return;
+    }
+
+    if (type === 'enemy_alert') {
+      // Short sharp survival-horror detection sting (metal dissonance + high spike)
+      [880, 1244.5, 1318.5].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx === 0 ? 'sawtooth' : 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.018);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.12, now + idx * 0.018 + 0.09);
+        g.gain.setValueAtTime(idx === 0 ? 0.14 : 0.11, now + idx * 0.018);
+        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.018 + 0.18);
+        osc.connect(g);
+        g.connect(this.sfxGain!);
+        osc.start(now + idx * 0.018);
+        osc.stop(now + idx * 0.018 + 0.19);
       });
       return;
     }

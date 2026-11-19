@@ -272,13 +272,12 @@ export class CombatEngine {
   }
 
   /**
-   * Renders Eased Tapered Slash Arcs & Physics Particles onto the Combat Canvas
+   * Renders Eased Tapered Slash Arcs & Physics Particles onto the High-Res Combat Canvas
    */
   public renderCanvasEffects(ctx: CanvasRenderingContext2D): void {
     // 1. Render Tapered Eased Blade Slash Arcs (fading from root to tip)
     for (const arc of this.slashArcs) {
       const progress = Math.min(1, arc.elapsedMs / arc.durationMs);
-      // Cubic ease-out curve for blade sweep
       const easeOut = 1 - Math.pow(1 - progress, 3);
       const fadeAlpha = Math.max(0, 1 - Math.pow(progress, 1.6));
 
@@ -293,7 +292,6 @@ export class CombatEngine {
         const a0 = arc.startAngle + (currentSweepEnd - arc.startAngle) * t0;
         const a1 = arc.startAngle + (currentSweepEnd - arc.startAngle) * t1;
 
-        // Taper width & fade alpha from root to tip
         const tipFade = Math.sin(t1 * Math.PI);
         const segAlpha = fadeAlpha * (0.25 + 0.75 * t1);
         ctx.globalAlpha = segAlpha;

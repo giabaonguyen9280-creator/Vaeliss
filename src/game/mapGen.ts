@@ -37,6 +37,7 @@ export enum TILE {
   MIASMA_VENT = 'MIASMA_VENT',
   RITUAL_CIRCLE = 'RITUAL_CIRCLE',
   CORPSE_LOOT = 'CORPSE_LOOT',
+  BLOOD_THRONE = 'BLOOD_THRONE',
 }
 
 export type RoomTemplateType =

@@ -300,6 +300,8 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
 export interface EndingResult {
   id: string;
   title: string;
+  endingBannerLabel: string;
+  isPersonal?: boolean;
   subtitle: string;
   epilogue: string;
 }
@@ -307,6 +309,7 @@ export interface EndingResult {
 export interface EndingEvalInput {
   classId: string;
   corruption: number;
+  demonicPactAffinity?: number;
   holyMotherBanned?: boolean;
   readBookIds: string[];
   inventory: Record<string, number>;
@@ -331,14 +334,19 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
   const hasElixir = (input.inventory.elixir_of_ancients || 0) > 0;
   const hasSeedScroll = input.readBookIds.includes('book_9') || input.readBookIds.length >= 4;
 
-  // 2. Dark Ending: Tha Hóa >= 100 & sit on Blood Throne
-  if (input.endingAction === 'SIT_THRONE' && input.corruption >= 100) {
+  // 2. Dark Ending: Tha Hóa >= 70 hoặc Tín ngưỡng Huyết Quỷ >= 2 & sit on Blood Throne
+  if (
+    input.endingAction === 'SIT_THRONE' &&
+    (input.corruption >= 70 || (input.demonicPactAffinity || 0) >= 2)
+  ) {
     return {
       id: 'DARK_ENDING',
       title: 'KẾT CỤC II: KẺ KẾ THỪA NGAI VÀNG MÁU',
+      endingBannerLabel: 'DARK ENDING — KẺ KẾ THỪA NGAI VÀNG MÁU',
+      isPersonal: false,
       subtitle: 'Vòng Lặp Xiềng Xích Vĩnh Cửu • Tha Hóa Cực Hạn',
       epilogue:
-        'Sau khi hạ gục Vaelis, với tâm hồn bị Tha Hóa ăn mòn hoàn toàn, bạn bước lên bậc thềm đá đỏ và đặt mình xuống Ngai Vàng Xương Sắt. Hàng chục ống dẫn tủy sống cùng xiềng xích sắt lập tức đâm xuyên qua vai và ngực, ghim chặt bạn làm nắp hầm mới đè lên Vết Rách Không Gian. Vòng lặp địa ngục lại tiếp diễn thêm một thiên niên kỷ nữa.',
+        'Sau khi hạ gục Vaelis, với tâm hồn bị Tha Hóa ăn mòn sâu sắc hoặc đã ký khế ước Huyết Quỷ, bạn bước lên bậc thềm đá đỏ và đặt mình xuống Ngai Vàng Xương Sắt. Hàng chục ống dẫn tủy sống cùng xiềng xích sắt lập tức đâm xuyên qua vai và ngực, ghim chặt bạn làm nắp hầm mới đè lên Vết Rách Không Gian. Vòng lặp địa ngục lại tiếp diễn thêm một thiên niên kỷ nữa.',
     };
   }
 
@@ -353,6 +361,8 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     return {
       id: 'ORDER_ENDING',
       title: 'KẾT CỤC III: KỶ NGUYÊN BẠCH KIM',
+      endingBannerLabel: 'ORDER ENDING — KỶ NGUYÊN BẠCH KIM',
+      isPersonal: false,
       subtitle: 'Sự Thuần Khiết Tuyệt Đối • Cái Giá Của Tự Do Ý Chí',
       epilogue:
         'Giữ tâm hồn hoàn toàn trong sạch không chút Tha Hóa, bạn dùng Lõi Khóa Hư Vô và 3 Mảnh Thần Chú Tái Thiết, hiến tế Thánh Tử Thứ 13 vào tâm trận pháp đáy Tầng 3. Thánh Quang Bạch Kim bùng nổ bịt kín hoàn toàn Vết Rách Không Gian. Thế giới bên ngoài bước vào Kỷ Nguyên Bạch Kim thái bình rực rỡ — nhưng mọi con người đều đánh mất tự do ý chí, trở thành những con rối ngoan đạo vĩnh viễn.',
@@ -369,6 +379,8 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     return {
       id: 'TRUE_ENDING',
       title: 'KẾT CỤC IV: THÁNH THỤ KHAI SÁNG',
+      endingBannerLabel: 'TRUE ENDING — THÁNH THỤ KHAI SÁNG',
+      isPersonal: false,
       subtitle: 'Khai Sinh Thần Ý Chí • Thuần Hóa Hư Vô',
       epilogue:
         'Thay vì uống Tiên Dược Nguyên Sơ hay hiến tế đứa trẻ, bạn dùng Lõi Khóa Hư Vô làm mỏ neo và đổ cạn bình Tiên Dược lên lòng bàn tay Thánh Tử Thứ 13 ngay bên mép Vết Rách Tầng 3. Từ máu và mầm cổ thụ, Thánh Thụ — Thần Ý Chí — vươn rễ xuyên suốt ba tầng hầm ngục, dung hợp Khuôn Khổ của Trật Tự và Khát Vọng Phản Kháng để vá kín không gian. Nhân loại lần đầu giành lại quyền tự quyết vận mệnh của chính mình.',
@@ -387,6 +399,8 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     return {
       id: 'S_ENDING_KNIGHT',
       title: 'KẾT CỤC V (S-ENDING KẺ GÁC MỘ): GÁNH NẶNG CỦA KẺ SÓT LẠI',
+      endingBannerLabel: 'PERSONAL ENDING — GÁNH NẶNG CỦA KẺ SÓT LẠI',
+      isPersonal: true,
       subtitle: 'Lời Thề Kỵ Đoàn Không Phản Bội',
       epilogue:
         'Bạn đã lắng nghe lời trăn trối bi tráng của Hiệp Sĩ Trưởng Vaelis trước khi vung nhát kiếm kết liễu để giải thoát ông khỏi Ngai Vàng Xương Sắt. Khi Vết Rách được vá lại, bạn từ chối rời khỏi thung lũng. Trong màn sương tan dần, người ta thấy bóng dáng vị cựu phó tướng lặng lẽ dựng từng tấm bia đá cho anh em kỵ đoàn đã ngã xuống và dẫn đường cho những lữ khách lạc lối.',
@@ -405,6 +419,8 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     return {
       id: 'S_ENDING_NUN',
       title: 'KẾT CỤC VI (S-ENDING NỮ TU OAN KHUẤT): TRO TÀN CỦA ĐỨC TIN',
+      endingBannerLabel: 'PERSONAL ENDING — TRO TÀN CỦA ĐỨC TIN',
+      isPersonal: true,
       subtitle: 'Bằng Chứng Máu Đen & Giải Cứu Em Trai',
       epilogue:
         'Không khuất phục trước quyền năng giả tạo của Thánh Mẫu hay Huyết Quỷ, bạn ôm theo toàn bộ Sổ Kiểm Kê Tế Lễ và dắt tay người em trai — Thánh Tử Thứ 13 — bước qua Cổng Sắt Răng Cưa trở về thế giới thực. Trước hàng ngàn tín đồ bàng hoàng ngoài cổng Đại Giáo Đường Goethe, bạn ném thẳng những trang giấy thấm máu đen xuống chân các Giám Mục, châm ngòi cho sự sụp đổ của một đức tin mục nát.',
@@ -421,6 +437,8 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     return {
       id: 'S_ENDING_HUNTER',
       title: 'KẾT CỤC VII (S-ENDING GÃ SĂN DI VẬT): KẺ SỐNG SÓT NGOÀI VÒNG PHÁP LUẬT',
+      endingBannerLabel: 'PERSONAL ENDING — KẺ SỐNG SÓT NGOÀI VÒNG PHÁP LUẬT',
+      isPersonal: true,
       subtitle: 'Tự Chữa Độc Hóa Đá • Thoát Khỏi Kết Giới Chướng Khí',
       epilogue:
         'Bạn đã uống cạn bình Tiên Dược Nguyên Sơ tìm thấy nơi đáy Vực Sao để đánh tan lớp vảy đá chết chóc trên cánh tay, rồi quay ngược lên chém đứt xiềng xích của Vaelis để phá tan Kết Giới Chướng Khí. Không ngoái đầu nhìn lại khi Hư Vô trào lên nuốt chửng Đại Giáo Đường Goethe, bạn lao qua Cổng Sắt trước lúc bầu trời sụp xuống — một kẻ sống sót cô độc ngoài mọi luật lệ.',
@@ -431,8 +449,109 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
   return {
     id: 'NORMAL_ENDING',
     title: 'KẾT CỤC I: SỰ SỤP ĐỔ CỦA NẮP HẦM',
+    endingBannerLabel: 'NORMAL ENDING — SỰ SỤP ĐỔ CỦA NẮP HẦM',
+    isPersonal: false,
     subtitle: 'Vaelis Ngã Xuống • Kết Giới Phong Ấn Tan Vỡ',
     epilogue:
       'Bạn đã giết chết Ma Vương Vaelis và rời khỏi Ngai Vàng Xương Sắt mà không kịp phong ấn Vết Rách Không Gian dưới đáy Tầng 3. Khi "nắp hầm" cuối cùng biến mất, Chướng Khí Hư Vô trào ngược lên nuốt chửng toàn bộ Đại Giáo Đường Goethe cùng chính thân xác bạn. Phía bên ngoài dãy núi xa xăm, Giáo Hội Thánh Mẫu vẫn bình an vô sự và tiếp tục viết lại lịch sử theo ý mình.',
   };
 }
+
+export type SmugglerHaggleTactic = 'discount_25' | 'discount_40' | 'question_origin';
+
+export interface SmugglerHaggleOutcome {
+  accepted: boolean;
+  refusedItem: boolean;
+  newPrice: number;
+  dialogue: string;
+}
+
+export const SMUGGLER_VALUABLE_IDS = new Set<string>([
+  'lucky_coin',
+  'white_herb',
+  'oil_lamp',
+  'butcher_cleaver',
+  'bone_saw',
+  'ancient_ash',
+]);
+
+export function evaluateSmugglerHaggle(
+  itemId: string,
+  itemName: string,
+  basePrice: number,
+  tactic: SmugglerHaggleTactic,
+  roll01: number
+): SmugglerHaggleOutcome {
+  if (tactic === 'discount_25') {
+    if (roll01 < 0.65) {
+      const lowered = Math.max(2, Math.round(basePrice * 0.75));
+      return {
+        accepted: true,
+        refusedItem: false,
+        newPrice: lowered,
+        dialogue: `“Hừ... Ngươi cũng biết nhìn giá đấy. Thôi được, cầm [${itemName}] với giá ${lowered} Đồng Bạc trước khi ta đổi ý!”`,
+      };
+    }
+    const raised = Math.ceil(basePrice * 1.15);
+    return {
+      accepted: false,
+      refusedItem: false,
+      newPrice: raised,
+      dialogue: `“Trả giá với kẻ buôn mạng trong Thung Lũng Xương Tàn à? Riêng món [${itemName}] này bây giờ lên ${raised} Đồng Bạc!”`,
+    };
+  }
+
+  if (tactic === 'discount_40') {
+    if (roll01 < 0.32) {
+      const lowered = Math.max(2, Math.round(basePrice * 0.6));
+      return {
+        accepted: true,
+        refusedItem: false,
+        newPrice: lowered,
+        dialogue: `“Khà khà... Ánh mắt của kẻ chẳng còn gì để mất! Được, ta nhượng [${itemName}] cho ngươi giá rẻ mạt ${lowered} Đồng Bạc — xem như đánh cược mạng sống ngươi!”`,
+      };
+    }
+    if (roll01 < 0.72) {
+      const raised = Math.ceil(basePrice * 1.25);
+      return {
+        accepted: false,
+        refusedItem: false,
+        newPrice: raised,
+        dialogue: `“Ép giá đến thế là quá đáng rồi đấy! Ta nâng [${itemName}] lên ${raised} Đồng Bạc — mua hay cút thì tùy!”`,
+      };
+    }
+    return {
+      accepted: false,
+      refusedItem: true,
+      newPrice: basePrice,
+      dialogue: `“Cất bạc lại đi! Ngươi coi ta là lũ hành khất ngoài cổng Giáo Đường sao? Hôm nay ta KHÔNG BÁN [${itemName}] cho ngươi nữa!”`,
+    };
+  }
+
+  // question_origin
+  const loreLine =
+    itemId === 'lucky_coin'
+      ? '“Đồng bạc khắc hai mặt trăng máu này ta lột từ tay một kỵ sĩ chết khô trước cánh cửa Ngai Vàng. Hắn đã đặt cược sai ở cú lật cuối cùng...”'
+      : itemId === 'white_herb'
+      ? '“Thứ thảo dược trắng này mọc sát tường hầm rượu nơi tro thánh rơi xuống. Giáo sĩ nào trúng độc chướng khí đều phải quỳ xin một nhúm...”'
+      : itemId === 'oil_lamp'
+      ? '“Chiếc đèn dầu đồng này vốn thuộc về đoàn thám hiểm Vực Sao. Dầu cháy lâu hơn bó đuốc thường gấp đôi — thứ duy nhất giữ ngươi không hóa điên trong bóng tối.”'
+      : '“Món này lấy từ kho quân nhu bị niêm phong của Kỵ Đoàn cũ... Giờ chủ nhân chúng đều hóa xương trắng cả rồi.”';
+
+  if (roll01 < 0.55) {
+    const lowered = Math.max(2, Math.round(basePrice * 0.8));
+    return {
+      accepted: true,
+      refusedItem: false,
+      newPrice: lowered,
+      dialogue: `${loreLine} “Thấy ngươi cũng hiểu chuyện, ta bớt xuống còn ${lowered} Đồng Bạc đấy.”`,
+    };
+  }
+  return {
+    accepted: false,
+    refusedItem: false,
+    newPrice: basePrice,
+    dialogue: `${loreLine} “Hàng thật giá thật — vẫn đúng ${basePrice} Đồng Bạc, không bớt một xu!”`,
+  };
+}
+

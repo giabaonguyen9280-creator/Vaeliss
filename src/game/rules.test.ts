@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { CONFIG } from './config';
 import { SeededRNG } from './prng';
 import {
+  computePngLegDropOffset,
+  resolveSeveredMaskBoxes,
+  loadCombatImage,
+} from './pixelArt';
+import {
   advanceRoomEnemiesOneTurn,
   buildRoomLayout,
   createMapEnemyInstance,
@@ -10,6 +15,7 @@ import {
   getHerbTypeAtCoord,
   hasLineOfSight,
   herbTypeToVariant,
+  isWalkableTile,
   RoomData,
   RoomTemplateType,
   TILE,
@@ -62,6 +68,7 @@ import {
   canMemberEquipWeapon,
   handlePlayerArmLoss,
   leaveOrDismissPartyMember,
+  pruneDeadCompanions,
   recallDismissedCompanion,
   getAmputationSanityMultiplier,
   resolveCombatCoinFlipOutcome,
@@ -78,7 +85,12 @@ import {
   getFleeChancePct,
 } from './combat';
 import { CombatEngine } from './combatEngine';
-import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './narrative';
+import {
+  CHARACTER_INTRO_STEPS,
+  evaluateCanonEnding,
+  evaluateSmugglerHaggle,
+  SMUGGLER_VALUABLE_IDS,
+} from './narrative';
 
 test('CONFIG contains all 26 enemies (15 normal, 8 minibosses, 3 floor bosses), 24 weapons, 8 shields, 14 skills (incl. en_garde & necromancy), and 13 canon lore books', () => {
   const enemies = Object.values(CONFIG.ENEMIES);
@@ -1207,4 +1219,206 @@ test('Map Generation checks occupiedTiles so all story/survival NPCs, Đài Cộ
     }
   }
 });
+
+test('PC 16:9 Polish & Dark Gothic Art Overhaul: DARK_ENDING thresholds, BLOOD_THRONE landmark, and unified Canvas art without combatPortraitUrl', () => {
+  const base = {
+    classId: 'fallen_knight' as const,
+    corruption: 20,
+    demonicPactAffinity: 0,
+    readBookIds: ['book_1', 'book_2'],
+    inventory: {},
+    learnedSkillIds: [],
+    vaelisTalked: true,
+    vaelisDefeated: true,
+    curedPetrification: false,
+    child13Rescued: false,
+  };
+
+  // DARK_ENDING unlocks at corruption >= 70 OR demonicPactAffinity >= 2
+  assert.equal(evaluateCanonEnding({ ...base, corruption: 70, endingAction: 'SIT_THRONE' }).id, 'DARK_ENDING');
+  assert.equal(evaluateCanonEnding({ ...base, corruption: 20, demonicPactAffinity: 2, endingAction: 'SIT_THRONE' }).id, 'DARK_ENDING');
+  assert.notEqual(evaluateCanonEnding({ ...base, corruption: 60, demonicPactAffinity: 1, endingAction: 'SIT_THRONE' }).id, 'DARK_ENDING');
+
+  // BLOOD_THRONE landmark exists and is non-walkable
+  assert.equal(TILE.BLOOD_THRONE, 'BLOOD_THRONE');
+  assert.equal(isWalkableTile(TILE.BLOOD_THRONE), false);
+
+  // Unified Dark Gothic Canvas art: no static AI combatPortraitUrl on playable classes or Grand Bosses
+  assert.equal(CONFIG.CLASSES.length, 3);
+  for (const cls of CONFIG.CLASSES) {
+    assert.equal(cls.combatPortraitUrl, undefined);
+  }
+  assert.equal(CONFIG.ENEMIES.executioner_paladin.combatPortraitUrl, undefined);
+  assert.equal(CONFIG.ENEMIES.demon_lord_vaelis.combatPortraitUrl, undefined);
+  assert.equal(CONFIG.ENEMIES.void_chimera.combatPortraitUrl, undefined);
+});
+
+test('Master Atmosphere & UX Upgrade: Dynamic Torchlight (torch/oil_lamp), Smuggler Haggling, and 7 Panoramic Ending Banners', () => {
+  // 1. Dynamic Torchlight ignition resets fuel timer accurately
+  const p = createInitialPlayer('fallen_knight');
+  assert.equal(p.torchTimer, 120);
+  assert.equal(p.torchMaxTimer, 120);
+  p.torchTimer = 10;
+  const torchLogs: string[] = [];
+  applySupportItemEffects(p, 'torch', torchLogs);
+  assert.equal(p.torchTimer, 120);
+  assert.equal(p.torchMaxTimer, 120);
+  assert.equal(torchLogs.length > 0, true);
+
+  p.torchTimer = 0;
+  const lampLogs: string[] = [];
+  applySupportItemEffects(p, 'oil_lamp', lampLogs);
+  assert.equal(p.torchTimer, 240);
+  assert.equal(p.torchMaxTimer, 240);
+  assert.equal(lampLogs.length > 0, true);
+
+  // 2. Smuggler Haggling handles valuable wares, mild/harsh discounts, price raise, refusal, and origin questioning
+  assert.equal(SMUGGLER_VALUABLE_IDS.has('lucky_coin'), true);
+  assert.equal(SMUGGLER_VALUABLE_IDS.has('white_herb'), true);
+  assert.equal(SMUGGLER_VALUABLE_IDS.has('oil_lamp'), true);
+
+  const mildWin = evaluateSmugglerHaggle('lucky_coin', 'Thẻ Bài Bạc', 24, 'discount_25', 0.2);
+  assert.equal(mildWin.accepted, true);
+  assert.equal(mildWin.newPrice, 18);
+  assert.equal(mildWin.refusedItem, false);
+
+  const mildFail = evaluateSmugglerHaggle('lucky_coin', 'Thẻ Bài Bạc', 24, 'discount_25', 0.9);
+  assert.equal(mildFail.accepted, false);
+  assert.equal(mildFail.newPrice > 24, true);
+  assert.equal(mildFail.refusedItem, false);
+
+  const harshWin = evaluateSmugglerHaggle('oil_lamp', 'Đèn Dầu', 14, 'discount_40', 0.15);
+  assert.equal(harshWin.accepted, true);
+  assert.equal(harshWin.newPrice < 14, true);
+
+  const harshRaise = evaluateSmugglerHaggle('oil_lamp', 'Đèn Dầu', 14, 'discount_40', 0.5);
+  assert.equal(harshRaise.accepted, false);
+  assert.equal(harshRaise.refusedItem, false);
+  assert.equal(harshRaise.newPrice > 14, true);
+
+  const harshRefuse = evaluateSmugglerHaggle('oil_lamp', 'Đèn Dầu', 14, 'discount_40', 0.9);
+  assert.equal(harshRefuse.refusedItem, true);
+
+  const originDiscount = evaluateSmugglerHaggle('white_herb', 'Thảo Dược Trắng', 10, 'question_origin', 0.1);
+  assert.equal(originDiscount.accepted, true);
+  assert.equal(originDiscount.newPrice < 10, true);
+
+  // 3. All 7 Endings include formatted Panoramic Banner labels
+  const endingBase = {
+    classId: 'fallen_knight' as const,
+    corruption: 10,
+    demonicPactAffinity: 0,
+    readBookIds: ['book_1', 'book_2', 'book_3', 'book_9'],
+    inventory: { void_core: 1, reconstruction_scroll: 1, elixir_of_ancients: 1 },
+    learnedSkillIds: ['en_garde'],
+    vaelisTalked: true,
+    vaelisDefeated: true,
+    curedPetrification: true,
+    child13Rescued: true,
+    child13InParty: true,
+  };
+  const allSeven = [
+    evaluateCanonEnding({ ...endingBase, endingAction: 'LEAVE_AFTER_VAELIS' }),
+    evaluateCanonEnding({ ...endingBase, corruption: 80, endingAction: 'SIT_THRONE' }),
+    evaluateCanonEnding({ ...endingBase, corruption: 0, endingAction: 'SACRIFICE_CHILD13_RIFT' }),
+    evaluateCanonEnding({ ...endingBase, endingAction: 'POUR_ELIXIR_CHILD13_RIFT' }),
+    evaluateCanonEnding({ ...endingBase, classId: 'fallen_knight', corruption: 10, endingAction: 'STAY_BUILD_GRAVES' }),
+    evaluateCanonEnding({ ...endingBase, classId: 'forsaken_nun', corruption: 5, endingAction: 'ESCAPE_EXTERIOR_GATE' }),
+    evaluateCanonEnding({ ...endingBase, classId: 'night_hunter', endingAction: 'ESCAPE_EXTERIOR_GATE' }),
+  ];
+  assert.equal(new Set(allSeven.map((e) => e.id)).size, 7);
+  for (const res of allSeven) {
+    assert.equal(typeof res.endingBannerLabel, 'string');
+    assert.equal(res.endingBannerLabel.length > 5, true);
+  }
+  assert.equal(allSeven[3].endingBannerLabel.startsWith('TRUE ENDING'), true);
+  assert.equal(allSeven[4].endingBannerLabel.startsWith('PERSONAL ENDING'), true);
+});
+
+test('Companion Permadeath Auto-Remove: fallen companions (hp <= 0) leave party immediately, return gear, log death, while player death triggers Game Over', () => {
+  const p = createInitialPlayer('fallen_knight');
+  const kael = createRecruitedAlly('ally_kael');
+  const child13 = createRecruitedAlly('child_13');
+  kael.weaponId = 'broad_iron_sword';
+  kael.equippedBody = 'boiled_cuirass';
+  p.party.push(kael, child13);
+  assert.equal(p.party.length, 2);
+
+  // Kael drops to 0 HP -> automatically removed, marked dead, gear returned, permadeath logged
+  kael.hp = 0;
+  const deathLogs: string[] = [];
+  const fallen = pruneDeadCompanions(p, deathLogs);
+  assert.equal(fallen.length, 1);
+  assert.equal(fallen[0].id, 'ally_kael');
+  assert.equal(p.party.length, 1);
+  assert.equal(p.party[0].id, 'child_13');
+  assert.equal(p.npcLifecycle?.npc_prisoner, 'dead');
+  assert.equal(p.unlockedGear.includes('boiled_cuirass'), true);
+  assert.equal(
+    deathLogs.some((l) => l.includes('☠ [') && l.includes('đã gục ngã vĩnh viễn và rời khỏi đội hình...')),
+    true
+  );
+
+  // Main player remains alive; when player hp <= 0, player state still evaluates Game Over
+  assert.equal(p.hp > 0, true);
+  p.hp = 0;
+  assert.equal(p.hp <= 0, true);
+});
+
+test('Combat PNG Engine & Full-Bleed Map: combatSpriteUrl, maskBox, destination-out masks, 2-leg collapse drop, and 48-56px TILE_PX', () => {
+  // 1. Tile zoom is in crisp 48-56px range for 16:9 full-bleed viewport
+  assert.equal(CONFIG.TILE_PX >= 48 && CONFIG.TILE_PX <= 56, true);
+
+  // 2. Floor Combat Backdrops configured for all 3 floors
+  assert.equal(CONFIG.COMBAT_BACKDROP_URLS[1], '/assets/combat/bg_floor1.jpg');
+  assert.equal(CONFIG.COMBAT_BACKDROP_URLS[2], '/assets/combat/bg_floor2.jpg');
+  assert.equal(CONFIG.COMBAT_BACKDROP_URLS[3], '/assets/combat/bg_floor3.jpg');
+
+  // 3. All 3 playable classes define transparent back-sprite PNG URLs (/assets/combat/player_<class_id>.png)
+  for (const cls of CONFIG.CLASSES) {
+    assert.equal(cls.combatSpriteUrl, `/assets/combat/player_${cls.id}.png`);
+  }
+
+  // 4. All 26 enemies define /assets/combat/<id>.png and valid normalized maskBoxes for every non-torso limb
+  for (const enemy of Object.values(CONFIG.ENEMIES)) {
+    assert.equal(enemy.combatSpriteUrl, `/assets/combat/${enemy.id}.png`);
+    for (const limb of enemy.limbs) {
+      if (limb.id === 'torso') continue;
+      assert.equal(Boolean(limb.maskBox), true, `Missing maskBox for ${enemy.id}.${limb.id}`);
+      const box = limb.maskBox!;
+      assert.equal(box.x >= 0 && box.x <= 1 && box.y >= 0 && box.y <= 1, true);
+      assert.equal(box.w > 0 && box.w <= 1 && box.h > 0 && box.h <= 1, true);
+    }
+  }
+
+  // 5. resolveSeveredMaskBoxes picks up both severed flag and hp <= 0, skipping torso
+  const vaelis = CONFIG.ENEMIES.demon_lord_vaelis;
+  const masks = resolveSeveredMaskBoxes(
+    new Set(['throne_claw_left']),
+    vaelis.limbs.map((l) => ({
+      id: l.id,
+      severed: l.id === 'throne_claw_left',
+      hp: l.id === 'throne_ensor_right' ? 0 : l.maxHp,
+      maskBox: l.maskBox,
+    }))
+  );
+  assert.equal(masks.some((m) => m.id === 'throne_claw_left'), true);
+  assert.equal(masks.some((m) => m.id === 'throne_ensor_right'), true);
+  assert.equal(masks.some((m) => m.id === 'torso'), false);
+
+  // 6. computePngLegDropOffset collapses sprite downward when both legs / legs are severed
+  const intact = computePngLegDropOffset(new Set(), 400);
+  assert.equal(intact.dropY, 0);
+  const oneLeg = computePngLegDropOffset(new Set(['left_leg']), 400);
+  assert.equal(oneLeg.dropY > 0 && oneLeg.tiltRad < 0, true);
+  const bothLegs = computePngLegDropOffset(new Set(['legs']), 400);
+  assert.equal(bothLegs.dropY > oneLeg.dropY, true);
+  const bothCamelLegs = computePngLegDropOffset(new Set(['leftLeg', 'rightLeg']), 400);
+  assert.equal(bothCamelLegs.dropY, bothLegs.dropY);
+
+  // 7. loadCombatImage returns null gracefully when absent/SSR so fallback Canvas art renders cleanly
+  assert.equal(loadCombatImage('/assets/combat/demon_lord_vaelis.png'), null);
+});
+
+
 

@@ -18,6 +18,7 @@ import {
   drawPixelSprite,
   getFloorTileTexture,
 } from '../game/pixelArt';
+import { SeededRNG } from '../game/prng';
 
 interface DungeonMapViewportProps {
   room: RoomData;
@@ -137,12 +138,48 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   onTileClick,
   onEnemyCollidePlayer,
 }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const offscreenRef = useRef<{
     cacheKey: string;
     canvas: HTMLCanvasElement;
   } | null>(null);
   const grainCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // ResizeObserver: force <canvas> to cover 100% of the antique bronze viewport with zero black letterbox margins
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const syncCanvasSize = () => {
+      const rect = container.getBoundingClientRect();
+      const targetW = Math.max(320, Math.floor(rect.width));
+      const targetH = Math.max(240, Math.floor(rect.height));
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+    };
+
+    syncCanvasSize();
+    const rafInit = requestAnimationFrame(syncCanvasSize);
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        syncCanvasSize();
+      });
+      ro.observe(container);
+      return () => {
+        cancelAnimationFrame(rafInit);
+        ro.disconnect();
+      };
+    }
+    window.addEventListener('resize', syncCanvasSize);
+    return () => {
+      cancelAnimationFrame(rafInit);
+      window.removeEventListener('resize', syncCanvasSize);
+    };
+  }, []);
 
   // Smoothly interpolated visual coordinates for player & camera
   const visualPosRef = useRef<{ x: number; y: number }>({
@@ -151,6 +188,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   });
   const prevRoomIdRef = useRef<string>(room.id);
   const cameraOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const alertStartMapRef = useRef<Record<string, number>>({});
   const triggeredCombatRef = useRef<boolean>(false);
   const onEnemyCollidePlayerRef = useRef(onEnemyCollidePlayer);
   useEffect(() => {
@@ -223,7 +261,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           const viewH = canvas.height;
 
           // Build or reuse Offscreen Static Tile Layer
-          const cacheKey = `${room.id}_${roomW}x${roomH}_${room.secretWallBlown}_${room.shortcutOpened}_${room.lootedCoords.join('|')}`;
+          const hasBloodThrone = room.grid.some((row) => row.includes(TILE.BLOOD_THRONE));
+          const cacheKey = `${room.id}_${roomW}x${roomH}_${room.secretWallBlown}_${room.shortcutOpened}_${hasBloodThrone}_${room.lootedCoords.join('|')}`;
           if (!offscreenRef.current || offscreenRef.current.cacheKey !== cacheKey) {
             const offCanvas = document.createElement('canvas');
             offCanvas.width = worldPxW;
@@ -235,21 +274,21 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 const tile = room.grid[y][x];
                 const px = x * tileW;
                 const py = y * tileH;
-                const coordKey = `${x},${y}`;
 
                 // Multi-tile landmarks render dynamically over clean stone floor
                 const texTile =
                   tile === TILE.HEXEN_ALTAR ||
                   tile === TILE.RITUAL_CIRCLE ||
                   tile === TILE.BOOKSHELF ||
-                  tile === TILE.VOID_RIFT
+                  tile === TILE.VOID_RIFT ||
+                  tile === TILE.BLOOD_THRONE
                     ? TILE.FLOOR
                     : tile;
 
                 const variantHash =
                   tile === TILE.HERB
                     ? herbTypeToVariant(getHerbTypeAtCoord(room, x, y))
-                    : Math.abs(((x * 73 + y * 37) ^ (x * 19)) % 6);
+                    : new SeededRNG(`tile_${room.id}_${x}_${y}`).int(0, 19);
                 const floorTex = getFloorTileTexture(
                   room.floor,
                   texTile,
@@ -258,38 +297,95 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 );
                 offCtx.drawImage(floorTex, px, py, tileW, tileH);
 
-                // Hard 2.5D Wall Cast Shadows onto adjacent walkable floor tiles
+                // Soft contact shadow directly underneath crates & chests so props feel grounded
+                if (tile === TILE.CRATE || tile === TILE.CHEST) {
+                  offCtx.fillStyle = 'rgba(0, 0, 0, 0.58)';
+                  offCtx.beginPath();
+                  offCtx.ellipse(px + tileW * 0.5, py + tileH * 0.80, tileW * 0.36, 6, 0, 0, Math.PI * 2);
+                  offCtx.fill();
+                }
+              }
+            }
+
+            // Seamless Continuous Royal Crimson Carpet Runner down the Throne Room (F1_R3) central axis
+            if (room.id === 'F1_R3') {
+              const midY = Math.floor(roomH / 2);
+              const startX = 2;
+              const endX = Math.max(startX + 2, roomW - 4);
+              const carpetTopPx = (midY - 1) * tileH + 10;
+              const carpetHeightPx = tileH * 3 - 20;
+              const carpetLeftPx = startX * tileW + 4;
+              const carpetWidthPx = (endX - startX + 1) * tileW - 8;
+
+              offCtx.save();
+              // Clip to walkable central strip so carpet never paints over walls
+              const carpetGrad = offCtx.createLinearGradient(0, carpetTopPx, 0, carpetTopPx + carpetHeightPx);
+              carpetGrad.addColorStop(0, '#420a10');
+              carpetGrad.addColorStop(0.18, '#6e141d');
+              carpetGrad.addColorStop(0.5, '#7f1d1d');
+              carpetGrad.addColorStop(0.82, '#6e141d');
+              carpetGrad.addColorStop(1, '#420a10');
+              offCtx.fillStyle = carpetGrad;
+              offCtx.fillRect(carpetLeftPx, carpetTopPx, carpetWidthPx, carpetHeightPx);
+
+              // Seamless Royal Gold Thread Trim Borders (top & bottom edges + inner hairline)
+              offCtx.strokeStyle = '#ca8a04';
+              offCtx.lineWidth = 2.4;
+              offCtx.strokeRect(carpetLeftPx + 2, carpetTopPx + 4, carpetWidthPx - 4, carpetHeightPx - 8);
+              offCtx.strokeStyle = 'rgba(250, 204, 21, 0.45)';
+              offCtx.lineWidth = 1;
+              offCtx.strokeRect(carpetLeftPx + 6, carpetTopPx + 9, carpetWidthPx - 12, carpetHeightPx - 18);
+
+              // Subtle woven gothic diamond runner pattern
+              offCtx.strokeStyle = 'rgba(202, 138, 4, 0.22)';
+              offCtx.lineWidth = 1.2;
+              for (let rx = carpetLeftPx + 28; rx < carpetLeftPx + carpetWidthPx - 24; rx += 48) {
+                const ry = carpetTopPx + carpetHeightPx * 0.5;
+                offCtx.beginPath();
+                offCtx.moveTo(rx, ry - 18);
+                offCtx.lineTo(rx + 18, ry);
+                offCtx.lineTo(rx, ry + 18);
+                offCtx.lineTo(rx - 18, ry);
+                offCtx.closePath();
+                offCtx.stroke();
+              }
+              offCtx.restore();
+            }
+
+            // Second Pass: Hard 6px 2.5D Wall Cast Shadows onto adjacent floor tiles + looted prop dimmers
+            for (let y = 0; y < roomH; y++) {
+              for (let x = 0; x < roomW; x++) {
+                const tile = room.grid[y][x];
+                const px = x * tileW;
+                const py = y * tileH;
+                const coordKey = `${x},${y}`;
+
                 const isWallTile = tile === TILE.WALL || tile === TILE.CRACKED_WALL || tile === TILE.VOID;
                 if (!isWallTile) {
                   const aboveTile = y > 0 ? room.grid[y - 1][x] : null;
                   const leftTile = x > 0 ? room.grid[y][x - 1] : null;
                   if (aboveTile === TILE.WALL || aboveTile === TILE.CRACKED_WALL) {
-                    // Crisp hard cast shadow ledge + subtle penumbra
-                    offCtx.fillStyle = 'rgba(3, 2, 5, 0.68)';
-                    offCtx.fillRect(px, py, tileW, 8);
-                    const bGrad = offCtx.createLinearGradient(px, py + 8, px, py + 20);
-                    bGrad.addColorStop(0, 'rgba(3, 2, 5, 0.36)');
+                    // Crisp 6px hard cast shadow directly beneath wall base + subtle soft penumbra
+                    offCtx.fillStyle = 'rgba(3, 2, 5, 0.86)';
+                    offCtx.fillRect(px, py, tileW, 6);
+                    const bGrad = offCtx.createLinearGradient(px, py + 6, px, py + 16);
+                    bGrad.addColorStop(0, 'rgba(3, 2, 5, 0.42)');
                     bGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
                     offCtx.fillStyle = bGrad;
-                    offCtx.fillRect(px, py + 8, tileW, 12);
+                    offCtx.fillRect(px, py + 6, tileW, 10);
                   }
                   if (leftTile === TILE.WALL || leftTile === TILE.CRACKED_WALL) {
-                    offCtx.fillStyle = 'rgba(3, 2, 5, 0.52)';
-                    offCtx.fillRect(px, py, 5, tileH);
-                    const lGrad = offCtx.createLinearGradient(px + 5, py, px + 14, py);
+                    offCtx.fillStyle = 'rgba(3, 2, 5, 0.72)';
+                    offCtx.fillRect(px, py, 6, tileH);
+                    const lGrad = offCtx.createLinearGradient(px + 6, py, px + 14, py);
                     lGrad.addColorStop(0, 'rgba(3, 2, 5, 0.28)');
                     lGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
                     offCtx.fillStyle = lGrad;
-                    offCtx.fillRect(px + 5, py, 9, tileH);
+                    offCtx.fillRect(px + 6, py, 8, tileH);
                   }
                 }
 
-                if (tile === TILE.PORTAL_NEXT || tile === TILE.PORTAL_PREV) {
-                  offCtx.fillStyle = tile === TILE.PORTAL_NEXT ? '#b45309' : '#4b5563';
-                  offCtx.fillRect(px + 6, py + 6, tileW - 12, tileH - 12);
-                  offCtx.strokeStyle = '#fbbf24';
-                  offCtx.strokeRect(px + 6, py + 6, tileW - 12, tileH - 12);
-                } else if (
+                if (
                   tile === TILE.CRATE ||
                   tile === TILE.HERB ||
                   tile === TILE.CHEST ||
@@ -307,33 +403,67 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           }
 
           // Compute clamped Camera Offset centered on interpolated player position
+          // If the room is smaller than the full-bleed 16:9 viewport, center it cleanly inside tiled dungeon stone
           const targetCamX = (visualPosRef.current.x + 0.5) * tileW - viewW / 2;
           const targetCamY = (visualPosRef.current.y + 0.5) * tileH - viewH / 2;
           const camX =
-            worldPxW > viewW ? Math.max(0, Math.min(worldPxW - viewW, targetCamX)) : 0;
+            worldPxW > viewW
+              ? Math.max(0, Math.min(worldPxW - viewW, targetCamX))
+              : Math.round(-(viewW - worldPxW) / 2);
           const camY =
-            worldPxH > viewH ? Math.max(0, Math.min(worldPxH - viewH, targetCamY)) : 0;
+            worldPxH > viewH
+              ? Math.max(0, Math.min(worldPxH - viewH, targetCamY))
+              : Math.round(-(viewH - worldPxH) / 2);
           cameraOffsetRef.current = { x: camX, y: camY };
 
-          ctx.clearRect(0, 0, viewW, viewH);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.fillStyle = room.isExterior ? '#070a0e' : '#050408';
+          ctx.fillRect(0, 0, viewW, viewH);
+
+          // Seamless outer stone masonry fill if viewport exceeds room bounds (eliminates flat black borders)
+          if (worldPxW < viewW || worldPxH < viewH) {
+            const outerTex = getFloorTileTexture(
+              room.floor,
+              room.isExterior ? TILE.WALL : TILE.VOID,
+              0,
+              Boolean(room.isExterior)
+            );
+            const startTileX = Math.floor(camX / tileW) - 1;
+            const endTileX = Math.ceil((camX + viewW) / tileW) + 1;
+            const startTileY = Math.floor(camY / tileH) - 1;
+            const endTileY = Math.ceil((camY + viewH) / tileH) + 1;
+            ctx.save();
+            ctx.translate(-camX, -camY);
+            for (let ty = startTileY; ty <= endTileY; ty++) {
+              for (let tx = startTileX; tx <= endTileX; tx++) {
+                if (tx >= 0 && tx < roomW && ty >= 0 && ty < roomH) continue;
+                ctx.drawImage(outerTex, tx * tileW, ty * tileH, tileW, tileH);
+              }
+            }
+            ctx.restore();
+          }
+
           ctx.save();
           ctx.translate(-camX, -camY);
 
           // 1. Blit Cached Static Tile Layer
           ctx.drawImage(offscreenRef.current.canvas, 0, 0);
 
-          // Compute Bresenham Line-of-Sight Visibility Set from playerPos
-          const hasTorchOrLamp =
-            (player.inventory.torch || 0) > 0 || (player.inventory.oil_lamp || 0) > 0;
+          // Compute Bresenham Line-of-Sight Visibility Set driven by Dynamic Torchlight (torchTimer)
+          const torchTimer = Math.max(0, player.torchTimer ?? 0);
+          const torchMax = Math.max(1, player.torchMaxTimer ?? 120);
+          const torchRatio = Math.max(0, Math.min(1, torchTimer / torchMax));
+          const isTorchLit = torchTimer > 0;
+          const isTorchLow = isTorchLit && torchRatio < 0.3;
+          const baseIndoorRadius = room.floor === 3 ? 6.8 : 8.6;
           const sightRadius = room.isExterior
             ? 11
-            : room.floor === 3
-            ? hasTorchOrLamp
-              ? 7
-              : 5
-            : hasTorchOrLamp
-            ? 9
-            : 7;
+            : !isTorchLit
+            ? 1.85
+            : isTorchLow
+            ? 2.3 + (torchRatio / 0.3) * (baseIndoorRadius - 2.3)
+            : baseIndoorRadius;
 
           const secretHiddenSet = new Set<string>(
             !room.secretWallBlown ? room.secretChamberCoords || [] : []
@@ -371,6 +501,14 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   color: 'rgba(168, 85, 247, 0.42)',
                   coreColor: 'rgba(232, 121, 249, 0.22)',
                   radius: tileW * 3.4,
+                });
+              } else if (t === TILE.BLOOD_THRONE) {
+                staticPointLights.push({
+                  x,
+                  y,
+                  color: 'rgba(153, 27, 27, 0.36)',
+                  coreColor: 'rgba(220, 38, 38, 0.24)',
+                  radius: tileW * 3.0,
                 });
               } else if (
                 !room.isExterior &&
@@ -480,12 +618,20 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             for (let x = 0; x < roomW; x++) {
               const t = room.grid[y][x];
               const isLandmark =
-                t === TILE.HEXEN_ALTAR || t === TILE.BOOKSHELF || t === TILE.VOID_RIFT;
-              if (!visibleCoords.has(`${x},${y}`) && t !== TILE.HEXEN_ALTAR && t !== TILE.VOID_RIFT) {
+                t === TILE.HEXEN_ALTAR ||
+                t === TILE.BOOKSHELF ||
+                t === TILE.VOID_RIFT ||
+                t === TILE.BLOOD_THRONE;
+              if (
+                !visibleCoords.has(`${x},${y}`) &&
+                t !== TILE.HEXEN_ALTAR &&
+                t !== TILE.VOID_RIFT &&
+                t !== TILE.BLOOD_THRONE
+              ) {
                 continue;
               }
 
-              // Multi-Tile Standing Landmarks (3x2 Hexen Altar, 1x2 Gothic Bookshelf, 3x3 Void Rift + Child 13)
+              // Multi-Tile Standing Landmarks (3x2 Hexen Altar, 1x2 Gothic Bookshelf, 3x3 Void Rift, Vacant Blood Throne)
               if (isLandmark) {
                 const cKey = `${x},${y}`;
                 const isLooted =
@@ -514,9 +660,9 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   draw: () => {
                     // Draw Canonical Set-Dressing Props behind/around NPC
                     drawNpcSetDressing(ctx, t, x, y, tileW, tileH, animTick);
-                    ctx.fillStyle = 'rgba(0,0,0,0.44)';
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
                     ctx.beginPath();
-                    ctx.ellipse(px + tileW / 2, y * tileH + tileH - 6, tileW * 0.34, 5.5, 0, 0, Math.PI * 2);
+                    ctx.ellipse(px + tileW / 2, y * tileH + tileH - 5, tileW * 0.36, 6.2, 0, 0, Math.PI * 2);
                     ctx.fill();
                     drawPixelSprite(
                       ctx,
@@ -530,7 +676,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                       false,
                       false,
                       false,
-                      now * 0.0024 + x
+                      now * 0.0024 + x,
+                      room.floor
                     );
                     ctx.fillStyle = 'rgba(0,0,0,0.82)';
                     ctx.fillRect(px - 10, py - 10, tileW + 20, 13);
@@ -553,9 +700,9 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 const px = cxPos * tileW;
                 const allyBob = Math.sin(now * 0.0018 + (pIdx + 3) * 1.1) * 1.4;
                 const py = (cyPos - 1) * tileH + allyBob;
-                ctx.fillStyle = 'rgba(0,0,0,0.42)';
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
                 ctx.beginPath();
-                ctx.ellipse(px + tileW / 2, cyPos * tileH + tileH - 6, tileW * 0.31, 5, 0, 0, Math.PI * 2);
+                ctx.ellipse(px + tileW / 2, cyPos * tileH + tileH - 5, tileW * 0.34, 6, 0, 0, Math.PI * 2);
                 ctx.fill();
                 drawPixelSprite(
                   ctx,
@@ -569,7 +716,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   false,
                   false,
                   false,
-                  now * 0.0022 + pIdx
+                  now * 0.0022 + pIdx,
+                  room.floor
                 );
                 ctx.fillStyle = 'rgba(0,0,0,0.82)';
                 ctx.fillRect(px - 14, py - 12, tileW + 28, 15);
@@ -591,9 +739,9 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 const px = coord.x * tileW;
                 const allyBob = Math.sin(now * 0.0018 + (idx + 1) * 1.4) * 1.6;
                 const py = (coord.y - 1) * tileH + allyBob;
-                ctx.fillStyle = 'rgba(0,0,0,0.42)';
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
                 ctx.beginPath();
-                ctx.ellipse(px + tileW / 2, coord.y * tileH + tileH - 6, tileW * 0.31, 5, 0, 0, Math.PI * 2);
+                ctx.ellipse(px + tileW / 2, coord.y * tileH + tileH - 5, tileW * 0.34, 6, 0, 0, Math.PI * 2);
                 ctx.fill();
                 drawPixelSprite(
                   ctx,
@@ -607,7 +755,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   false,
                   false,
                   false,
-                  now * 0.0024 + idx
+                  now * 0.0024 + idx,
+                  room.floor
                 );
               },
             });
@@ -620,13 +769,13 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               const px = visualPosRef.current.x * tileW;
               const playerBob = Math.sin(now * 0.0018) * 1.8;
               const py = (visualPosRef.current.y - 1) * tileH + playerBob;
-              ctx.fillStyle = 'rgba(0,0,0,0.48)';
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
               ctx.beginPath();
               ctx.ellipse(
                 px + tileW / 2,
-                visualPosRef.current.y * tileH + tileH - 6,
-                tileW * 0.35,
-                6,
+                visualPosRef.current.y * tileH + tileH - 5,
+                tileW * 0.37,
+                6.5,
                 0,
                 0,
                 Math.PI * 2
@@ -651,7 +800,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 false,
                 false,
                 false,
-                now * 0.0024
+                now * 0.0024,
+                room.floor
               );
             },
           });
@@ -752,21 +902,33 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   ctx.restore();
                 }
 
-                // Ground Shadow / Aura under enemy
-                ctx.fillStyle = isBoss3x
-                  ? 'rgba(153, 27, 27, 0.62)'
-                  : 'rgba(120, 15, 15, 0.45)';
+                // Soft Elliptical Contact Shadow (rgba(0,0,0,0.6)) + Boss Crimson Rim Shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
                 ctx.beginPath();
                 ctx.ellipse(
                   enemyInst.x * tileW + tileW / 2,
                   enemyInst.y * tileH + tileH - 4,
-                  isBoss3x ? tileW * 1.35 : isMiniBoss2x ? tileW * 0.75 : tileW * 0.38,
-                  isBoss3x ? 14 : 8,
+                  isBoss3x ? tileW * 1.38 : isMiniBoss2x ? tileW * 0.78 : tileW * 0.40,
+                  isBoss3x ? 15 : isMiniBoss2x ? 9 : 6.5,
                   0,
                   0,
                   Math.PI * 2
                 );
                 ctx.fill();
+                if (isBoss3x) {
+                  ctx.fillStyle = 'rgba(139, 0, 0, 0.38)';
+                  ctx.beginPath();
+                  ctx.ellipse(
+                    enemyInst.x * tileW + tileW / 2,
+                    enemyInst.y * tileH + tileH - 4,
+                    tileW * 1.25,
+                    11,
+                    0,
+                    0,
+                    Math.PI * 2
+                  );
+                  ctx.fill();
+                }
 
                 drawPixelSprite(
                   ctx,
@@ -780,37 +942,68 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   enemyInst.oilCovered,
                   enemyInst.blindTurns > 0,
                   enemyInst.telegraphing,
-                  now * 0.003
+                  now * 0.003,
+                  room.floor
                 );
 
-                // Red '!' Alert / Chase Indicator OR Yellow '?' De-Agro Indicator
-                if (enemyInst.aiState === 'alert' || enemyInst.aiState === 'chase') {
+                // Golden-Yellow Bouncing '!' Alert Indicator (400ms reflex window) / Crimson '!' Chase / Yellow '?' De-Agro
+                if (enemyInst.aiState === 'alert') {
+                  if (!alertStartMapRef.current[enemyInst.uid]) {
+                    alertStartMapRef.current[enemyInst.uid] = now;
+                  }
+                  const alertElapsed = now - alertStartMapRef.current[enemyInst.uid];
+                  const popBounce = -Math.abs(Math.sin(Math.min(1, alertElapsed / 380) * Math.PI * 1.6)) * 13;
+                  const scalePop = alertElapsed < 140 ? 1.24 - (alertElapsed / 140) * 0.24 : 1.0;
+                  const bx = enemyInst.x * tileW + tileW / 2;
+                  const by = py - 14 + popBounce;
                   ctx.save();
-                  ctx.fillStyle = 'rgba(15, 5, 8, 0.88)';
-                  ctx.fillRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
-                  ctx.strokeStyle = '#ef4444';
-                  ctx.lineWidth = 1.5;
-                  ctx.strokeRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
-                  ctx.fillStyle = '#ef4444';
-                  ctx.font = 'bold 14px "Noto Serif", serif';
-                  ctx.textAlign = 'center';
-                  ctx.fillText('!', enemyInst.x * tileW + tileW / 2, py - 6);
-                  ctx.restore();
-                } else if (
-                  enemyInst.aiState === 'deagro' &&
-                  (enemyInst.questionTimerMs || 0) > 0
-                ) {
-                  ctx.save();
-                  ctx.fillStyle = 'rgba(15, 12, 5, 0.88)';
-                  ctx.fillRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
-                  ctx.strokeStyle = '#facc15';
-                  ctx.lineWidth = 1.5;
-                  ctx.strokeRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
+                  ctx.translate(bx, by);
+                  ctx.scale(scalePop, scalePop);
+                  ctx.shadowColor = 'rgba(250, 204, 21, 0.85)';
+                  ctx.shadowBlur = 12;
+                  ctx.fillStyle = 'rgba(18, 12, 4, 0.92)';
+                  ctx.fillRect(-11, -12, 22, 22);
+                  ctx.strokeStyle = '#fde047';
+                  ctx.lineWidth = 2;
+                  ctx.strokeRect(-11, -12, 22, 22);
                   ctx.fillStyle = '#fef08a';
-                  ctx.font = 'bold 14px "Noto Serif", serif';
+                  ctx.font = '900 17px "Noto Serif", serif';
                   ctx.textAlign = 'center';
-                  ctx.fillText('?', enemyInst.x * tileW + tileW / 2, py - 6);
+                  ctx.textBaseline = 'middle';
+                  ctx.fillText('!', 0, -1);
                   ctx.restore();
+                } else {
+                  if (alertStartMapRef.current[enemyInst.uid]) {
+                    delete alertStartMapRef.current[enemyInst.uid];
+                  }
+                  if (enemyInst.aiState === 'chase') {
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(15, 5, 8, 0.88)';
+                    ctx.fillRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
+                    ctx.fillStyle = '#ef4444';
+                    ctx.font = 'bold 14px "Noto Serif", serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('!', enemyInst.x * tileW + tileW / 2, py - 6);
+                    ctx.restore();
+                  } else if (
+                    enemyInst.aiState === 'deagro' &&
+                    (enemyInst.questionTimerMs || 0) > 0
+                  ) {
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(15, 12, 5, 0.88)';
+                    ctx.fillRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
+                    ctx.strokeStyle = '#facc15';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(enemyInst.x * tileW + tileW / 2 - 10, py - 20, 20, 18);
+                    ctx.fillStyle = '#fef08a';
+                    ctx.font = 'bold 14px "Noto Serif", serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('?', enemyInst.x * tileW + tileW / 2, py - 6);
+                    ctx.restore();
+                  }
                 }
               },
             });
@@ -875,50 +1068,25 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             ctx.fill();
           }
 
-          // Flickering Storm-Lantern / Torchlight & Deep Darkness Vignette centered on interpolated player
-          const playerCenterX = (visualPosRef.current.x + 0.5) * tileW;
-          const playerCenterY = (visualPosRef.current.y + 0.3) * tileH;
-          if (!room.isExterior) {
-            const lanternFlicker = 1 + Math.sin(now * 0.0085) * 0.03 + Math.sin(now * 0.021) * 0.015;
-            const lightRadiusPx = sightRadius * tileW * lanternFlicker;
-            const torchGrad = ctx.createRadialGradient(
-              playerCenterX,
-              playerCenterY,
-              tileW * 1.15,
-              playerCenterX,
-              playerCenterY,
-              lightRadiusPx
-            );
-            if (room.floor === 3) {
-              torchGrad.addColorStop(0, 'rgba(192, 132, 252, 0.10)');
-              torchGrad.addColorStop(0.45, 'rgba(18, 9, 32, 0.44)');
-              torchGrad.addColorStop(0.82, 'rgba(7, 4, 14, 0.86)');
-              torchGrad.addColorStop(1, 'rgba(3, 2, 6, 0.96)');
-            } else {
-              torchGrad.addColorStop(0, hasTorchOrLamp ? 'rgba(255, 198, 120, 0.11)' : 'rgba(245, 175, 105, 0.07)');
-              torchGrad.addColorStop(0.42, 'rgba(12, 9, 14, 0.38)');
-              torchGrad.addColorStop(0.8, 'rgba(5, 4, 8, 0.84)');
-              torchGrad.addColorStop(1, 'rgba(3, 2, 5, 0.95)');
-            }
-            ctx.fillStyle = torchGrad;
-            ctx.fillRect(0, 0, worldPxW, worldPxH);
-          }
-
-          // 3A. Continuous Pale Light-Gray Drifting Mist Layers across the Exploration Viewport
+          // 3A. Continuous Pale Light-Gray Drifting Mist Layers across the full viewport & world
           ctx.save();
           const mistSec = now * 0.001;
           const mistStrength = room.isExterior ? 1.15 : room.floor === 3 ? 1.05 : 1.0;
+          const mistSpanW = Math.max(worldPxW, viewW);
+          const mistSpanH = Math.max(worldPxH, viewH);
+          const mistOriginX = Math.min(0, camX);
+          const mistOriginY = Math.min(0, camY);
 
           // Layer 1: Wide drifting pale light-gray fog banks (layered radial clouds)
-          const wrapW = worldPxW + 360;
-          const wrapH = worldPxH + 220;
+          const wrapW = mistSpanW + 360;
+          const wrapH = mistSpanH + 220;
           for (let m = 0; m < 10; m++) {
             const speedX = 14 + (m % 4) * 5;
             const speedY = (m % 2 === 0 ? 1 : -1) * (3.5 + (m % 3) * 1.5);
             const rawX = m * 173 + mistSec * speedX;
             const rawY = m * 119 + mistSec * speedY + Math.sin(mistSec * 0.45 + m * 1.3) * 26;
-            const mx = ((rawX % wrapW) + wrapW) % wrapW - 180;
-            const my = ((rawY % wrapH) + wrapH) % wrapH - 110;
+            const mx = mistOriginX + (((rawX % wrapW) + wrapW) % wrapW - 180);
+            const my = mistOriginY + (((rawY % wrapH) + wrapH) % wrapH - 110);
             const mr = 115 + (m % 3) * 42;
             const alphaCenter = (0.11 + (m % 3) * 0.025) * mistStrength;
             const alphaMid = (0.045 + (m % 2) * 0.015) * mistStrength;
@@ -936,10 +1104,10 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           // Layer 2: Horizontal elongated low-hanging pale-gray mist ribbons drifting steadily
           for (let b = 0; b < 5; b++) {
             const dir = b % 2 === 0 ? 1 : -1;
-            const bandSpanW = worldPxW + 420;
+            const bandSpanW = mistSpanW + 420;
             const bxRaw = b * 230 + mistSec * dir * (18 + b * 4);
-            const bx = ((bxRaw % bandSpanW) + bandSpanW) % bandSpanW - 210;
-            const by = ((b + 0.5) / 5) * worldPxH + Math.cos(mistSec * 0.55 + b) * 18;
+            const bx = mistOriginX + (((bxRaw % bandSpanW) + bandSpanW) % bandSpanW - 210);
+            const by = mistOriginY + ((b + 0.5) / 5) * mistSpanH + Math.cos(mistSec * 0.55 + b) * 18;
             const rw = 190 + (b % 2) * 55;
             const rh = 58 + (b % 3) * 14;
 
@@ -961,8 +1129,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           for (let p = 0; p < 16; p++) {
             const pxRaw = p * 97 + mistSec * (12 + (p % 5) * 3.5);
             const pyRaw = p * 67 - mistSec * (4 + (p % 3) * 2) + Math.sin(mistSec * 0.9 + p) * 14;
-            const px = ((pxRaw % worldPxW) + worldPxW) % worldPxW;
-            const py = ((pyRaw % worldPxH) + worldPxH) % worldPxH;
+            const px = mistOriginX + (((pxRaw % mistSpanW) + mistSpanW) % mistSpanW);
+            const py = mistOriginY + (((pyRaw % mistSpanH) + mistSpanH) % mistSpanH);
             const pr = 1.4 + (p % 3) * 0.7;
             const pAlpha = 0.22 + 0.14 * Math.sin(mistSec * 1.4 + p * 0.8);
             ctx.fillStyle = `rgba(218, 224, 232, ${Math.max(0.08, pAlpha).toFixed(3)})`;
@@ -988,7 +1156,72 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
           }
 
-          // 4. Proximity Interaction Highlight & Floating Prompt ([F]) — Manhattan distance <= 1
+          ctx.restore();
+
+          // 4A. Full-Canvas Screen-Space Dynamic Torchlight Radial Vignette (fills 100% of canvas.width x canvas.height with zero rectangular cutoff)
+          const playerScreenX = (visualPosRef.current.x + 0.5) * tileW - camX;
+          const playerScreenY = (visualPosRef.current.y + 0.3) * tileH - camY;
+          if (!room.isExterior) {
+            const lanternFlicker = !isTorchLit
+              ? 1 + Math.sin(now * 0.004) * 0.02
+              : isTorchLow
+              ? 0.92 + Math.sin(now * 0.026) * 0.1 + Math.cos(now * 0.043) * 0.06
+              : 1 + Math.sin(now * 0.0085) * 0.035 + Math.sin(now * 0.021) * 0.016;
+            const innerR = isTorchLit ? tileW * (isTorchLow ? 0.72 : 1.15) : tileW * 0.42;
+            const lightRadiusPx = Math.max(tileW * 1.45, sightRadius * tileW * lanternFlicker);
+            const torchGrad = ctx.createRadialGradient(
+              playerScreenX,
+              playerScreenY,
+              innerR,
+              playerScreenX,
+              playerScreenY,
+              lightRadiusPx
+            );
+            if (!isTorchLit) {
+              torchGrad.addColorStop(0, 'rgba(30, 24, 38, 0.18)');
+              torchGrad.addColorStop(0.45, 'rgba(6, 4, 10, 0.72)');
+              torchGrad.addColorStop(0.78, 'rgba(3, 2, 5, 0.94)');
+              torchGrad.addColorStop(1, 'rgba(2, 1, 4, 0.985)');
+            } else if (room.floor === 3) {
+              torchGrad.addColorStop(0, isTorchLow ? 'rgba(216, 180, 254, 0.09)' : 'rgba(255, 206, 138, 0.14)');
+              torchGrad.addColorStop(0.42, 'rgba(20, 10, 34, 0.46)');
+              torchGrad.addColorStop(0.8, 'rgba(7, 4, 14, 0.88)');
+              torchGrad.addColorStop(1, 'rgba(3, 2, 6, 0.97)');
+            } else {
+              torchGrad.addColorStop(
+                0,
+                isTorchLow ? 'rgba(245, 158, 11, 0.09)' : 'rgba(255, 198, 115, 0.16)'
+              );
+              torchGrad.addColorStop(0.36, isTorchLow ? 'rgba(18, 10, 10, 0.52)' : 'rgba(16, 11, 12, 0.36)');
+              torchGrad.addColorStop(0.76, 'rgba(5, 4, 8, 0.86)');
+              torchGrad.addColorStop(1, 'rgba(3, 2, 5, 0.96)');
+            }
+            ctx.save();
+            ctx.fillStyle = torchGrad;
+            ctx.fillRect(0, 0, viewW, viewH);
+            ctx.restore();
+          } else {
+            // Subtle atmospheric edge vignette outdoors covering 100% of canvas.width x canvas.height
+            const extGrad = ctx.createRadialGradient(
+              playerScreenX,
+              playerScreenY,
+              tileW * 2.4,
+              playerScreenX,
+              playerScreenY,
+              Math.max(viewW, viewH) * 0.72
+            );
+            extGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            extGrad.addColorStop(0.7, 'rgba(4, 6, 10, 0.18)');
+            extGrad.addColorStop(1, 'rgba(3, 4, 7, 0.62)');
+            ctx.save();
+            ctx.fillStyle = extGrad;
+            ctx.fillRect(0, 0, viewW, viewH);
+            ctx.restore();
+          }
+
+          // 4B. Proximity Interaction Highlight & Floating Prompt ([F]) — drawn above torchlight vignette for crisp readability
+          ctx.save();
+          ctx.translate(-camX, -camY);
           const searchOffsets: Array<[number, number]> = [
             [0, 0],
             [1, 0],
@@ -1052,6 +1285,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             else if (t === TILE.NPC_RECRUIT_HUNTER && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
               promptLabel = '[F] Gã Săn Di Vật Crow';
             else if (t === TILE.VOID_RIFT) promptLabel = '[F] Vết Rách & Thánh Tử 13';
+            else if (t === TILE.BLOOD_THRONE) promptLabel = '[F] Ngai Vàng Máu';
             else if (t === TILE.MIASMA_VENT && !room.lootedCoords.includes(cKey))
               promptLabel = '[F] Hấp Thụ Khí';
             else if (t === TILE.RITUAL_CIRCLE) {
@@ -1105,7 +1339,6 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               break;
             }
           }
-
           ctx.restore();
 
           // 5. Subtle Cached Film-Grain Texture Overlay matching Dark Fantasy UI
@@ -1148,23 +1381,23 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   }, [room, player, playerPos, trailCoords, animTick, riftElixirCollected, filmGrainEnabled]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={CONFIG.GRID_W * CONFIG.TILE_PX}
-      height={CONFIG.GRID_H * CONFIG.TILE_PX}
-      className="max-h-full max-w-full w-auto h-auto object-contain cursor-pointer"
-      onClick={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const scaleX = e.currentTarget.width / rect.width;
-        const scaleY = e.currentTarget.height / rect.height;
-        const viewPxX = (e.clientX - rect.left) * scaleX;
-        const viewPxY = (e.clientY - rect.top) * scaleY;
-        const worldPxX = viewPxX + cameraOffsetRef.current.x;
-        const worldPxY = viewPxY + cameraOffsetRef.current.y;
-        const tx = Math.floor(worldPxX / CONFIG.TILE_PX);
-        const ty = Math.floor(worldPxY / CONFIG.TILE_PX);
-        onTileClick(tx, ty);
-      }}
-    />
+    <div ref={containerRef} className="relative w-full h-full flex-1 min-h-0 overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 block w-full h-full cursor-pointer"
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const scaleX = e.currentTarget.width / Math.max(1, rect.width);
+          const scaleY = e.currentTarget.height / Math.max(1, rect.height);
+          const viewPxX = (e.clientX - rect.left) * scaleX;
+          const viewPxY = (e.clientY - rect.top) * scaleY;
+          const worldPxX = viewPxX + cameraOffsetRef.current.x;
+          const worldPxY = viewPxY + cameraOffsetRef.current.y;
+          const tx = Math.floor(worldPxX / CONFIG.TILE_PX);
+          const ty = Math.floor(worldPxY / CONFIG.TILE_PX);
+          onTileClick(tx, ty);
+        }}
+      />
+    </div>
   );
 };

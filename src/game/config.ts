@@ -1,3 +1,10 @@
+export interface LimbMaskBox {
+  x: number; // normalized 0..1 from left of PNG frame
+  y: number; // normalized 0..1 from top of PNG frame
+  w: number; // normalized 0..1 width
+  h: number; // normalized 0..1 height
+}
+
 export interface LimbConfig {
   id: string;
   name: string;
@@ -10,6 +17,7 @@ export interface LimbConfig {
   isShieldArm?: boolean;
   isWeaponArm?: boolean;
   isSupportLeg?: boolean;
+  maskBox?: LimbMaskBox;
   roleDesc: string;
 }
 
@@ -27,6 +35,7 @@ export interface EnemyTemplate {
   bluntWeakness?: number;
   spriteKey: string;
   spriteScale: '1x2' | '2x2' | '2x3' | '3x3';
+  combatSpriteUrl?: string;
   combatPortraitUrl?: string;
   defaultWeaponCategory?: WeaponCategory;
   weaponLimb?: 'leftArm' | 'rightArm';
@@ -147,6 +156,7 @@ export interface CharacterClassDef {
   id: string;
   name: string;
   title: string;
+  combatSpriteUrl?: string;
   combatPortraitUrl?: string;
   hp: number;
   mind: number;
@@ -186,12 +196,19 @@ export const CONFIG = {
   BASE_PLAYER_HP: 100,
   BASE_PLAYER_MIND: 100,
 
-  // Grid & Rendering
+  // Grid & Rendering (Crisp 54px tile zoom for 16:9 full-bleed viewport)
   GRID_W: 17,
   GRID_H: 13,
-  TILE_PX: 48,
+  TILE_PX: 54,
   SAVE_KEY_PREFIX: 'VAELIS_SAVE_SLOT_',
   DEFAULT_SEED: 'VAELIS-666',
+
+  // High-Res Combat Arena Backdrops by Floor (automatic fallback to Dark Gothic Canvas if absent)
+  COMBAT_BACKDROP_URLS: {
+    1: '/assets/combat/bg_floor1.jpg',
+    2: '/assets/combat/bg_floor2.jpg',
+    3: '/assets/combat/bg_floor3.jpg',
+  } as Record<1 | 2 | 3, string>,
 
   // Starting Classes
   CLASSES: [
@@ -199,7 +216,7 @@ export const CONFIG = {
       id: 'fallen_knight',
       name: 'Kẻ Gác Mộ Vô Danh',
       title: 'Cựu Phó Tướng',
-      combatPortraitUrl: '/assets/portraits/fallen_knight.jpg',
+      combatSpriteUrl: '/assets/combat/player_fallen_knight.png',
       hp: 100,
       mind: 100,
       headHp: 35,
@@ -222,7 +239,7 @@ export const CONFIG = {
       id: 'forsaken_nun',
       name: 'Nữ Tu Oan Khuất',
       title: 'Cựu Nữ Tu',
-      combatPortraitUrl: '/assets/portraits/forsaken_nun.jpg',
+      combatSpriteUrl: '/assets/combat/player_forsaken_nun.png',
       hp: 100,
       mind: 100,
       headHp: 30,
@@ -245,7 +262,7 @@ export const CONFIG = {
       id: 'night_hunter',
       name: 'Gã Săn Di Vật',
       title: 'Kẻ Ngoài Vòng Pháp Luật',
-      combatPortraitUrl: '/assets/portraits/night_hunter.jpg',
+      combatSpriteUrl: '/assets/combat/player_night_hunter.png',
       hp: 100,
       mind: 100,
       headHp: 30,
@@ -1823,7 +1840,6 @@ export const CONFIG = {
       isUndeadOrDemon: true,
       spriteKey: 'executioner_paladin',
       spriteScale: '3x3',
-      combatPortraitUrl: '/assets/portraits/executioner_paladin.jpg',
       defaultWeaponCategory: 'heavy_axe',
       weaponLimb: 'rightArm',
       speedSteps: 1,
@@ -2178,7 +2194,6 @@ export const CONFIG = {
       isUndeadOrDemon: true,
       spriteKey: 'demon_lord_vaelis',
       spriteScale: '3x3',
-      combatPortraitUrl: '/assets/portraits/demon_lord_vaelis.jpg',
       defaultWeaponCategory: 'sword',
       weaponLimb: 'leftArm',
       speedSteps: 0,
@@ -2483,7 +2498,6 @@ export const CONFIG = {
       isUndeadOrDemon: true,
       spriteKey: 'void_chimera',
       spriteScale: '3x3',
-      combatPortraitUrl: '/assets/portraits/void_chimera.jpg',
       defaultWeaponCategory: 'staff',
       weaponLimb: 'rightArm',
       speedSteps: 2,
@@ -2514,3 +2528,69 @@ export const CONFIG = {
     },
   } as Record<string, EnemyTemplate>,
 };
+
+// Standardized Transparent PNG Sprite URLs & Normalized Limb Mask Boxes (0..1) for Destination-Out Limb Severing
+const DEFAULT_LIMB_MASK_BOXES: Record<string, LimbMaskBox> = {
+  head: { x: 0.34, y: 0.04, w: 0.32, h: 0.24 },
+  left_arm: { x: 0.0, y: 0.25, w: 0.30, h: 0.45 },
+  leftArm: { x: 0.0, y: 0.25, w: 0.30, h: 0.45 },
+  right_arm: { x: 0.70, y: 0.25, w: 0.30, h: 0.45 },
+  rightArm: { x: 0.70, y: 0.25, w: 0.30, h: 0.45 },
+  left_leg: { x: 0.20, y: 0.65, w: 0.28, h: 0.35 },
+  leftLeg: { x: 0.20, y: 0.65, w: 0.28, h: 0.35 },
+  right_leg: { x: 0.52, y: 0.65, w: 0.28, h: 0.35 },
+  rightLeg: { x: 0.52, y: 0.65, w: 0.28, h: 0.35 },
+  legs: { x: 0.20, y: 0.65, w: 0.60, h: 0.35 },
+  coiling_body: { x: 0.14, y: 0.56, w: 0.72, h: 0.38 },
+  lashing_tail: { x: 0.64, y: 0.42, w: 0.36, h: 0.46 },
+  tentacle_1: { x: 0.68, y: 0.20, w: 0.32, h: 0.38 },
+  tentacle_2: { x: 0.0, y: 0.20, w: 0.32, h: 0.38 },
+  tentacle_3: { x: 0.66, y: 0.54, w: 0.34, h: 0.36 },
+  tentacle_4: { x: 0.0, y: 0.54, w: 0.34, h: 0.36 },
+  snake_tail_head: { x: 0.02, y: 0.14, w: 0.30, h: 0.34 },
+  throne_claw_left: { x: 0.0, y: 0.22, w: 0.30, h: 0.48 },
+  throne_ensor_right: { x: 0.70, y: 0.22, w: 0.30, h: 0.48 },
+  void_tendrils: { x: 0.18, y: 0.70, w: 0.64, h: 0.30 },
+  void_conduit: { x: 0.32, y: 0.26, w: 0.14, h: 0.26 },
+};
+
+const CUSTOM_ENEMY_MASK_BOXES: Record<string, Partial<Record<string, LimbMaskBox>>> = {
+  demon_lord_vaelis: {
+    throne_claw_left: { x: 0.02, y: 0.22, w: 0.29, h: 0.48 },
+    throne_ensor_right: { x: 0.69, y: 0.22, w: 0.29, h: 0.48 },
+    void_tendrils: { x: 0.16, y: 0.72, w: 0.68, h: 0.27 },
+    void_conduit: { x: 0.30, y: 0.24, w: 0.15, h: 0.26 },
+    head: { x: 0.36, y: 0.05, w: 0.28, h: 0.22 },
+  },
+  executioner_paladin: {
+    left_arm: { x: 0.02, y: 0.22, w: 0.31, h: 0.46 },
+    right_arm: { x: 0.67, y: 0.22, w: 0.31, h: 0.46 },
+    legs: { x: 0.24, y: 0.70, w: 0.52, h: 0.28 },
+  },
+  void_chimera: {
+    snake_tail_head: { x: 0.03, y: 0.12, w: 0.30, h: 0.34 },
+    right_arm: { x: 0.66, y: 0.24, w: 0.32, h: 0.44 },
+    legs: { x: 0.22, y: 0.68, w: 0.56, h: 0.30 },
+  },
+  penitent_knight: {
+    left_arm: { x: 0.02, y: 0.22, w: 0.32, h: 0.48 },
+    right_arm: { x: 0.66, y: 0.20, w: 0.32, h: 0.48 },
+    left_leg: { x: 0.20, y: 0.64, w: 0.30, h: 0.34 },
+  },
+};
+
+for (const enemy of Object.values(CONFIG.ENEMIES)) {
+  if (!enemy.combatSpriteUrl) {
+    enemy.combatSpriteUrl = `/assets/combat/${enemy.id}.png`;
+  }
+  const overrides = CUSTOM_ENEMY_MASK_BOXES[enemy.id];
+  for (const limb of enemy.limbs) {
+    if (!limb.maskBox && limb.id !== 'torso') {
+      const box = overrides?.[limb.id] || DEFAULT_LIMB_MASK_BOXES[limb.id];
+      if (box) {
+        limb.maskBox = { ...box };
+      }
+    }
+  }
+}
+

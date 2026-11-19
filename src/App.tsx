@@ -18,12 +18,19 @@ import {
   Dices,
 } from 'lucide-react';
 import { CONFIG, WeaponCategory } from './game/config';
-import { CHARACTER_INTRO_STEPS, evaluateCanonEnding } from './game/narrative';
+import {
+  CHARACTER_INTRO_STEPS,
+  evaluateCanonEnding,
+  SMUGGLER_VALUABLE_IDS,
+  SmugglerHaggleTactic,
+  evaluateSmugglerHaggle,
+} from './game/narrative';
 import { SeededRNG } from './game/prng';
 import { sfx, AudioVisualSettings } from './game/audio';
 import {
   drawPixelSprite,
   drawPartyBackSprite,
+  drawCombatBackdrop,
   drawItemIcon,
   getLimbReticlePositions,
   drawEngravedGoldCoin,
@@ -36,6 +43,10 @@ import prologueFrame2Img from './assets/images/prologue_statue_mother_1794938322
 import prologueGateKnightImg from './assets/images/prologue_gate_knight_1794938325240.jpg';
 import prologueGateNunImg from './assets/images/prologue_gate_nun_1794938324507.jpg';
 import prologueGateHunterImg from './assets/images/prologue_gate_hunter_1794938325467.jpg';
+import endingNormalImg from './assets/images/ending_normal_collapse_1795083658799.jpg';
+import endingDarkImg from './assets/images/ending_dark_throne_1795083660377.jpg';
+import endingOrderImg from './assets/images/ending_order_platinum_1795083661030.jpg';
+import endingTrueImg from './assets/images/ending_true_worldtree_1795083661084.jpg';
 import { DungeonMapViewport, getParkedCompanionSpots } from './components/DungeonMapViewport';
 import {
   generateWorld,
@@ -72,6 +83,7 @@ import {
   canUnequipWeapon,
   canMemberEquipWeapon,
   leaveOrDismissPartyMember,
+  pruneDeadCompanions,
   recallDismissedCompanion,
   getAmputationSanityMultiplier,
   resolveCombatCoinFlipOutcome,
@@ -165,6 +177,8 @@ interface CoinTossState {
 
 interface InteractionChoice {
   label: string;
+  hint?: string;
+  muted?: boolean;
   onSelect: () => void;
 }
 
@@ -352,7 +366,7 @@ const PaperdollPreviewCanvas: React.FC<{
   );
 };
 
-// 160x160 3D Embossed Antique Gold Coin Canvas for Fate Coin Flip Modal
+// 160x160 3D Embossed Sterling Silver Fate Coin Canvas for Floating Inline Coin Flip
 const EngravedGoldCoinCanvas: React.FC<{
   side: 'HEADS' | 'TAILS' | null;
   flipping: boolean;
@@ -368,8 +382,9 @@ const EngravedGoldCoinCanvas: React.FC<{
 
     if (!flipping) {
       canvas.style.transform = '';
-      canvas.style.filter = 'drop-shadow(0 6px 14px rgba(251, 191, 36, 0.25))';
-      drawEngravedGoldCoin(ctx, side, size);
+      canvas.style.filter =
+        'drop-shadow(0 8px 18px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 14px rgba(226, 232, 240, 0.35))';
+      drawEngravedGoldCoin(ctx, side, size, true, 'silver');
       return;
     }
 
@@ -379,20 +394,20 @@ const EngravedGoldCoinCanvas: React.FC<{
 
     const animateFlip = (now: number) => {
       const elapsed = (now - startTime) / 1000;
-      const angle = elapsed * Math.PI * 6.5;
+      const angle = elapsed * Math.PI * 7.2;
       const cosVal = Math.cos(angle);
       const scaleX = Math.max(0.08, Math.abs(cosVal));
-      const hopY = -Math.abs(Math.sin(elapsed * Math.PI * 2.5)) * 14;
+      const hopY = -Math.abs(Math.sin(elapsed * Math.PI * 2.6)) * 18;
       const currentFace: 'HEADS' | 'TAILS' = cosVal >= 0 ? 'HEADS' : 'TAILS';
 
       if (currentFace !== lastShownFace) {
         lastShownFace = currentFace;
-        drawEngravedGoldCoin(ctx, currentFace, size);
+        drawEngravedGoldCoin(ctx, currentFace, size, true, 'silver');
       }
 
       canvas.style.transform = `translateY(${hopY.toFixed(2)}px) scaleX(${scaleX.toFixed(3)})`;
       canvas.style.filter =
-        'drop-shadow(0 12px 22px rgba(251, 191, 36, 0.58)) drop-shadow(0 0 12px rgba(245, 158, 11, 0.45))';
+        'drop-shadow(0 14px 24px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 18px rgba(226, 232, 240, 0.65))';
       rafId = requestAnimationFrame(animateFlip);
     };
 
@@ -598,14 +613,26 @@ export default function App() {
   const [selectedEquipSlot, setSelectedEquipSlot] = useState<EquipSlotKey>('weapon');
   const [previewItemId, setPreviewItemId] = useState<string>('broad_iron_sword');
   const [selectedLoreBookId, setSelectedLoreBookId] = useState<string>(CONFIG.BOOKS[0].id);
+  const [loreModalTab, setLoreModalTab] = useState<'books' | 'destiny'>('books');
 
-  // 3D Gold Coin Toss Modal & Shift Key 2-Coin State
+  // 3D Silver Coin Toss Inline Overlay & Shift Key 2-Coin / Combat Fast-Forward State
   const [coinToss, setCoinToss] = useState<CoinTossState | null>(null);
+  const [coinCursorSide, setCoinCursorSide] = useState<'HEADS' | 'TAILS'>('HEADS');
   const [shiftHeld, setShiftHeld] = useState<boolean>(false);
+  const shiftHeldRef = useRef<boolean>(false);
+  const isTabHiddenRef = useRef<boolean>(
+    typeof document !== 'undefined' ? document.hidden : false
+  );
+  const torchLowWarnedRef = useRef<boolean>(false);
 
-  // Smuggler Haggle input
-  const [smugglerItem, setSmugglerItem] = useState<string>('brown_vial');
-  const [smugglerOffer, setSmugglerOffer] = useState<number>(6);
+  // Smuggler Haggle state (per-item negotiated prices & refusal flags)
+  const [smugglerPrices, setSmugglerPrices] = useState<
+    Record<string, { price: number; haggled?: boolean; refused?: boolean }>
+  >({});
+  const smugglerPricesRef = useRef(smugglerPrices);
+  useEffect(() => {
+    smugglerPricesRef.current = smugglerPrices;
+  }, [smugglerPrices]);
 
   // Ending info
   const [endingInfo, setEndingInfo] = useState<{
@@ -613,6 +640,8 @@ export default function App() {
     title: string;
     subtitle: string;
     epilogue: string;
+    endingBannerLabel?: string;
+    isPersonal?: boolean;
   } | null>(null);
 
   const [narrativeLogs, setNarrativeLogs] = useState<string[]>([
@@ -653,6 +682,7 @@ export default function App() {
   const [logOverlayVisible, setLogOverlayVisible] = useState<boolean>(false);
   const [guideTab, setGuideTab] = useState<'lore' | 'move' | 'combat' | 'survival'>('lore');
   const [areaBannerText, setAreaBannerText] = useState<string>('Ngoại Vi Đại Giáo Đường Goethe');
+  const [areaBannerKey, setAreaBannerKey] = useState<number>(1);
 
   // Trail coordinates so up to 3 recruited party members follow behind the player on the map
   const [trailCoords, setTrailCoords] = useState<Array<{ x: number; y: number }>>([
@@ -671,7 +701,7 @@ export default function App() {
     });
   }, []);
 
-  // Track Shift key hold for 2-coin toss mode
+  // Track Shift key hold for 2-coin toss & combat fast-forward + Alt-Tab Auto-Pause
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -684,16 +714,39 @@ export default function App() {
       ) {
         return;
       }
-      if (e.key === 'Shift') setShiftHeld(true);
+      if (e.key === 'Shift') {
+        shiftHeldRef.current = true;
+        setShiftHeld(true);
+      }
     };
     const onUp = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') setShiftHeld(false);
+      if (e.key === 'Shift') {
+        shiftHeldRef.current = false;
+        setShiftHeld(false);
+      }
+    };
+    const onBlur = () => {
+      shiftHeldRef.current = false;
+      setShiftHeld(false);
+    };
+    const onVisibilityChange = () => {
+      const hidden = document.hidden;
+      isTabHiddenRef.current = hidden;
+      sfx.setTabHidden(hidden);
+      if (hidden) {
+        shiftHeldRef.current = false;
+        setShiftHeld(false);
+      }
     };
     window.addEventListener('keydown', onDown);
     window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
 
@@ -772,6 +825,7 @@ export default function App() {
         return;
       }
 
+      setCoinCursorSide('HEADS');
       setCoinToss({
         title,
         subtitle,
@@ -916,6 +970,9 @@ export default function App() {
       setRiftElixirCollected(false);
       setPreviewItemId(newPlayer.equippedWeapon);
       setAreaBannerText(startRoom.name);
+      setAreaBannerKey((k) => k + 1);
+      torchLowWarnedRef.current = false;
+      setSmugglerPrices({});
       setTrailCoords([
         { x: Math.max(1, startRoom.spawnX - 1), y: startRoom.spawnY },
         { x: Math.max(1, startRoom.spawnX - 2), y: startRoom.spawnY },
@@ -976,6 +1033,9 @@ export default function App() {
       setBackstoryChosen(true);
       setPlayerPos({ x: startRoom.spawnX, y: startRoom.spawnY });
       setAreaBannerText(startRoom.name);
+      setAreaBannerKey((k) => k + 1);
+      torchLowWarnedRef.current = false;
+      setSmugglerPrices({});
       skipNextAffinityToastRef.current = true;
       setAffinityToast(null);
       setScreen('playing');
@@ -1023,6 +1083,9 @@ export default function App() {
     setPlayerPos(spawnPos);
     setSeedInput(restoredSeed);
     setAreaBannerText(restoredRoom?.name || 'Ngoại Vi Đại Giáo Đường Goethe');
+    setAreaBannerKey((k) => k + 1);
+    torchLowWarnedRef.current = false;
+    setSmugglerPrices({});
     setTrailCoords([
       { x: Math.max(1, spawnPos.x - 1), y: spawnPos.y },
       { x: Math.max(1, spawnPos.x - 2), y: spawnPos.y },
@@ -1176,14 +1239,14 @@ export default function App() {
     }
   }, [screen, activeCombatEnemy, player.mind, audioSettings.bgmVolume, audioSettings.muted]);
 
-  // Real-Time 30s Sanity Decay outside Holy Mother safe zones during active exploration
+  // Real-Time 1s Exploration Loop: Dynamic Torchlight Burn + 30s Sanity Decay (+50% faster in pitch darkness)
   useEffect(() => {
     if (screen !== 'playing') {
       sanitySecondsRef.current = 0;
       return;
     }
     const timer = window.setInterval(() => {
-      if (activeModal || interactionMenu || coinToss || logOverlayVisible) return;
+      if (isTabHiddenRef.current || activeModal || interactionMenu || coinToss || logOverlayVisible) return;
       const room = worldRef.current.rooms[worldRef.current.currentRoomId];
       const pos = playerPosRef.current;
       if (!room) return;
@@ -1210,13 +1273,40 @@ export default function App() {
         }
       }
 
+      // Dynamic Torchlight depletion inside dark dungeon interiors (paused in Exterior & Safe Zones)
+      let torchDepletedNow = false;
+      if (!room.isExterior && !inSafeZone) {
+        const curTorch = playerRef.current.torchTimer ?? 120;
+        const maxTorch = Math.max(1, playerRef.current.torchMaxTimer ?? 120);
+        if (curTorch > 0) {
+          const nextTorch = Math.max(0, curTorch - 1);
+          const prevRatio = curTorch / maxTorch;
+          const nextRatio = nextTorch / maxTorch;
+          if (prevRatio >= 0.3 && nextRatio < 0.3 && !torchLowWarnedRef.current) {
+            torchLowWarnedRef.current = true;
+            addLog('Bóng tối xung quanh dường như đang bao trùm lấy ngươi...');
+          }
+          if (nextTorch === 0) {
+            torchDepletedNow = true;
+            addLog('🌑 Ngọn lửa đã tắt hẳn! Bóng tối nuốt chửng tầm nhìn — Lý Trí tụt nhanh hơn +50%!');
+          }
+          setPlayer((prev) => ({
+            ...prev,
+            torchTimer: Math.max(0, (prev.torchTimer ?? 120) - 1),
+          }));
+        } else {
+          torchDepletedNow = true;
+        }
+      }
+
       if (inSafeZone) {
         sanitySecondsRef.current = 0;
         return;
       }
 
       const sanityMult = getAmputationSanityMultiplier(playerRef.current);
-      sanitySecondsRef.current += sanityMult;
+      const darknessMult = !room.isExterior && (torchDepletedNow || (playerRef.current.torchTimer ?? 120) <= 0) ? 1.5 : 1;
+      sanitySecondsRef.current += sanityMult * darknessMult;
       if (sanitySecondsRef.current >= 30) {
         sanitySecondsRef.current = 0;
         setPlayer((prev) => {
@@ -1232,7 +1322,9 @@ export default function App() {
           };
         });
         addLog(
-          sanityMult > 1
+          darknessMult > 1
+            ? 'Bóng tối đặc quánh không ánh đuốc đang siết chặt tâm trí — Lý Trí sụt giảm nhanh hơn (+50%)!'
+            : sanityMult > 1
             ? 'Cơ thể tàn phế mất chi khiến nỗi tuyệt vọng trỗi dậy — Lý Trí bị bóng tối bào mòn nhanh hơn (+50%)!'
             : 'Bóng tối đặc quánh và sự tĩnh lặng chết chóc đang bào mòn Lý Trí...'
         );
@@ -1264,8 +1356,16 @@ export default function App() {
           const defeatedInst = curRoom.enemies.find((e) => e.uid === opts.defeatedEnemyUid);
           const remainingEnemies = curRoom.enemies.filter((e) => e.uid !== opts.defeatedEnemyUid);
           const existingCorpses = curRoom.corpses || [];
+          const isVaelisDefeat = defeatedInst?.templateId === 'demon_lord_vaelis';
+          let nextGrid = curRoom.grid;
+          if (isVaelisDefeat && defeatedInst) {
+            nextGrid = curRoom.grid.map((row) => [...row]);
+            if (nextGrid[defeatedInst.y]?.[defeatedInst.x] !== undefined) {
+              nextGrid[defeatedInst.y][defeatedInst.x] = TILE.BLOOD_THRONE;
+            }
+          }
           const nextCorpses =
-            defeatedInst && !existingCorpses.some((c) => c.uid === defeatedInst.uid)
+            defeatedInst && !isVaelisDefeat && !existingCorpses.some((c) => c.uid === defeatedInst.uid)
               ? [...existingCorpses, { ...defeatedInst, defeated: true }]
               : existingCorpses;
           return {
@@ -1274,6 +1374,7 @@ export default function App() {
               ...prev.rooms,
               [roomId]: {
                 ...curRoom,
+                grid: nextGrid,
                 enemies: remainingEnemies,
                 corpses: nextCorpses,
               },
@@ -1344,6 +1445,7 @@ export default function App() {
         { x: Math.max(1, nextX - 3), y: Math.max(1, nextY - 1) },
       ]);
       setAreaBannerText(nextRoom.name);
+      setAreaBannerKey((k) => k + 1);
       setInteractionMenu(null);
       setLogOverlayVisible(false);
       addLog(`📍 Bước vào ${nextRoom.name}. ${nextRoom.sensoryLine}`);
@@ -2101,11 +2203,13 @@ export default function App() {
           const remainingCoins = Math.max(0, 2 - coinsBought);
           const speech =
             customSpeech ||
-            `“Hề hề... Túi của ngươi hiện có ${player.silverCoins} Đồng Bạc. Kể từ khi sương mù khóa chặt Thung Lũng, đám giáo sĩ đều bỏ lại bạc trắng cả. Chọn món hàng ngươi cần đi!”`;
+            `“Hề hề... Túi của ngươi hiện có ${player.silverCoins} Đồng Bạc. Kể từ khi sương mù khóa chặt Thung Lũng, đám giáo sĩ đều bỏ lại bạc trắng cả. Những món hàng quý có thể thương lượng giá cả — miễn đừng chọc giận ta!”`;
           const wares: Array<{ id: string; name: string; price: number }> = [
             { id: 'ritual_chalk', name: 'Phấn Khắc Ấn', price: 4 },
             { id: 'brown_vial', name: 'Lọ Nâu', price: 6 },
             { id: 'red_vial', name: 'Lọ Đỏ', price: 6 },
+            { id: 'white_herb', name: 'Thảo Dược Trắng (Giải Độc)', price: 10 },
+            { id: 'oil_lamp', name: 'Đèn Dầu Cổ (240s Ánh Sáng)', price: 14 },
             { id: 'ancient_ash', name: 'Tro Tàn Cổ', price: 7 },
             { id: 'poison_powder', name: 'Bột Độc', price: 8 },
             { id: 'poison_herb', name: 'Thảo Dược Độc', price: 7 },
@@ -2122,69 +2226,166 @@ export default function App() {
                 ]
               : []),
           ];
-        const choices: InteractionChoice[] = [
-          {
-            label: '"Ngươi lấy những lọ thuốc và vũ khí này từ đâu?"',
-            onSelect: () =>
+
+          const completePurchase = (w: { id: string; name: string }, finalPrice: number) => {
+            if (player.silverCoins < finalPrice) {
               openNpcRpgDialogue(
                 'npc_smuggler',
-                '“Hề hề, từ những đội kỵ sĩ viễn chinh đi trước ngươi chứ đâu! Kẻ nào không biết dùng Lọ Nâu phá tường nứt hay dùng Lọ Đỏ làm mù mắt quái đều bỏ mạng cả!”'
-              ),
-          },
-          ...wares.map((w) => ({
-            label: `💰 Mua [${w.name}] (${w.price} Đồng Bạc — Đang có: ${player.silverCoins})`,
-            onSelect: () => {
-              if (player.silverCoins < w.price) {
+                `“Ngươi chỉ có ${player.silverCoins} Đồng Bạc, không đủ ${finalPrice} Đồng Bạc để mua [${w.name}] đâu!”`
+              );
+              return;
+            }
+            sfx.playSfx('ui_confirm');
+            setPlayer((prev) => {
+              const nextSilver = Math.max(0, prev.silverCoins - finalPrice);
+              return {
+                ...prev,
+                silverCoins: nextSilver,
+                npcFlags:
+                  w.id === 'lucky_coin'
+                    ? {
+                        ...prev.npcFlags,
+                        smugglerCoinsBought: (prev.npcFlags.smugglerCoinsBought || 0) + 1,
+                      }
+                    : prev.npcFlags,
+                unlockedWeapons:
+                  w.id === 'butcher_cleaver' && !prev.unlockedWeapons.includes('butcher_cleaver')
+                    ? [...prev.unlockedWeapons, 'butcher_cleaver']
+                    : prev.unlockedWeapons,
+                inventory:
+                  w.id === 'butcher_cleaver'
+                    ? {
+                        ...prev.inventory,
+                        silver_coin: nextSilver,
+                      }
+                    : {
+                        ...prev.inventory,
+                        silver_coin: nextSilver,
+                        [w.id]: (prev.inventory[w.id] || 0) + 1,
+                      },
+              };
+            });
+            setInteractionMenu(null);
+            addLog(`💰 Đã mua [${w.name}] từ Kẻ Buôn Lậu với giá ${finalPrice} Đồng Bạc!`);
+            setLogOverlayVisible(true);
+          };
+
+          const openSmugglerHaggleMenu = (
+            w: { id: string; name: string; price: number },
+            introOverride?: string
+          ) => {
+            const stateEntry = smugglerPricesRef.current[w.id];
+            const curPrice = stateEntry?.price ?? w.price;
+            const alreadyHaggled = Boolean(stateEntry?.haggled);
+            const isRefused = Boolean(stateEntry?.refused);
+
+            if (isRefused) {
+              openNpcRpgDialogue(
+                'npc_smuggler',
+                `“Ta đã cất [${w.name}] vào hòm khóa rồi! Lần sau bớt làm giá kiểu đó đi!”`
+              );
+              return;
+            }
+
+            const runHaggle = (tactic: SmugglerHaggleTactic) => {
+              const roll = Math.random();
+              const outcome = evaluateSmugglerHaggle(w.id, w.name, curPrice, tactic, roll);
+              const nextMap = {
+                ...smugglerPricesRef.current,
+                [w.id]: {
+                  price: outcome.newPrice,
+                  haggled: true,
+                  refused: outcome.refusedItem,
+                },
+              };
+              smugglerPricesRef.current = nextMap;
+              setSmugglerPrices(nextMap);
+              if (outcome.accepted) {
+                sfx.playSfx('ui_confirm');
+              } else if (outcome.refusedItem || outcome.newPrice > curPrice) {
+                sfx.playSfx('hurt');
+              }
+              if (outcome.refusedItem) {
+                openNpcRpgDialogue('npc_smuggler', outcome.dialogue);
+              } else {
+                openSmugglerHaggleMenu(w, outcome.dialogue);
+              }
+            };
+
+            const haggleChoices: InteractionChoice[] = [
+              {
+                label: `💰 Chốt mua [${w.name}] (${curPrice} Đồng Bạc — Đang có: ${player.silverCoins})`,
+                onSelect: () => completePurchase(w, curPrice),
+              },
+              ...(!alreadyHaggled
+                ? [
+                    {
+                      label: `🗣️ Mặc cả nhẹ -25% (~${Math.max(2, Math.round(curPrice * 0.75))} Đồng Bạc — An toàn hơn)`,
+                      onSelect: () => runHaggle('discount_25'),
+                    },
+                    {
+                      label: `⚡ Ép giá mạnh -40% (~${Math.max(2, Math.round(curPrice * 0.6))} Bạc — Rủi ro bị từ chối/tăng giá)`,
+                      onSelect: () => runHaggle('discount_40'),
+                    },
+                    {
+                      label: '🔍 Chất vấn nguồn gốc món hàng để dò giá',
+                      onSelect: () => runHaggle('question_origin'),
+                    },
+                  ]
+                : []),
+              {
+                label: '← Quay lại xem toàn bộ sạp hàng',
+                onSelect: () => openNpcRpgDialogue('npc_smuggler'),
+              },
+            ];
+
+            setInteractionMenu({
+              title: `THƯƠNG LƯỢNG: ${w.name.toUpperCase()}`,
+              description:
+                introOverride ||
+                `“Món [${w.name}] này giá niêm yết là ${curPrice} Đồng Bạc (Ngươi đang có ${player.silverCoins} Bạc). Ngươi định trả thẳng hay muốn mặc cả với ta?”`,
+              selectedIndex: 0,
+              choices: haggleChoices,
+            });
+          };
+
+          const choices: InteractionChoice[] = [
+            {
+              label: '"Ngươi lấy những lọ thuốc và vũ khí này từ đâu?"',
+              onSelect: () =>
                 openNpcRpgDialogue(
                   'npc_smuggler',
-                  `“Ngươi chỉ có ${player.silverCoins} Đồng Bạc, không đủ ${w.price} Đồng Bạc để mua [${w.name}] đâu!”`
-                );
-                return;
-              }
-              setPlayer((prev) => {
-                const nextSilver = Math.max(0, prev.silverCoins - w.price);
-                return {
-                  ...prev,
-                  silverCoins: nextSilver,
-                  npcFlags:
-                    w.id === 'lucky_coin'
-                      ? {
-                          ...prev.npcFlags,
-                          smugglerCoinsBought: (prev.npcFlags.smugglerCoinsBought || 0) + 1,
-                        }
-                      : prev.npcFlags,
-                  unlockedWeapons:
-                    w.id === 'butcher_cleaver' && !prev.unlockedWeapons.includes('butcher_cleaver')
-                      ? [...prev.unlockedWeapons, 'butcher_cleaver']
-                      : prev.unlockedWeapons,
-                  inventory:
-                    w.id === 'butcher_cleaver'
-                      ? {
-                          ...prev.inventory,
-                          silver_coin: nextSilver,
-                        }
-                      : {
-                          ...prev.inventory,
-                          silver_coin: nextSilver,
-                          [w.id]: (prev.inventory[w.id] || 0) + 1,
-                        },
-                };
-              });
-              setInteractionMenu(null);
-              addLog(`💰 Đã mua [${w.name}] từ Kẻ Buôn Lậu với giá ${w.price} Đồng Bạc!`);
-              setLogOverlayVisible(true);
+                  '“Hề hề, từ những đội kỵ sĩ viễn chinh đi trước ngươi chứ đâu! Kẻ nào không biết dùng Lọ Nâu phá tường nứt hay dùng Lọ Đỏ làm mù mắt quái đều bỏ mạng cả!”'
+                ),
             },
-          })),
-          { label: 'Rời đi', onSelect: closePrompt },
-        ];
-        setInteractionMenu({
-          title: 'KẺ BUÔN LẬU ĐEO MẶT NẠ',
-          description: speech,
-          selectedIndex: 0,
-          choices,
-        });
-        return;
-      }
+            ...wares.map((w) => {
+              const entry = smugglerPricesRef.current[w.id];
+              const effectivePrice = entry?.price ?? w.price;
+              const isValuable = SMUGGLER_VALUABLE_IDS.has(w.id);
+              const refusedTag = entry?.refused ? ' [ĐÃ CẤT HÀNG]' : '';
+              const haggleTag =
+                isValuable && !entry?.haggled && !entry?.refused ? ' • Có thể Mặc Cả' : '';
+              return {
+                label: `${isValuable ? '⚖️' : '💰'} [${w.name}] (${effectivePrice} Bạc${haggleTag}${refusedTag})`,
+                onSelect: () => {
+                  if (isValuable) {
+                    openSmugglerHaggleMenu(w);
+                  } else {
+                    completePurchase(w, effectivePrice);
+                  }
+                },
+              };
+            }),
+            { label: 'Rời đi', onSelect: closePrompt },
+          ];
+          setInteractionMenu({
+            title: 'KẺ BUÔN LẬU ĐEO MẶT NẠ',
+            description: speech,
+            selectedIndex: 0,
+            choices,
+          });
+          return;
+        }
 
       if (npcId === 'npc_prisoner') {
         const speech =
@@ -2237,6 +2438,13 @@ export default function App() {
           customSpeech ||
           '“Trước mặt bạn là khe nứt không gian tím thẫm đang gầm rú giữa những ngôi sao chết. Bên trong chiếc lồng sắt mở hé là Thánh Tử Thứ 13 đang run rẩy — và trên bệ đá rêu phong đặt độc nhất một bình Tiên Dược Nguyên Sơ.”';
         const choices: InteractionChoice[] = [];
+        const child13AliveAtRift = player.party.some((a) => a.id === 'child_13' && a.hp > 0);
+        const hasVoidCore = (player.inventory.void_core || 0) > 0;
+        const hasElixir = (player.inventory.elixir_of_ancients || 0) > 0;
+        const hasReconScroll = (player.inventory.reconstruction_scroll || 0) > 0;
+        const hasSeedLore = player.readBookIds.includes('book_9') || player.readBookIds.length >= 4;
+        const demonicAff = player.affinities?.demonicPact || 0;
+        const holyBanned = isHolyMotherBanned(player);
 
         if (!riftElixirCollected) {
           choices.push({
@@ -2257,78 +2465,127 @@ export default function App() {
           });
         }
 
-        const canTrueEnding =
-          (player.inventory.void_core || 0) > 0 &&
-          (player.inventory.elixir_of_ancients || 0) > 0 &&
-          (player.readBookIds.includes('book_9') || player.readBookIds.length >= 4);
-        choices.push({
-          label: '🌳 Tưới [Tiên Dược Nguyên Sơ] lên Thánh Tử 13 & cắm [Lõi Khóa Hư Vô]',
-          onSelect: () => {
-            if (!canTrueEnding) {
-              openNpcRpgDialogue(
-                'void_rift',
-                '“Nghi thức chưa đủ vật dẫn: Cần có Lõi Khóa Hư Vô, bình Tiên Dược Nguyên Sơ còn nguyên vẹn và tri thức từ những Cổ Thư trong Thư Viện.”'
-              );
-              return;
-            }
-            const res = evaluateCanonEnding({
-              classId: player.classId,
-              corruption: player.corruption,
-              holyMotherBanned: isHolyMotherBanned(player),
-              readBookIds: player.readBookIds,
-              inventory: player.inventory,
-              learnedSkillIds: Object.keys(player.skillLevels),
-              vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
-              vaelisDefeated: Boolean(player.questFlags?.vaelisDefeated),
-              curedPetrification: Boolean(player.questFlags?.curedPetrification),
-              child13Rescued: Boolean(player.questFlags?.child13Rescued),
-              child13InParty: player.party.some((a) => a.id === 'child_13' && a.hp > 0),
-              endingAction: 'POUR_ELIXIR_CHILD13_RIFT',
-            });
-            setInteractionMenu(null);
-            setActiveModal(null);
-            setEndingInfo(res);
-            setScreen('ending');
-          },
-        });
+        // True Ending: Thánh Thụ Khai Sáng (4 requirements: Lõi Khóa Hư Vô, Tiên Dược Nguyên Sơ, Thánh Tử 13, Cuộn Da Dê IX / Cổ Thư)
+        const trueMissing: string[] = [];
+        if (!hasVoidCore) trueMissing.push('Lõi Khóa Hư Vô');
+        if (!hasElixir) trueMissing.push('Tiên Dược Nguyên Sơ');
+        if (!child13AliveAtRift) trueMissing.push('Thánh Tử 13 trong Tổ Đội');
+        if (!hasSeedLore) trueMissing.push('Cuộn Da Dê IX (hoặc 4 Cổ Thư)');
+        const canTrueEnding = trueMissing.length === 0;
+        const hasAnyTrueProgress = hasVoidCore || hasElixir || child13AliveAtRift || hasSeedLore;
 
-        const canOrderEnding =
-          !isHolyMotherBanned(player) &&
-          player.corruption === 0 &&
-          (player.inventory.void_core || 0) > 0 &&
-          (player.inventory.reconstruction_scroll || 0) > 0;
-        choices.push({
-          label: '✝️ Thực hiện Nghi Thức Tái Thiết với Thánh Tử 13',
-          onSelect: () => {
-            if (!canOrderEnding) {
-              openNpcRpgDialogue(
-                'void_rift',
-                '“Nghi thức Trật Tự bị đẩy lùi: Cần tâm hồn thuần khiết chưa bị Thánh Mẫu khước từ, Lõi Khóa Hư Vô và Mảnh Thần Chú Tái Thiết.”'
-              );
-              return;
-            }
-            const res = evaluateCanonEnding({
-              classId: player.classId,
-              corruption: player.corruption,
-              holyMotherBanned: isHolyMotherBanned(player),
-              readBookIds: player.readBookIds,
-              inventory: player.inventory,
-              learnedSkillIds: Object.keys(player.skillLevels),
-              vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
-              vaelisDefeated: Boolean(player.questFlags?.vaelisDefeated),
-              curedPetrification: Boolean(player.questFlags?.curedPetrification),
-              child13Rescued: Boolean(player.questFlags?.child13Rescued),
-              child13InParty: player.party.some((a) => a.id === 'child_13' && a.hp > 0),
-              endingAction: 'SACRIFICE_CHILD13_RIFT',
-            });
-            setInteractionMenu(null);
-            setActiveModal(null);
-            setEndingInfo(res);
-            setScreen('ending');
-          },
-        });
+        if (canTrueEnding || hasAnyTrueProgress) {
+          choices.push({
+            label: '🌳 [Kết Cục IV: Thánh Thụ Khai Sáng] Tưới Tiên Dược lên Thánh Tử 13 & cắm Lõi Khóa',
+            muted: !canTrueEnding,
+            hint: !canTrueEnding ? `Chưa đủ vật dẫn — Thiếu: ${trueMissing.join(' • ')}` : undefined,
+            onSelect: () => {
+              if (!canTrueEnding) {
+                openNpcRpgDialogue(
+                  'void_rift',
+                  `“Nghi thức Thánh Thụ chưa thể khai mở. Bạn vẫn còn thiếu: ${trueMissing.join(', ')}.”`
+                );
+                return;
+              }
+              const res = evaluateCanonEnding({
+                classId: player.classId,
+                corruption: player.corruption,
+                demonicPactAffinity: demonicAff,
+                holyMotherBanned: holyBanned,
+                readBookIds: player.readBookIds,
+                inventory: player.inventory,
+                learnedSkillIds: Object.keys(player.skillLevels),
+                vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
+                vaelisDefeated: Boolean(player.questFlags?.vaelisDefeated),
+                curedPetrification: Boolean(player.questFlags?.curedPetrification),
+                child13Rescued: Boolean(player.questFlags?.child13Rescued),
+                child13InParty: child13AliveAtRift,
+                endingAction: 'POUR_ELIXIR_CHILD13_RIFT',
+              });
+              setInteractionMenu(null);
+              setActiveModal(null);
+              setEndingInfo(res);
+              setScreen('ending');
+            },
+          });
+        }
 
-        const child13AliveAtRift = player.party.some((a) => a.id === 'child_13' && a.hp > 0);
+        // Order Ending: Kỷ Nguyên Bạch Kim
+        const orderMissing: string[] = [];
+        if (holyBanned || player.corruption > 0) orderMissing.push('Tâm hồn Thuần Khiết (Tha Hóa = 0, chưa phản Thánh Mẫu)');
+        if (!hasVoidCore) orderMissing.push('Lõi Khóa Hư Vô');
+        if (!hasReconScroll) {
+          const fragCount = player.inventory.reconstruction_fragment || 0;
+          orderMissing.push(`Thần Chú Tái Thiết (hiện có ${fragCount}/3 mảnh)`);
+        }
+        const canOrderEnding = orderMissing.length === 0;
+        const hasAnyOrderProgress =
+          hasVoidCore || hasReconScroll || (player.inventory.reconstruction_fragment || 0) > 0;
+
+        if (canOrderEnding || hasAnyOrderProgress) {
+          choices.push({
+            label: '✝️ [Kết Cục III: Kỷ Nguyên Bạch Kim] Thực hiện Nghi Thức Tái Thiết với Thánh Tử 13',
+            muted: !canOrderEnding,
+            hint: !canOrderEnding ? `Chưa đủ điều kiện — Thiếu: ${orderMissing.join(' • ')}` : undefined,
+            onSelect: () => {
+              if (!canOrderEnding) {
+                openNpcRpgDialogue(
+                  'void_rift',
+                  `“Nghi thức Trật Tự bị đẩy lùi. Bạn vẫn còn thiếu: ${orderMissing.join(', ')}.”`
+                );
+                return;
+              }
+              const res = evaluateCanonEnding({
+                classId: player.classId,
+                corruption: player.corruption,
+                demonicPactAffinity: demonicAff,
+                holyMotherBanned: holyBanned,
+                readBookIds: player.readBookIds,
+                inventory: player.inventory,
+                learnedSkillIds: Object.keys(player.skillLevels),
+                vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
+                vaelisDefeated: Boolean(player.questFlags?.vaelisDefeated),
+                curedPetrification: Boolean(player.questFlags?.curedPetrification),
+                child13Rescued: Boolean(player.questFlags?.child13Rescued),
+                child13InParty: child13AliveAtRift,
+                endingAction: 'SACRIFICE_CHILD13_RIFT',
+              });
+              setInteractionMenu(null);
+              setActiveModal(null);
+              setEndingInfo(res);
+              setScreen('ending');
+            },
+          });
+        }
+
+        // Corruption / Dark Ending available if Vaelis defeated & COR >= 70 or demonicPact >= 2
+        if (Boolean(player.questFlags?.vaelisDefeated) && (player.corruption >= 70 || demonicAff >= 2)) {
+          choices.push({
+            label: '👑 [Kết Cục II: Ngai Vàng Máu] Hiến thân làm nắp hầm mới trấn áp Vết Rách',
+            onSelect: () => {
+              const res = evaluateCanonEnding({
+                classId: player.classId,
+                corruption: player.corruption,
+                demonicPactAffinity: demonicAff,
+                holyMotherBanned: holyBanned,
+                readBookIds: player.readBookIds,
+                inventory: player.inventory,
+                learnedSkillIds: Object.keys(player.skillLevels),
+                vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
+                vaelisDefeated: true,
+                curedPetrification: Boolean(player.questFlags?.curedPetrification),
+                child13Rescued: Boolean(player.questFlags?.child13Rescued),
+                child13InParty: child13AliveAtRift,
+                endingAction: 'SIT_THRONE',
+              });
+              setInteractionMenu(null);
+              setActiveModal(null);
+              setEndingInfo(res);
+              setScreen('ending');
+            },
+          });
+        }
+
         const knightPersonalAtRift =
           player.classId === 'fallen_knight' &&
           player.corruption < 30 &&
@@ -2349,15 +2606,16 @@ export default function App() {
         if (knightPersonalAtRift || nunPersonalAtRift || hunterPersonalAtRift) {
           choices.push({
             label: knightPersonalAtRift
-              ? '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Ở lại Thung Lũng dựng Bia Mộ Kỵ Đoàn (S-Ending)'
+              ? '🏆 [Kết Cục Cá Nhân] Ở lại Thung Lũng dựng Bia Mộ Kỵ Đoàn (S-Ending)'
               : nunPersonalAtRift
-              ? '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Đưa Thánh Tử 13 & Bằng Chứng Trận Pháp Ra Cổng Sắt (S-Ending)'
-              : '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Phá Kết Giới & Rời Thung Lũng (S-Ending)',
+              ? '🏆 [Kết Cục Cá Nhân] Đưa Thánh Tử 13 & Bằng Chứng Trận Pháp Ra Cổng Sắt (S-Ending)'
+              : '🏆 [Kết Cục Cá Nhân] Phá Kết Giới & Rời Thung Lũng (S-Ending)',
             onSelect: () => {
               const res = evaluateCanonEnding({
                 classId: player.classId,
                 corruption: player.corruption,
-                holyMotherBanned: isHolyMotherBanned(player),
+                demonicPactAffinity: demonicAff,
+                holyMotherBanned: holyBanned,
                 readBookIds: player.readBookIds,
                 inventory: player.inventory,
                 learnedSkillIds: Object.keys(player.skillLevels),
@@ -2415,7 +2673,8 @@ export default function App() {
                         const res = evaluateCanonEnding({
                           classId: player.classId,
                           corruption: player.corruption,
-                          holyMotherBanned: isHolyMotherBanned(player),
+                          demonicPactAffinity: demonicAff,
+                          holyMotherBanned: holyBanned,
                           readBookIds: player.readBookIds,
                           inventory: player.inventory,
                           learnedSkillIds: Object.keys(player.skillLevels),
@@ -2449,6 +2708,33 @@ export default function App() {
           });
         }
 
+        if (Boolean(player.questFlags?.vaelisDefeated)) {
+          choices.push({
+            label: '🚪 [Kết Cục I: Thoát Thân] Rời khỏi Thung Lũng Xương Tàn',
+            onSelect: () => {
+              const res = evaluateCanonEnding({
+                classId: player.classId,
+                corruption: player.corruption,
+                demonicPactAffinity: demonicAff,
+                holyMotherBanned: holyBanned,
+                readBookIds: player.readBookIds,
+                inventory: player.inventory,
+                learnedSkillIds: Object.keys(player.skillLevels),
+                vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
+                vaelisDefeated: true,
+                curedPetrification: Boolean(player.questFlags?.curedPetrification),
+                child13Rescued: Boolean(player.questFlags?.child13Rescued),
+                child13InParty: child13AliveAtRift,
+                endingAction: 'LEAVE_AFTER_VAELIS',
+              });
+              setInteractionMenu(null);
+              setActiveModal(null);
+              setEndingInfo(res);
+              setScreen('ending');
+            },
+          });
+        }
+
         choices.push({ label: 'Rời đi', onSelect: closePrompt });
         setInteractionMenu({
           title: 'VẾT RÁCH HƯ VÔ & THÁNH TỬ 13',
@@ -2462,57 +2748,45 @@ export default function App() {
       if (npcId === 'vaelis_climax') {
         const speech =
           customSpeech ||
-          '“Hiệp Sĩ Trưởng Vaelis đã ngã gục trước bậc thềm xương. Trong tay bạn là [Lõi Khóa Hư Vô] — bạn sẽ lựa chọn con đường nào?”';
+          '“Ngai Vàng Máu bỏ trống đang tỏa ra hơi lạnh chết chóc. Trong tay bạn là [Lõi Khóa Hư Vô] — bạn sẽ bước lên ngai vàng, rời khỏi thung lũng hay tiếp tục tiến xuống tầng sâu?”';
+        const demonicAff = player.affinities?.demonicPact || 0;
+        const canSitThrone = player.corruption >= 70 || demonicAff >= 2;
+        const child13AliveHere = player.party.some((a) => a.id === 'child_13' && a.hp > 0);
+        const knightPersonalReady =
+          player.classId === 'fallen_knight' &&
+          player.corruption < 30 &&
+          Boolean(player.questFlags?.vaelisTalked) &&
+          player.readBookIds.length >= 3;
+        const nunPersonalReady =
+          player.classId === 'forsaken_nun' &&
+          player.corruption < 15 &&
+          Boolean(player.questFlags?.child13Rescued) &&
+          child13AliveHere &&
+          player.readBookIds.length >= 3;
+        const hunterPersonalReady =
+          player.classId === 'night_hunter' &&
+          Boolean(player.questFlags?.curedPetrification);
+        const hasPersonalReady = knightPersonalReady || nunPersonalReady || hunterPersonalReady;
+
         const choices: InteractionChoice[] = [
           {
-            label: '👑 Ngồi lên Ngai Vàng Máu',
+            label: '👑 Bước Lên Ngai Vàng Máu',
+            muted: !canSitThrone,
+            hint: !canSitThrone
+              ? `Yêu cầu Tha Hóa ≥ 70 (hiện ${player.corruption}) hoặc Tín Ngưỡng Huyết Quỷ ≥ 2 (hiện ${demonicAff})`
+              : 'Kế thừa ngôi vị Bạo Chúa — Kích hoạt Kết Cục II',
             onSelect: () => {
-              if (player.corruption < 100) {
+              if (!canSitThrone) {
                 openNpcRpgDialogue(
                   'vaelis_climax',
-                  '“Ngai Vàng Máu đẩy lùi bạn! Chỉ linh hồn đã chìm ngập hoàn toàn trong Tha Hóa mới có thể kế thừa ngôi vị này.”'
+                  `“Ngai Vàng Máu đẩy lùi bạn! Cần Tha Hóa ≥ 70 (hiện ${player.corruption}) hoặc Tín Ngưỡng Huyết Quỷ ≥ 2 (hiện ${demonicAff}) mới có thể kế thừa ngôi vị này.”`
                 );
                 return;
               }
               const res = evaluateCanonEnding({
                 classId: player.classId,
                 corruption: player.corruption,
-                readBookIds: player.readBookIds,
-                inventory: player.inventory,
-                learnedSkillIds: Object.keys(player.skillLevels),
-                vaelisTalked: Boolean(player.questFlags?.vaelisTalked),
-                vaelisDefeated: true,
-                curedPetrification: Boolean(player.questFlags?.curedPetrification),
-                child13Rescued: Boolean(player.questFlags?.child13Rescued),
-                child13InParty: player.party.some((a) => a.id === 'child_13' && a.hp > 0),
-                endingAction: 'SIT_THRONE',
-              });
-              setInteractionMenu(null);
-              setActiveModal(null);
-              setEndingInfo(res);
-              setScreen('ending');
-            },
-          },
-        ];
-
-        if (player.classId === 'fallen_knight') {
-          choices.push({
-            label: '🏆 Hoàn Thành Mục Tiêu Cá Nhân: Ở lại Thung Lũng dựng Bia Mộ Kỵ Đoàn (S-Ending)',
-            onSelect: () => {
-              if (
-                player.corruption >= 30 ||
-                !player.questFlags?.vaelisTalked ||
-                player.readBookIds.length < 3
-              ) {
-                openNpcRpgDialogue(
-                  'vaelis_climax',
-                  '“Lời thề Kỵ Đoàn chưa trọn vẹn: Ngươi cần thấu hiểu bi kịch của Vaelis trước khi vung nhát kiếm cuối, giữ lòng ít vấy bẩn và đọc đủ Nhật Ký / Cổ Thư.”'
-                );
-                return;
-              }
-              const res = evaluateCanonEnding({
-                classId: player.classId,
-                corruption: player.corruption,
+                demonicPactAffinity: demonicAff,
                 holyMotherBanned: isHolyMotherBanned(player),
                 readBookIds: player.readBookIds,
                 inventory: player.inventory,
@@ -2521,35 +2795,30 @@ export default function App() {
                 vaelisDefeated: true,
                 curedPetrification: Boolean(player.questFlags?.curedPetrification),
                 child13Rescued: Boolean(player.questFlags?.child13Rescued),
-                child13InParty: player.party.some((a) => a.id === 'child_13' && a.hp > 0),
-                endingAction: 'STAY_BUILD_GRAVES',
+                child13InParty: child13AliveHere,
+                endingAction: 'SIT_THRONE',
               });
               setInteractionMenu(null);
               setActiveModal(null);
               setEndingInfo(res);
               setScreen('ending');
             },
-          });
-        }
-
-        choices.push(
-          {
-            label: '🌌 Tiếp Tục Xuống Vết Rách Định Đoạt Thế Giới (Giữ [Lõi Khóa Hư Vô])',
-            onSelect: () => {
-              setInteractionMenu(null);
-              setActiveModal(null);
-              addLog(
-                '🌀 Bạn nắm chặt [Lõi Khóa Hư Vô] và tiếp tục tiến về Vết Rách Tầng 3!'
-              );
-              setLogOverlayVisible(true);
-            },
           },
           {
-            label: '🚪 Bỏ lại Vết Rách & rời khỏi Lâu Đài ngay',
+            label: hasPersonalReady
+              ? '🏆 Rời Khỏi Thung Lũng (Hoàn Thành Kết Cục Cá Nhân S-Ending)'
+              : '🚪 Rời Khỏi Thung Lũng (Kết Cục I: Thoát Thân)',
             onSelect: () => {
+              const action = knightPersonalReady
+                ? 'STAY_BUILD_GRAVES'
+                : nunPersonalReady || hunterPersonalReady
+                ? 'ESCAPE_EXTERIOR_GATE'
+                : 'LEAVE_AFTER_VAELIS';
               const res = evaluateCanonEnding({
                 classId: player.classId,
                 corruption: player.corruption,
+                demonicPactAffinity: demonicAff,
+                holyMotherBanned: isHolyMotherBanned(player),
                 readBookIds: player.readBookIds,
                 inventory: player.inventory,
                 learnedSkillIds: Object.keys(player.skillLevels),
@@ -2557,16 +2826,27 @@ export default function App() {
                 vaelisDefeated: true,
                 curedPetrification: Boolean(player.questFlags?.curedPetrification),
                 child13Rescued: Boolean(player.questFlags?.child13Rescued),
-                child13InParty: player.party.some((a) => a.id === 'child_13' && a.hp > 0),
-                endingAction: 'LEAVE_AFTER_VAELIS',
+                child13InParty: child13AliveHere,
+                endingAction: action,
               });
               setInteractionMenu(null);
               setActiveModal(null);
               setEndingInfo(res);
               setScreen('ending');
             },
-          }
-        );
+          },
+          {
+            label: '🌌 Tiếp Tục Xuống Tầng Sâu (Giữ [Lõi Khóa Hư Vô] tìm Vết Rách Tầng 3)',
+            onSelect: () => {
+              setInteractionMenu(null);
+              setActiveModal(null);
+              addLog(
+                '🌀 Bạn nắm chặt [Lõi Khóa Hư Vô] và rời khỏi Ngai Vàng Máu để tiếp tục khám phá các tầng sâu!'
+              );
+              setLogOverlayVisible(true);
+            },
+          },
+        ];
 
         setInteractionMenu({
           title: 'NGAI VÀNG MÁU BỎ TRỐNG',
@@ -2621,6 +2901,7 @@ export default function App() {
       [TILE.NPC_RECRUIT_NUN]: 'npc_recruit_nun',
       [TILE.NPC_RECRUIT_HUNTER]: 'npc_recruit_hunter',
       [TILE.VOID_RIFT]: 'void_rift',
+      [TILE.BLOOD_THRONE]: 'vaelis_climax',
     };
 
     const canCastNecro = (player.skillLevels?.necromancy || 0) >= 1 && player.party.length < 3;
@@ -4081,6 +4362,16 @@ export default function App() {
         (curPlayer.stealthStepsTurns || 0) > 0
       );
 
+      // Play sharp startled horror sting when any enemy newly enters 'alert' (! yellow badge, 400ms reflex delay)
+      const newlyAlerted = tickResult.enemies.some((nextE) => {
+        if (nextE.defeated || nextE.aiState !== 'alert') return false;
+        const prevE = curRoom.enemies.find((pe) => pe.uid === nextE.uid);
+        return prevE && prevE.aiState !== 'alert';
+      });
+      if (newlyAlerted) {
+        sfx.playSfx('enemy_alert');
+      }
+
       setWorld((prev) => {
         const latestRoom = prev.rooms[curRoom.id];
         if (!latestRoom) return prev;
@@ -4107,7 +4398,7 @@ export default function App() {
     return () => window.clearInterval(tickId);
   }, [canRunAiTick, triggerCombat]);
 
-  // Grid Step Movement with STEP_COOLDOWN = 220ms & Hunger Loop (decoupled from enemy AI tick)
+  // Grid Step Movement with STEP_COOLDOWN = 220ms (Shift Dash halves cooldown when legs allow) & Hunger Loop
   const attemptMove = useCallback(
     (dx: number, dy: number) => {
       if (
@@ -4125,7 +4416,12 @@ export default function App() {
         setLogOverlayVisible(false);
       }
       const now = performance.now();
-      const cooldown = getPlayerStepCooldownMs(player);
+      const lostLegs = (!player.limbs.leftLeg ? 1 : 0) + (!player.limbs.rightLeg ? 1 : 0);
+      const baseCooldown = getPlayerStepCooldownMs(player);
+      const cooldown =
+        shiftHeldRef.current && lostLegs < 2
+          ? Math.max(95, Math.round(baseCooldown * 0.48))
+          : baseCooldown;
       if (now - lastStepTime < cooldown) return;
 
       const room = world.rooms[world.currentRoomId];
@@ -4265,6 +4561,13 @@ export default function App() {
         },
       };
       syncCorruptionHolyBan(updatedPlayer);
+      const mapFallenLogs: string[] = [];
+      const mapFallen = pruneDeadCompanions(updatedPlayer, mapFallenLogs);
+      if (mapFallen.length > 0) {
+        for (const msg of mapFallenLogs) addLog(msg);
+        setSelectedInvMemberIdx((prevIdx) => (prevIdx <= updatedPlayer.party.length ? prevIdx : 0));
+        setLogOverlayVisible(true);
+      }
 
       setPlayerPos({ x: nx, y: ny });
       setTrailCoords((prev) => [{ x: playerPos.x, y: playerPos.y }, ...prev].slice(0, 4));
@@ -4383,6 +4686,18 @@ export default function App() {
         eState: MapEnemyInstance,
         newLogs: string[]
       ) => {
+        const extraFallenLogs: string[] = [];
+        const fallenNow = pruneDeadCompanions(pState, extraFallenLogs);
+        const mergedLogs = extraFallenLogs.length > 0 ? [...newLogs, ...extraFallenLogs] : newLogs;
+        const permadeathNotices = mergedLogs.filter((l) => l.startsWith('☠ ['));
+        if (permadeathNotices.length > 0) {
+          for (const notice of permadeathNotices) addLog(notice);
+        }
+        if (fallenNow.length > 0 || permadeathNotices.length > 0) {
+          setSelectedInvMemberIdx((prevIdx) => (prevIdx <= pState.party.length ? prevIdx : 0));
+          setActiveActorIdx((prevActor) => (prevActor <= pState.party.length ? prevActor : 0));
+        }
+
         setPlayer(pState);
         setWorld((prev) => {
           const curRoom = prev.rooms[currentRoom.id];
@@ -4398,8 +4713,8 @@ export default function App() {
             },
           };
         });
-        if (newLogs.length > 0) {
-          setCombatLogs((prev) => [...newLogs.slice().reverse(), ...prev.slice(0, 18)]);
+        if (mergedLogs.length > 0) {
+          setCombatLogs((prev) => [...mergedLogs.slice().reverse(), ...prev.slice(0, 18)]);
         }
       };
 
@@ -4483,9 +4798,10 @@ export default function App() {
         }
 
         if (isOffensiveAction) {
-          await sleepCombatStep(660);
+          const fastOk = shiftHeldRef.current && !outcome.result.severedAnyLimb;
+          await sleepCombatStep(fastOk ? 250 : 660);
         } else {
-          await sleepCombatStep(340);
+          await sleepCombatStep(shiftHeldRef.current ? 200 : 340);
         }
         if (combatAbortRef.current !== turnRunId) return;
 
@@ -4530,7 +4846,8 @@ export default function App() {
               break;
             }
             if (eCur.defeated) break;
-            await sleepCombatStep(660);
+            const autoFastOk = shiftHeldRef.current && !autoOut.result.severedAnyLimb;
+            await sleepCombatStep(autoFastOk ? 250 : 660);
             if (combatAbortRef.current !== turnRunId) return;
             probeIdx++;
           }
@@ -4550,7 +4867,8 @@ export default function App() {
               );
             }
             syncCombatState(pCur, eCur, enemyRound.result.logs);
-            await sleepCombatStep(700);
+            const enemyFastOk = shiftHeldRef.current && !enemyRound.result.pendingCoinFlip;
+            await sleepCombatStep(enemyFastOk ? 250 : 700);
             if (combatAbortRef.current !== turnRunId) return;
 
             if (enemyRound.result.pendingCoinFlip && !finalEndingTrigger) {
@@ -4704,14 +5022,33 @@ export default function App() {
           !coinToss.flipping &&
           !coinToss.resultSide
         ) {
-          if (cKey === 'a' || cKey === 'w' || e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === '1' || e.code === 'Digit1') {
+          if (cKey === 'a' || cKey === 'w' || e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
             e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCoinCursorSide('HEADS');
+            return;
+          }
+          if (cKey === 'd' || cKey === 's' || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            sfx.playSfx('ui_move');
+            setCoinCursorSide('TAILS');
+            return;
+          }
+          if (e.key === '1' || e.code === 'Digit1') {
+            e.preventDefault();
+            setCoinCursorSide('HEADS');
             handleChooseCoinSide('HEADS', e.shiftKey || shiftHeld);
             return;
           }
-          if (cKey === 'd' || cKey === 's' || e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === '2' || e.code === 'Digit2') {
+          if (e.key === '2' || e.code === 'Digit2') {
             e.preventDefault();
+            setCoinCursorSide('TAILS');
             handleChooseCoinSide('TAILS', e.shiftKey || shiftHeld);
+            return;
+          }
+          if (e.key === 'Enter' || cKey === 'f' || e.key === ' ') {
+            e.preventDefault();
+            handleChooseCoinSide(coinCursorSide, e.shiftKey || shiftHeld);
             return;
           }
         }
@@ -4747,7 +5084,9 @@ export default function App() {
         const key = e.key.toLowerCase();
         const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
         const reticleMap = getLimbReticlePositions(tpl.spriteKey);
-        const aliveLimbs = activeCombatEnemy.limbs.filter((l) => l.hp > 0);
+        const aliveLimbs = activeCombatEnemy.limbs.filter(
+          (l) => l.hp > 0 && !activeCombatEnemy.severedLimbs.includes(l.id)
+        );
         if (aliveLimbs.length === 0) return;
 
         const snapLimbFocus = () => {
@@ -4848,8 +5187,18 @@ export default function App() {
           return;
         }
 
-        // PHASE 1: Left Action Dock Navigation
+        // PHASE 1: Left Action Dock Navigation (A/D/ArrowLeft/ArrowRight are strict no-ops; only ESC/Backspace cancels sub-menus)
         if (combatFocusPhase === 'action') {
+          if (
+            key === 'a' ||
+            key === 'd' ||
+            e.key === 'ArrowLeft' ||
+            e.key === 'ArrowRight' ||
+            e.key === 'Tab'
+          ) {
+            e.preventDefault();
+            return;
+          }
           if (key === 'w' || e.key === 'ArrowUp') {
             e.preventDefault();
             sfx.playSfx('ui_move');
@@ -4870,7 +5219,7 @@ export default function App() {
             });
             return;
           }
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
             e.preventDefault();
             if (combatActionCursor === 0 && !isPureTankKeyTurn) {
               sfx.playSfx('ui_confirm');
@@ -4933,7 +5282,7 @@ export default function App() {
             setCombatSubCursor((c) => (c + 1) % activeSkillIds.length);
             return;
           }
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
             e.preventDefault();
             const skId = activeSkillIds[combatSubCursor % activeSkillIds.length];
             const sk = CONFIG.SKILLS.find((s) => s.id === skId);
@@ -4994,7 +5343,7 @@ export default function App() {
             setCombatSubCursor((c) => (c + 1) % usableItems.length);
             return;
           }
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
             e.preventDefault();
             const picked = usableItems[combatSubCursor % usableItems.length];
             if (!picked) return;
@@ -5006,7 +5355,7 @@ export default function App() {
           return;
         }
 
-        // PHASE 2: Spatial Limb Reticle Navigation on Enemy Anatomy
+        // PHASE 2: Spatial Limb Reticle Navigation on Enemy Anatomy (A/D strictly wrap circularly; only ESC/Backspace cancels)
         if (combatFocusPhase === 'limb') {
           if (
             key === 'w' ||
@@ -5021,21 +5370,31 @@ export default function App() {
           ) {
             e.preventDefault();
             sfx.playSfx('ui_move');
+            const len = aliveLimbs.length;
+            if (len <= 1) {
+              setSelectedLimbId(aliveLimbs[0].id);
+              setFocusedLimbId(aliveLimbs[0].id);
+              return;
+            }
+            const curIdx = Math.max(0, aliveLimbs.findIndex((l) => l.id === selectedLimbId));
             if (e.key === 'Tab') {
-              const curIdx = aliveLimbs.findIndex((l) => l.id === selectedLimbId);
-              const nextLimb = aliveLimbs[(curIdx + 1) % aliveLimbs.length];
-              if (nextLimb) {
-                setSelectedLimbId(nextLimb.id);
-                setFocusedLimbId(nextLimb.id);
-              }
+              const nextLimb = aliveLimbs[(curIdx + 1) % len];
+              setSelectedLimbId(nextLimb.id);
+              setFocusedLimbId(nextLimb.id);
+              return;
+            }
+            // Safe circular left/right cycling for A/D so spamming A or D never escapes target selection
+            if (key === 'a' || e.key === 'ArrowLeft' || key === 'd' || e.key === 'ArrowRight') {
+              const delta = key === 'a' || e.key === 'ArrowLeft' ? -1 : 1;
+              const nextLimb = aliveLimbs[(curIdx + delta + len) % len];
+              setSelectedLimbId(nextLimb.id);
+              setFocusedLimbId(nextLimb.id);
               return;
             }
             const getCoords = (id: string, i: number) =>
               reticleMap[id] || { nx: 0.25 + (i % 2) * 0.5, ny: 0.25 + Math.floor(i / 2) * 0.22 };
-            const curIdx = Math.max(0, aliveLimbs.findIndex((l) => l.id === selectedLimbId));
             const curPos = getCoords(aliveLimbs[curIdx].id, curIdx);
-            const dirY = key === 'w' || e.key === 'ArrowUp' ? -1 : key === 's' || e.key === 'ArrowDown' ? 1 : 0;
-            const dirX = key === 'a' || e.key === 'ArrowLeft' ? -1 : key === 'd' || e.key === 'ArrowRight' ? 1 : 0;
+            const dirY = key === 'w' || e.key === 'ArrowUp' ? -1 : 1;
 
             let bestLimb = aliveLimbs[curIdx];
             let bestScore = Infinity;
@@ -5044,8 +5403,8 @@ export default function App() {
               const p = getCoords(cand.id, idx);
               const dx = p.nx - curPos.nx;
               const dy = p.ny - curPos.ny;
-              const primaryProj = dx * dirX + dy * dirY;
-              const ortho = Math.abs(dx * dirY - dy * dirX);
+              const primaryProj = dy * dirY;
+              const ortho = Math.abs(dx);
               if (primaryProj > 0.02) {
                 const score = primaryProj + ortho * 1.6;
                 if (score < bestScore) {
@@ -5055,10 +5414,8 @@ export default function App() {
               }
             });
 
-            if (bestLimb.id === aliveLimbs[curIdx].id && aliveLimbs.length > 1) {
-              // Wrap around in the chosen direction
-              const step = dirY < 0 || dirX < 0 ? -1 : 1;
-              bestLimb = aliveLimbs[(curIdx + step + aliveLimbs.length) % aliveLimbs.length];
+            if (bestLimb.id === aliveLimbs[curIdx].id) {
+              bestLimb = aliveLimbs[(curIdx + dirY + len) % len];
             }
 
             setSelectedLimbId(bestLimb.id);
@@ -5066,7 +5423,7 @@ export default function App() {
             return;
           }
 
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
             e.preventDefault();
             const targetLimbId = aliveLimbs.some((l) => l.id === selectedLimbId)
               ? selectedLimbId
@@ -5213,6 +5570,7 @@ export default function App() {
     interactionMenu,
     logOverlayVisible,
     coinToss,
+    coinCursorSide,
     shiftHeld,
     handleChooseCoinSide,
     confirmCoinTossOutcome,
@@ -5241,105 +5599,92 @@ export default function App() {
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          const w = canvas.width;
-          const h = canvas.height;
-          ctx.clearRect(0, 0, w, h);
+          const w = 640;
+          const h = 440;
+          const scaleX = canvas.width / w;
+          const scaleY = canvas.height / h;
 
           ctx.save();
+          ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.clearRect(0, 0, w, h);
+
           // Apply Damage-Proportional Screen Shake (Crit = 25px, >500 Dmg = 15px)
           ctx.translate(engine.currentShakeX, engine.currentShakeY);
 
           const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
-          const showCombatPortrait = Boolean(
-            tpl.combatPortraitUrl && !portraitErrorRef.current[tpl.combatPortraitUrl]
+          const nowSec = now * 0.001;
+
+          // 1. High-Res Floor Backdrop Image (/assets/combat/bg_floor1..3.jpg + vignette) with Dark Gothic Canvas fallback
+          drawCombatBackdrop(
+            ctx,
+            w,
+            h,
+            currentRoom.floor,
+            nowSec,
+            currentRoom.isExterior ? 'F2_EXTERIOR' : currentRoom.id
           );
 
-          if (!showCombatPortrait) {
-            // 1. Atmospheric Dungeon / Void / Blood Backdrop
-            const bgGrad = ctx.createRadialGradient(w * 0.5, h * 0.42, 24, w * 0.5, h * 0.45, w * 0.68);
-            if (currentRoom.floor === 3) {
-              bgGrad.addColorStop(0, '#2a1642');
-              bgGrad.addColorStop(0.55, '#12081e');
-              bgGrad.addColorStop(1, '#050308');
-            } else if (currentRoom.floor === 1) {
-              bgGrad.addColorStop(0, '#3e1214');
-              bgGrad.addColorStop(0.55, '#19080a');
-              bgGrad.addColorStop(1, '#060304');
-            } else {
-              bgGrad.addColorStop(0, '#29221d');
-              bgGrad.addColorStop(0.55, '#120e10');
-              bgGrad.addColorStop(1, '#060508');
-            }
-            ctx.fillStyle = bgGrad;
-            ctx.fillRect(-30, -30, w + 60, h + 60);
-
-            // Gothic stone pillars in background
-            ctx.fillStyle = 'rgba(20, 16, 22, 0.75)';
-            ctx.fillRect(28, 0, 52, h * 0.65);
-            ctx.fillRect(w - 80, 0, 52, h * 0.65);
-
-            // Stone floor perspective lines
-            ctx.strokeStyle = 'rgba(130, 110, 90, 0.16)';
-            ctx.lineWidth = 2;
-            for (let i = 1; i < 6; i++) {
-              const yLine = h * 0.58 + i * 32;
-              ctx.beginPath();
-              ctx.moveTo(0, yLine);
-              ctx.lineTo(w, yLine);
-              ctx.stroke();
-            }
-
-            // Shadow / Blood pool under enemy
-            ctx.fillStyle = 'rgba(75, 10, 14, 0.64)';
-            ctx.beginPath();
-            ctx.ellipse(w * 0.5, h * 0.72, 185, 36, 0, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          // 2. Central Anatomical Vector Monster with Per-Limb Sinusoidal Breathing (skipped when portrait image is rendered beneath)
+          // 2. Central High-Res Transparent PNG Monster (with destination-out limb severing) or Dark Gothic Canvas fallback
           const severedSet = new Set<string>(activeCombatEnemy.severedLimbs);
+          for (const liveLimb of activeCombatEnemy.limbs) {
+            if (liveLimb.hp <= 0) severedSet.add(liveLimb.id);
+          }
           const animState = engine.getStageAnimState();
 
-          if (!showCombatPortrait) {
-            const enemyW =
-              tpl.spriteScale === '3x3'
-                ? 500
-                : tpl.spriteScale === '2x3'
-                ? 465
-                : tpl.spriteScale === '2x2'
-                ? 425
-                : 375;
-            const enemyH =
-              tpl.spriteScale === '3x3'
-                ? 430
-                : tpl.spriteScale === '2x3'
-                ? 420
-                : tpl.spriteScale === '2x2'
-                ? 405
-                : 395;
-            const enemyX = w * 0.5 - enemyW * 0.5;
-            const enemyY = h * 0.015;
+          const enemyW =
+            tpl.spriteScale === '3x3'
+              ? 500
+              : tpl.spriteScale === '2x3'
+              ? 465
+              : tpl.spriteScale === '2x2'
+              ? 425
+              : 375;
+          const enemyH =
+            tpl.spriteScale === '3x3'
+              ? 430
+              : tpl.spriteScale === '2x3'
+              ? 420
+              : tpl.spriteScale === '2x2'
+              ? 405
+              : 395;
+          const enemyX = w * 0.5 - enemyW * 0.5;
+          const enemyY = h * 0.015;
 
-            drawPixelSprite(
-              ctx,
-              tpl.spriteKey,
-              enemyX,
-              enemyY,
-              enemyW,
-              enemyH,
-              severedSet,
-              animState === 'enemyHit',
-              activeCombatEnemy.oilCovered,
-              activeCombatEnemy.blindTurns > 0,
-              activeCombatEnemy.telegraphing,
-              engine.breathPhase
-            );
-          }
+          const maskBoxByLimbId = new Map(tpl.limbs.map((l) => [l.id, l.maskBox]));
+          const pngLimbEntries = activeCombatEnemy.limbs.map((l) => ({
+            id: l.id,
+            hp: l.hp,
+            severed: severedSet.has(l.id) || l.hp <= 0,
+            maskBox: maskBoxByLimbId.get(l.id),
+          }));
+
+          drawPixelSprite(
+            ctx,
+            tpl.spriteKey,
+            enemyX,
+            enemyY,
+            enemyW,
+            enemyH,
+            severedSet,
+            animState === 'enemyHit',
+            activeCombatEnemy.oilCovered,
+            activeCombatEnemy.blindTurns > 0,
+            activeCombatEnemy.telegraphing,
+            engine.breathPhase,
+            currentRoom.floor,
+            {
+              combatSpriteUrl: tpl.combatSpriteUrl,
+              limbs: pngLimbEntries,
+              nowSec,
+            }
+          );
 
           // Render Eased Blade Slash Arcs & Physics Particles (gravity = 0.5)
           engine.renderCanvasEffects(ctx);
 
-          // 3. Foreground Party Back-Sprites (up to 4 living party members arrayed across bottom stage)
+          // 3. Foreground Party Back-Sprites (High-Res Transparent PNG Back-Sprite or Smooth Dark Gothic Canvas fallback)
           const partyShakeX = animState === 'playerHit' ? Math.sin(now * 0.08) * 10 : 0;
           const livingSprites: Array<{
             spriteKey: string;
@@ -5383,6 +5728,7 @@ export default function App() {
               ctx.stroke();
               ctx.restore();
             }
+            const memberClassDef = CONFIG.CLASSES.find((c) => c.id === member.spriteKey);
             drawPartyBackSprite(
               ctx,
               member.spriteKey,
@@ -5392,7 +5738,10 @@ export default function App() {
               spriteScaleH,
               member.arms,
               animState === 'playerAttack' && member.actorIdx === activeActorIdx,
-              animState === 'playerHit'
+              animState === 'playerHit',
+              currentRoom.floor,
+              nowSec,
+              memberClassDef?.combatSpriteUrl
             );
           });
 
@@ -5441,49 +5790,66 @@ export default function App() {
 
     rafId = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(rafId);
-  }, [screen, activeCombatEnemy, currentRoom.floor, player, activeActorIdx]);
+  }, [
+    screen,
+    activeCombatEnemy,
+    currentRoom.floor,
+    currentRoom.id,
+    currentRoom.isExterior,
+    player,
+    activeActorIdx,
+  ]);
 
   const renderCoinTossModal = () => {
     if (!coinToss) return null;
+    const isDualPreview = Boolean(coinToss.secondResultSide || (!coinToss.resultSide && shiftHeld));
     return (
-      <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
-        <div className="max-w-md w-full df-panel p-6 text-center space-y-4">
-          <div className="text-xs uppercase tracking-[0.2em] text-[#c5a059] font-bold">
-            ĐỒNG XU ĐỊNH MỆNH {coinToss.isPanicAuto ? '• HOẢNG LOẠN' : ''}
+      <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center p-4">
+        <div className="inline-silver-float pointer-events-auto max-w-md w-full px-5 py-4 text-center space-y-3 bg-[#09080d]/74 backdrop-blur-[2px] border border-[#c5a059]/65 shadow-[0_18px_48px_rgba(0,0,0,0.88)]">
+          <div className="space-y-0.5">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-[#cbd5e1] font-bold">
+              THẺ BÀI BẠC ĐỊNH MỆNH {coinToss.isPanicAuto ? '• HOẢNG LOẠN' : ''}
+            </div>
+            <h3
+              className="text-xl sm:text-2xl font-bold text-[#f2ead9] tracking-wide uppercase"
+              style={{
+                fontFamily: "'Cormorant Garamond', serif",
+                textShadow: '0 2px 8px rgba(0,0,0,0.9)',
+              }}
+            >
+              {coinToss.title}
+            </h3>
+            {coinToss.subtitle && (
+              <p className="text-xs sm:text-sm text-[#d6c9b8] leading-snug px-1">
+                {coinToss.subtitle}
+              </p>
+            )}
           </div>
-          <h3
-            className="text-2xl font-bold text-[#dfd2b4] tracking-wide uppercase"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
-            {coinToss.title}
-          </h3>
-          {coinToss.subtitle && (
-            <p className="text-sm text-[#d6b79f] leading-relaxed px-2">
-              {coinToss.subtitle}
-            </p>
-          )}
 
-          {/* 160x160 3D Embossed Gold Coin Canvas (or Dual 2-Coin Shift view) */}
-          <div className="py-2 flex flex-col items-center justify-center gap-2">
-            <div className="flex items-center justify-center gap-3">
+          {/* Floating 3D Embossed Sterling Silver Coin directly over the live Arena / Map */}
+          <div className="py-1.5 flex flex-col items-center justify-center gap-1.5">
+            <div className="flex items-center justify-center gap-4">
               <EngravedGoldCoinCanvas
-                side={coinToss.resultSide || coinToss.chosenSide || 'HEADS'}
+                side={coinToss.resultSide || coinToss.chosenSide || coinCursorSide}
                 flipping={coinToss.flipping}
-                size={coinToss.secondResultSide || (!coinToss.resultSide && shiftHeld) ? 120 : 160}
+                size={isDualPreview ? 124 : 156}
               />
-              {(coinToss.secondResultSide || (!coinToss.resultSide && shiftHeld)) && (
+              {isDualPreview && (
                 <EngravedGoldCoinCanvas
                   side={coinToss.secondResultSide || coinToss.chosenSide || 'TAILS'}
                   flipping={coinToss.flipping}
-                  size={120}
+                  size={124}
                 />
               )}
             </div>
             {coinToss.resultSide && (
-              <div className="text-sm font-bold tracking-widest uppercase text-[#c5a059]">
+              <div
+                className="text-sm font-bold tracking-[0.2em] uppercase text-[#e2e8f0]"
+                style={{ textShadow: '0 2px 8px rgba(0,0,0,0.95)' }}
+              >
                 {coinToss.secondResultSide
-                  ? `${coinToss.resultSide === 'HEADS' ? 'NGỬA' : 'SẤP'} • ${
-                      coinToss.secondResultSide === 'HEADS' ? 'NGỬA' : 'SẤP'
+                  ? `${coinToss.resultSide === 'HEADS' ? 'MẶT NGỬA' : 'MẶT SẤP'} • ${
+                      coinToss.secondResultSide === 'HEADS' ? 'MẶT NGỬA' : 'MẶT SẤP'
                     }`
                   : coinToss.resultSide === 'HEADS'
                   ? 'MẶT NGỬA'
@@ -5493,26 +5859,37 @@ export default function App() {
           </div>
 
           {!coinToss.chosenSide && !coinToss.isPanicAuto && (
-            <div className="space-y-2.5">
-              <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <button
+                  onMouseEnter={() => setCoinCursorSide('HEADS')}
                   onClick={(e) => handleChooseCoinSide('HEADS', e.shiftKey || shiftHeld)}
-                  className="df-btn-bronze py-2.5 px-2 text-sm font-bold uppercase cursor-pointer"
+                  className={`py-2 px-2 text-sm font-bold uppercase cursor-pointer ${
+                    coinCursorSide === 'HEADS'
+                      ? 'df-btn-active ring-1 ring-[#e2e8f0]'
+                      : 'df-btn-bronze opacity-85'
+                  }`}
                 >
-                  [1/A] Mặt Ngửa
+                  {coinCursorSide === 'HEADS' ? '▸ ' : ''}[A/1] Mặt Ngửa
                 </button>
                 <button
+                  onMouseEnter={() => setCoinCursorSide('TAILS')}
                   onClick={(e) => handleChooseCoinSide('TAILS', e.shiftKey || shiftHeld)}
-                  className="df-btn-bronze py-2.5 px-2 text-sm font-bold uppercase cursor-pointer"
+                  className={`py-2 px-2 text-sm font-bold uppercase cursor-pointer ${
+                    coinCursorSide === 'TAILS'
+                      ? 'df-btn-active ring-1 ring-[#e2e8f0]'
+                      : 'df-btn-bronze opacity-85'
+                  }`}
                 >
-                  [2/D] Mặt Sấp
+                  {coinCursorSide === 'TAILS' ? '▸ ' : ''}[D/2] Mặt Sấp
                 </button>
               </div>
-              {player.inventory.lucky_coin > 0 && (
-                <div className="text-xs text-[#9b8f82]">
-                  Giữ [Shift] để tung 2 đồng xu cùng lúc (Thẻ Bài Bạc: x{player.inventory.lucky_coin})
-                </div>
-              )}
+              <div className="text-[11px] text-[#cbd5e1]/85 font-mono">
+                [A/D] Đổi Mặt • [F / Enter / Space] Tung Thẻ Bạc
+                {player.inventory.lucky_coin > 0
+                  ? ` • Giữ [Shift] Tung 2 Xu (x${player.inventory.lucky_coin})`
+                  : ''}
+              </div>
 
               {coinToss.onLockpick && (
                 <button
@@ -5521,9 +5898,9 @@ export default function App() {
                     setCoinToss(null);
                     lp?.();
                   }}
-                  className="df-btn w-full py-2 text-sm font-bold text-[#dfd2b4] cursor-pointer"
+                  className="df-btn w-full py-1.5 text-xs sm:text-sm font-bold text-[#dfd2b4] cursor-pointer"
                 >
-                  🗝️ Chìa Khóa Vạn Năng (x{player.inventory.lockpick})
+                  🗝️ Dùng Chìa Khóa Vạn Năng (x{player.inventory.lockpick})
                 </button>
               )}
             </div>
@@ -5532,9 +5909,9 @@ export default function App() {
           {coinToss.outcomeText && (
             <button
               onClick={confirmCoinTossOutcome}
-              className="df-btn-blood w-full py-2.5 font-bold text-sm uppercase cursor-pointer"
+              className="df-btn-blood w-full py-2 font-bold text-sm uppercase cursor-pointer"
             >
-              Chấp Nhận [Enter / Space]
+              Chấp Nhận [F / Enter / Space]
             </button>
           )}
         </div>
@@ -5964,26 +6341,75 @@ export default function App() {
   }
 
   // ============================================================================
-  // RENDER: ENDING SCREEN
+  // RENDER: FULL-BLEED PANORAMIC 16:9 ENDING SCREEN
   // ============================================================================
   if (screen === 'ending' && endingInfo) {
+    const endingArtworkMap: Record<string, string> = {
+      NORMAL_ENDING: endingNormalImg,
+      DARK_ENDING: endingDarkImg,
+      ORDER_ENDING: endingOrderImg,
+      TRUE_ENDING: endingTrueImg,
+      S_ENDING_KNIGHT: prologueGateKnightImg,
+      S_ENDING_NUN: prologueGateNunImg,
+      S_ENDING_HUNTER: prologueGateHunterImg,
+    };
+    const endingArtSrc = endingArtworkMap[endingInfo.id] || prologueFrame1Img;
+    const bannerHeading = endingInfo.endingBannerLabel || endingInfo.title;
+
     return (
-      <div className="min-h-screen bg-[#070509] text-[#d3d3d3] flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full df-panel p-8 space-y-6 text-center max-h-[90vh] overflow-y-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1 df-well border-[#8b0000] text-xs uppercase tracking-widest text-[#c96b6b]">
-            <Sparkles className="w-3.5 h-3.5" /> Kết Cục Định Mệnh
+      <div className="h-screen w-screen relative overflow-hidden bg-[#050408] text-[#e7dcc8] flex flex-col justify-between select-none">
+        {/* Full-Bleed 16:9 Dark Gothic Ending Painting */}
+        <img
+          src={endingArtSrc}
+          alt={endingInfo.title}
+          className="absolute inset-0 w-full h-full object-cover ending-pan-bg pointer-events-none"
+        />
+        {/* Cinematic Dark Gradient Scrim: Upper 45% preserves artwork, Lower 55% frames text with crisp contrast */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              'linear-gradient(to top, rgba(5,4,8,0.98) 0%, rgba(7,5,10,0.92) 34%, rgba(9,7,14,0.42) 66%, rgba(5,4,8,0.38) 100%)',
+          }}
+        />
+
+        {/* Subtle Top Metadata Strip */}
+        <div className="relative z-10 flex items-center justify-between px-6 pt-4 text-xs uppercase tracking-[0.2em] text-[#d6c9b4]/85">
+          <span style={{ textShadow: '0 2px 8px rgba(0,0,0,0.95)' }}>
+            VAELIS • THUNG LŨNG XƯƠNG TÀN
+          </span>
+          <span className="font-mono text-[#c5a059]" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.95)' }}>
+            SEED: {world.seed}
+          </span>
+        </div>
+
+        {/* Bottom Panoramic Narrative & Action Overlay */}
+        <div className="relative z-10 w-full max-w-4xl mx-auto px-6 pb-6 pt-4 space-y-4 text-center">
+          <div className="space-y-1.5">
+            <div
+              className="text-xs sm:text-sm uppercase tracking-[0.26em] text-[#c5a059] font-bold"
+              style={{ textShadow: '0 2px 10px rgba(0,0,0,0.95)' }}
+            >
+              ✦ {endingInfo.subtitle} ✦
+            </div>
+            <h1
+              className="text-3xl sm:text-5xl font-bold text-[#f3ead6] tracking-wide leading-tight"
+              style={{
+                fontFamily: "'Cormorant Garamond', serif",
+                textShadow: '0 4px 18px rgba(0,0,0,0.96), 0 0 24px rgba(197,160,89,0.28)',
+              }}
+            >
+              {bannerHeading}
+            </h1>
           </div>
-          <h1
-            className="text-4xl font-bold text-[#c5a059]"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
-            {endingInfo.title}
-          </h1>
-          <div className="text-sm uppercase tracking-widest text-[#b54848]">{endingInfo.subtitle}</div>
-          <p className="text-base text-[#d3d3d3] leading-relaxed border-y border-[#3a3a3a] py-5 max-h-[40vh] overflow-y-auto px-2">
-            {endingInfo.epilogue}
-          </p>
-          <div className="flex flex-wrap justify-center gap-4 pt-2">
+
+          <div className="df-panel bg-[#0a080e]/82 px-6 py-4 text-left sm:text-center max-h-[26vh] overflow-y-auto">
+            <p className="text-sm sm:text-base text-[#e2d7c5] leading-relaxed">
+              {endingInfo.epilogue}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-3 pt-1">
             <button
               onClick={() => {
                 const freshSeed = seedInput === world.seed ? generateRandomSeed() : seedInput;
@@ -5992,7 +6418,7 @@ export default function App() {
               }}
               className="px-6 py-2.5 df-btn-blood font-bold text-sm uppercase tracking-wider cursor-pointer"
             >
-              🎲 Chơi Ván Mới (Seed Ngẫu Nhiên: {seedInput})
+              🎲 Chơi Ván Mới (Seed: {seedInput})
             </button>
             <button
               onClick={() => setScreen('title')}
@@ -6004,9 +6430,9 @@ export default function App() {
 
           {/* Quick Load Saved Game to Restore Old Seed */}
           {saveSlots.some((s) => s !== null) && (
-            <div className="pt-4 border-t border-[#3a3a3a] space-y-2 text-left">
-              <div className="text-xs font-bold uppercase tracking-wider text-[#c5a059] text-center">
-                Hoặc Tải Lại Bản Lưu (Khôi Phục Về Seed Cũ Đã Lưu)
+            <div className="pt-2 border-t border-[#c5a059]/30 space-y-1.5 text-left">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[#c5a059] text-center">
+                Hoặc Tải Lại Bản Lưu Cũ
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {[0, 1, 2, 3, 4].map((idx) => {
@@ -6016,12 +6442,12 @@ export default function App() {
                     <button
                       key={idx}
                       onClick={() => loadFromSlot(idx)}
-                      className="p-2.5 df-card text-left text-xs cursor-pointer"
+                      className="p-2 df-card bg-[#0b090f]/85 text-left text-xs cursor-pointer"
                     >
                       <div className="font-bold text-[#c5a059]">Tải Ô Lưu #{idx + 1}</div>
-                      <div className="font-mono text-[11px] text-[#d3d3d3]">Seed: {slot.seed}</div>
-                      <div className="text-[11px] text-[#a3998f]">
-                        Phòng {slot.world.currentRoomId} • Sinh Lực {slot.player.hp}/{slot.player.maxHp}
+                      <div className="font-mono text-[11px] text-[#d3d3d3] truncate">Seed: {slot.seed}</div>
+                      <div className="text-[11px] text-[#a3998f] truncate">
+                        {slot.world.currentRoomId} • Sinh Lực {slot.player.hp}/{slot.player.maxHp}
                       </div>
                     </button>
                   );
@@ -6056,9 +6482,6 @@ export default function App() {
 
     const currentTargetLimb =
       activeCombatEnemy.limbs.find((l) => l.id === selectedLimbId) || activeCombatEnemy.limbs[0];
-    const showBossPortrait = Boolean(
-      tpl.combatPortraitUrl && !portraitErrorMap[tpl.combatPortraitUrl]
-    );
     const enemyWeaponLost = isEnemyWeaponLimbSevered(activeCombatEnemy, tpl);
 
     return (
@@ -6073,20 +6496,6 @@ export default function App() {
               : ''
           }`}
         >
-          {/* Atmospheric Dark Dungeon / Void / Blood Backdrop for Portrait Mode */}
-          {showBossPortrait && (
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background:
-                  currentRoom.floor === 3
-                    ? 'radial-gradient(circle at 50% 42%, rgba(42, 22, 66, 0.92), rgba(14, 7, 24, 0.98) 58%, #050308 100%)'
-                    : currentRoom.floor === 1
-                    ? 'radial-gradient(circle at 50% 42%, rgba(62, 18, 20, 0.92), rgba(20, 7, 10, 0.98) 58%, #060304 100%)'
-                    : 'radial-gradient(circle at 50% 42%, rgba(41, 34, 29, 0.92), rgba(16, 12, 14, 0.98) 58%, #060508 100%)',
-              }}
-            />
-          )}
 
           {/* Top Chamfered Telegraph & Enemy Header Banner */}
           <div className="z-20 w-full max-w-5xl mt-1.5 px-3 shrink-0">
@@ -6140,62 +6549,13 @@ export default function App() {
             </div>
           </div>
 
-          {/* Center Responsive 16:11 Stage Wrapper with Portrait Backdrop, Weapon VFX & On-Body Anatomical Reticles */}
+          {/* Center Responsive 16:11 Unified Canvas Stage with Weapon VFX & Minimalist Anatomical Reticles */}
           <div className="flex-1 min-h-0 w-full flex items-center justify-center py-0.5 relative z-10">
             <div className="relative h-full aspect-[16/11] max-w-full flex items-center justify-center">
-              {showBossPortrait && tpl.combatPortraitUrl && (
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute left-[10%] top-[0%] w-[80%] h-[94%] overflow-hidden combat-portrait-stage-mask">
-                    <img
-                      src={tpl.combatPortraitUrl}
-                      alt={activeCombatEnemy.customName || tpl.name}
-                      onError={() => markPortraitError(tpl.combatPortraitUrl!)}
-                      className={`w-full h-full object-cover object-top animate-monster-breathe ${
-                        activeCombatEnemy.telegraphing ? 'brightness-110 saturate-125' : ''
-                      }`}
-                      style={{
-                        filter: activeCombatEnemy.blindTurns > 0
-                          ? 'brightness(0.66) contrast(1.06) saturate(0.45)'
-                          : 'brightness(0.88) contrast(1.08) saturate(0.86)',
-                      }}
-                    />
-                    {/* Multi-edge dark vignette dissolving portrait cleanly into dungeon backdrop */}
-                    <div className="absolute inset-0 combat-portrait-vignette-overlay pointer-events-none" />
-                    {/* Anatomical darkened zones + crimson arterial slashes aligned with severed limbs */}
-                    {activeCombatEnemy.severedLimbs.map((sevId) => {
-                      const pos = reticleMap[sevId];
-                      if (!pos) return null;
-                      const localX = Math.max(8, Math.min(92, ((pos.nx - 0.10) / 0.80) * 100));
-                      const localY = Math.max(8, Math.min(92, (pos.ny / 0.94) * 100));
-                      return (
-                        <React.Fragment key={`gash_${sevId}`}>
-                          <div
-                            style={{
-                              left: `${localX}%`,
-                              top: `${localY}%`,
-                              transform: 'translate(-50%, -50%)',
-                            }}
-                            className="absolute w-24 h-24 rounded-full combat-severed-darkness pointer-events-none"
-                          />
-                          <div
-                            style={{
-                              left: `${localX}%`,
-                              top: `${localY}%`,
-                              transform: 'translate(-50%, -50%) rotate(-24deg)',
-                            }}
-                            className="absolute w-16 h-2.5 bg-[#450a0a]/95 border-y border-[#dc2626] shadow-[0_0_12px_rgba(185,28,28,0.92)] pointer-events-none"
-                          />
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
               <canvas
                 ref={combatStageCanvasRef}
-                width={640}
-                height={440}
+                width={1280}
+                height={880}
                 className="w-full h-full pointer-events-none relative z-10"
               />
 
@@ -6214,10 +6574,11 @@ export default function App() {
                   nx: 0.25 + (idx % 2) * 0.5,
                   ny: 0.25 + Math.floor(idx / 2) * 0.22,
                 };
-                const isSevered = limb.hp <= 0;
+                const isSevered =
+                  limb.hp <= 0 || activeCombatEnemy.severedLimbs.includes(limb.id);
                 const isSelected = selectedLimbId === limb.id;
-                const isFocused = combatFocusPhase === 'limb' && isSelected;
-                const showExpanded = isSelected || isFocused;
+                const isFocused = combatFocusPhase === 'limb' && isSelected && !isSevered;
+                const showExpanded = isFocused;
                 const targetable = canTargetEnemyLimb(activeCombatEnemy, tpl, limb.id).allowed;
                 const preview = combatEngineRef.current.getDamagePreview(
                   player,
@@ -6268,41 +6629,50 @@ export default function App() {
                       </div>
                     )}
 
-                    <div
-                      className={`pointer-events-none select-none ${
-                        isSevered
-                          ? 'px-1.5 py-0.5 df-well opacity-45 text-[#6b635b]'
-                          : isFocused
-                          ? 'px-2.5 py-1 df-card-active text-[#c5a059] scale-110 ring-1 ring-[#fbbf24]'
-                          : showExpanded
-                          ? 'px-2.5 py-1 df-card-active text-[#c5a059] scale-105'
-                          : 'px-2 py-0.5 df-card text-[#d3d3d3]'
-                      }`}
-                    >
-                      {showExpanded ? (
-                        <>
-                          <div className="flex items-center gap-1.5 text-xs font-bold whitespace-nowrap">
-                            <span className="text-[#c96b6b]">⌖</span>
-                            <span>{limb.name}</span>
-                            <span className="font-mono text-xs text-[#c5a059]">
-                              {isSevered ? '[ĐỨT]' : !targetable ? '[KHÓA]' : `${preview.hitPct}%`}
-                            </span>
-                          </div>
-                          {isFocused && !isSevered && (
-                            <div className="text-[11px] text-[#fbbf24] font-bold uppercase tracking-tighter mt-0.5">
-                              {pendingSkillId ? '[Enter: TUNG KỸ NĂNG]' : '[Enter: TẤN CÔNG] • [ESC: Hủy]'}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-1 text-xs font-mono font-bold whitespace-nowrap">
+                    {showExpanded ? (
+                      <div className="pointer-events-none select-none px-2.5 py-1 df-card-active text-[#c5a059] scale-110 ring-1 ring-[#fbbf24]">
+                        <div className="flex items-center gap-1.5 text-xs font-bold whitespace-nowrap">
                           <span className="text-[#c96b6b]">⌖</span>
-                          <span>{isSevered ? 'ĐỨT' : !targetable ? '🔒' : `${preview.hitPct}%`}</span>
+                          <span>{limb.name}</span>
+                          <span className="font-mono text-xs text-[#c5a059]">
+                            {!targetable ? '[KHÓA]' : `${preview.hitPct}%`}
+                          </span>
                         </div>
-                      )}
-                    </div>
+                        <div className="text-[11px] text-[#fbbf24] font-bold uppercase tracking-tighter mt-0.5">
+                          {pendingSkillId ? '[Enter / F: TUNG KỸ NĂNG]' : '[Enter / F: TẤN CÔNG] • [ESC: Hủy]'}
+                        </div>
+                      </div>
+                    ) : isSevered ? (
+                      <div
+                        className="pointer-events-none select-none flex items-center gap-1 px-1.5 py-0.5 bg-[#160608]/85 border border-[#7f1d1d]/75 opacity-75"
+                        aria-hidden="true"
+                      >
+                        <span className="text-[10px] text-[#dc2626] font-bold leading-none">✕</span>
+                        <span className="text-[10px] text-[#8f6a6a] line-through whitespace-nowrap leading-none">
+                          {limb.name}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        className="pointer-events-none select-none relative flex items-center justify-center w-4 h-4"
+                        aria-hidden="true"
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full border shadow-[0_0_6px_rgba(0,0,0,0.9)] ${
+                            !targetable
+                              ? 'bg-[#292524]/85 border-[#78716c]'
+                              : isSelected
+                              ? 'bg-[#1a1209]/90 border-[#fbbf24] ring-2 ring-[#fbbf24]/35'
+                              : 'bg-[#09070c]/80 border-[#c5a059]/85'
+                          }`}
+                        />
+                        {targetable && (
+                          <span className="absolute w-1 h-1 rounded-full bg-[#dc2626]" />
+                        )}
+                      </div>
+                    )}
 
-                    {/* Damage Preview Side Tooltip (Min-Max Dmg, Hit %, Crit %, Armor) on Hover / WASD Focus */}
+                    {/* Damage Preview Side Tooltip (Min-Max Dmg, Hit %, Crit %, Armor) ONLY when Focused / Selected */}
                     {showExpanded && !isSevered && (
                       <div
                         className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${
@@ -6348,28 +6718,27 @@ export default function App() {
             </div>
             <div className="text-[#a3998f] shrink-0 hidden md:block text-xs">
               Lượt: <span className="text-[#c5a059] font-semibold">{actingName}</span> • Vũ khí:{' '}
-              <span className="text-[#d3d3d3] font-semibold">{activeWeapon.name}</span> • Mục tiêu:{' '}
-              <span className="text-[#c96b6b] font-semibold">{currentTargetLimb?.name}</span> •{' '}
+              <span className="text-[#d3d3d3] font-semibold">{activeWeapon.name}</span> •{' '}
               <span className="font-mono text-[#c5a059]">
                 {combatFocusPhase === 'limb'
-                  ? '[WASD] Chọn Bộ Phận • [Enter] Chém • [ESC] Hủy'
-                  : `[W/S] Chọn • [Enter] Xác nhận • Phím tắt ${activeActorIdx === 0 ? '[1..6]' : '[1..4]'}`}
+                  ? '[WASD] Ngắm • [Enter/Space/F] Chém • Giữ [Shift] Tua • [ESC] Hủy'
+                  : `[W/S] Chọn • [Enter/Space/F] Xác nhận • Giữ [Shift] Tua • ${activeActorIdx === 0 ? '[1..6]' : '[1..4]'}`}
               </span>
             </div>
           </div>
         </div>
 
-        {/* LOWER 36% DARK FANTASY CONTROL DOCK (100% Keyboard-Driven) */}
-        <div className="h-[36%] min-h-[245px] w-full bg-[#08070b] p-2.5 sm:p-3 flex gap-2.5 sm:gap-3">
-          {/* LEFT BOX (295px): Vertical Serif Command Buttons with Number Hotkeys */}
-          <div className="w-[275px] sm:w-[300px] shrink-0 df-panel p-2.5 flex flex-col justify-between gap-1 overflow-y-auto pointer-events-none">
+        {/* LOWER 30% COMPACT DARK FANTASY CONTROL DOCK (~70% UPPER ARENA STAGE) */}
+        <div className="h-[30%] min-h-[210px] w-full bg-[#08070b] p-2 flex gap-2.5">
+          {/* LEFT BOX (275px): Vertical Serif Command Buttons with Number Hotkeys */}
+          <div className="w-[265px] sm:w-[285px] shrink-0 df-panel p-2 flex flex-col justify-between gap-0.5 overflow-y-auto pointer-events-none">
             {!activeCombatEnemy.defeated ? (
               <>
-                <div className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#c5a059] px-1 truncate border-b border-[#3a3a3a] pb-0.5">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#c5a059] px-1 truncate border-b border-[#3a3a3a] pb-0.5">
                   Lượt: {actingName}
                 </div>
                 <div
-                  className={`w-full py-1 px-3 text-left text-sm font-bold truncate ${
+                  className={`w-full py-0.5 px-2.5 text-left text-sm font-bold truncate ${
                     isPureTankTurn || isResolvingTurn
                       ? 'df-btn opacity-45'
                       : combatFocusPhase === 'action' && combatActionCursor === 0
@@ -6383,7 +6752,7 @@ export default function App() {
                     : `[1] ⚔ Đ.Thường (${currentTargetLimb?.name})`}
                 </div>
                 <div
-                  className={`w-full py-1 px-3 text-left text-sm font-bold ${
+                  className={`w-full py-0.5 px-2.5 text-left text-sm font-bold ${
                     combatMenuMode === 'skills' ||
                     (combatFocusPhase === 'action' && combatActionCursor === 1)
                       ? 'df-btn-active ring-1 ring-[#fbbf24]'
@@ -6394,7 +6763,7 @@ export default function App() {
                   [2] ✦ K.Năng ({activeSkillIds.length})
                 </div>
                 <div
-                  className={`w-full py-1 px-3 text-left text-sm font-bold ${
+                  className={`w-full py-0.5 px-2.5 text-left text-sm font-bold ${
                     (combatFocusPhase === 'action' && combatActionCursor === 2) || isPureTankTurn
                       ? 'df-btn-active ring-1 ring-[#fbbf24]'
                       : 'df-btn'
@@ -6404,7 +6773,7 @@ export default function App() {
                   {isPureTankTurn ? '[3] 🛡 Khiên Linh Hồn (+Đội)' : '[3] 🛡 Phòng Thủ'}
                 </div>
                 <div
-                  className={`w-full py-1 px-3 text-left text-sm font-bold ${
+                  className={`w-full py-0.5 px-2.5 text-left text-sm font-bold ${
                     combatMenuMode === 'items' ||
                     (combatFocusPhase === 'action' && combatActionCursor === 3)
                       ? 'df-btn-active ring-1 ring-[#fbbf24]'
@@ -6417,7 +6786,7 @@ export default function App() {
                 {activeActorIdx === 0 && (
                   <>
                     <div
-                      className={`w-full py-1 px-3 text-left text-sm font-bold text-[#9ab08e] ${
+                      className={`w-full py-0.5 px-2.5 text-left text-sm font-bold text-[#9ab08e] ${
                         combatFocusPhase === 'action' && combatActionCursor === 4
                           ? 'df-btn-active ring-1 ring-[#fbbf24]'
                           : 'df-btn'
@@ -6427,7 +6796,7 @@ export default function App() {
                       [5] 💬 Trò Chuyện
                     </div>
                     <div
-                      className={`w-full py-1 px-3 text-left text-sm font-bold text-[#a3998f] ${
+                      className={`w-full py-0.5 px-2.5 text-left text-sm font-bold text-[#a3998f] ${
                         combatFocusPhase === 'action' && combatActionCursor === 5
                           ? 'df-btn-active ring-1 ring-[#fbbf24]'
                           : 'df-btn'
@@ -6442,26 +6811,26 @@ export default function App() {
             ) : (
               <div className="my-auto text-center space-y-2 p-2">
                 <div className="text-base font-bold uppercase text-[#c5a059]">Chiến Thắng!</div>
-                <div className="w-full py-2.5 df-btn-bronze font-bold text-sm uppercase">
-                  [Enter] Thoát
+                <div className="w-full py-2 df-btn-bronze font-bold text-sm uppercase">
+                  [F / Enter] Thoát
                 </div>
               </div>
             )}
           </div>
 
-          {/* RIGHT BOX: Dynamic Sub-Menu OR Horizontal Party Status Table */}
-          <div className="flex-1 df-panel p-3 overflow-y-auto flex flex-col justify-between pointer-events-none">
+          {/* RIGHT BOX: Dynamic Sub-Menu OR Streamlined 2x2 Party Status Cards */}
+          <div className="flex-1 df-panel p-2.5 overflow-y-auto flex flex-col justify-between pointer-events-none">
             {combatMenuMode === 'skills' && !activeCombatEnemy.defeated ? (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1.5">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
                   <span className="text-xs sm:text-sm font-bold uppercase text-[#c5a059]">
                     Chọn Kỹ Năng — {actingName}
                   </span>
                   <span className="text-xs text-[#a3998f] font-mono">
-                    [WASD] Chọn • [Enter] Dùng • [ESC] Quay lại
+                    [WASD] Chọn • [F/Enter] Dùng • [ESC] Quay lại
                   </span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {activeSkillIds.map((skId, sIdx) => {
                     const sk = CONFIG.SKILLS.find((s) => s.id === skId);
                     if (!sk) return null;
@@ -6479,7 +6848,7 @@ export default function App() {
                     return (
                       <div
                         key={sk.id}
-                        className={`p-2.5 text-left text-xs sm:text-sm ${
+                        className={`p-2 text-left text-xs ${
                           curMind < sk.mindCost || lockedByHoly ? 'opacity-40' : ''
                         } ${isCursor ? 'df-card-active ring-1 ring-[#fbbf24]' : 'df-card'}`}
                       >
@@ -6489,23 +6858,23 @@ export default function App() {
                           </span>
                           <span>-{sk.mindCost} Lý Trí</span>
                         </div>
-                        <div className="text-xs text-[#d3d3d3] mt-0.5">{sk.descLv1}</div>
+                        <div className="text-xs text-[#d3d3d3] mt-0.5 truncate">{sk.descLv1}</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
             ) : combatMenuMode === 'items' && !activeCombatEnemy.defeated ? (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1.5">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
                   <span className="text-xs sm:text-sm font-bold uppercase text-[#c5a059]">
-                    Chọn Vật Phẩm Thực Dụng ({actingName})
+                    Chọn Vật Phẩm ({actingName})
                   </span>
                   <span className="text-xs text-[#a3998f] font-mono">
-                    [WASD] Chọn • [Enter] Dùng • [ESC] Quay lại
+                    [WASD] Chọn • [F/Enter] Dùng • [ESC] Quay lại
                   </span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {usableCombatItems.map(([itemId, count], iIdx) => {
                     const item = CONFIG.ITEMS[itemId];
                     if (!item) return null;
@@ -6515,11 +6884,11 @@ export default function App() {
                     return (
                       <div
                         key={itemId}
-                        className={`p-2.5 flex items-center gap-2.5 text-left text-xs sm:text-sm ${
+                        className={`p-2 flex items-center gap-2 text-left text-xs ${
                           isCursor ? 'df-card-active ring-1 ring-[#fbbf24]' : 'df-card'
                         }`}
                       >
-                        <ItemArtworkCanvas itemOrWeaponId={itemId} size={36} />
+                        <ItemArtworkCanvas itemOrWeaponId={itemId} size={32} />
                         <div className="min-w-0">
                           <div className="font-bold text-[#c5a059] truncate">
                             {item.name} (x{count})
@@ -6532,218 +6901,170 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* DEFAULT: HORIZONTAL PARTY STATUS ROWS */
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between gap-4 text-xs sm:text-sm uppercase tracking-wider text-[#a3998f] border-b border-[#3a3a3a] pb-1.5">
-                  <span>Đội Hình & Trạng Thái Tứ Chi</span>
-                  <span className="text-xs font-mono">W/S/A/D Chọn • Enter/Space Xác nhận • ESC Quay lại</span>
+              /* STREAMLINED COMPACT PARTY HUD: Name + Status Icons + Slim Thể Xác / Lý Trí Bars */
+              <div className="h-full flex flex-col justify-between gap-1.5">
+                <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-[#a3998f] border-b border-[#3a3a3a] pb-1">
+                  <span>Đội Hình ({1 + player.party.filter((a) => a.hp > 0).slice(0, 3).length})</span>
+                  <span className="font-mono text-[#c5a059]/85">
+                    [WASD] Chọn • [F/Enter/Space] Xác nhận • [ESC] Hủy
+                  </span>
                 </div>
 
-                {/* Row 1: Main Character */}
-                <div
-                  className={`p-2.5 sm:p-3 grid grid-cols-12 items-center gap-3 text-sm ${
-                    activeActorIdx === 0 && !activeCombatEnemy.defeated
-                      ? 'df-card-active'
-                      : 'df-card'
-                  }`}
-                >
-                  <div className="col-span-3 flex items-center min-w-0">
-                    <div className="min-w-0 flex flex-wrap items-center gap-1.5">
-                      <span className="text-sm sm:text-base font-bold text-[#c5a059] truncate">
-                        {player.name}
-                      </span>
-                      {activeActorIdx === 0 && !activeCombatEnemy.defeated && (
-                        <span className="text-xs text-[#c5a059] font-bold">
-                          [ĐANG CHỌN]
-                        </span>
-                      )}
-                      {player.statuses.guarding && (
-                        <span className="text-xs text-[#94a3b8] font-bold">[THỦ]</span>
-                      )}
-                      {player.statuses.bleeding && (
-                        <span className="text-xs text-[#c96b6b] font-bold">
-                          🩸 CHẢY MÁU
-                        </span>
-                      )}
-                      {Object.values(player.limbs.infected).some(Boolean) && (
-                        <span className="text-xs text-[#d97706] font-bold">
-                          ☣️ NHIỄM TRÙNG
-                        </span>
-                      )}
-                      {!player.statuses.bleeding && (player.statuses.bleedImmunityTurns || 0) > 0 && (
-                        <span className="text-xs text-[#9ab08e] font-bold">
-                          🩹 ĐÃ CẦM MÁU
-                        </span>
-                      )}
-                      {player.hunger < 50 && !player.statuses.bleeding && (
-                        <span className="text-xs text-[#9ab08e] font-bold">[NHANH]</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="col-span-3">
-                    <div className="flex justify-between text-xs sm:text-sm mb-1">
-                      <span className="text-[#c96b6b] font-semibold">Sinh Lực</span>
-                      <span className="font-mono font-bold text-[#d3d3d3]">
-                        {player.hp}/{player.maxHp}
-                      </span>
-                    </div>
-                    <div className="w-full h-3 bg-[#1a0b0d] border border-[#5e1414]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1 content-start">
+                  {/* Player Compact Card */}
+                  {(() => {
+                    const isTurn = activeActorIdx === 0 && !activeCombatEnemy.defeated;
+                    const lostLimbsCount = (
+                      ['leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as const
+                    ).filter((k) => !player.limbs[k]).length;
+                    const hasInfection = Object.values(player.limbs.infected).some(Boolean);
+                    return (
                       <div
-                        className="h-full bg-[#8b0000]"
-                        style={{ width: `${Math.max(0, Math.min(100, (player.hp / Math.max(1, player.maxHp)) * 100))}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="col-span-2">
-                    <div className="flex justify-between text-xs sm:text-sm mb-1">
-                      <span className="text-[#94a3b8] font-semibold">Lý Trí</span>
-                      <span className="font-mono font-bold text-[#d3d3d3]">
-                        {player.mind}/{player.maxMind}
-                      </span>
-                    </div>
-                    <div className="w-full h-3 bg-[#11161d] border border-[#3a4a5e]">
-                      <div
-                        className="h-full bg-[#4d627a]"
-                        style={{ width: `${Math.max(0, Math.min(100, (player.mind / Math.max(1, player.maxMind)) * 100))}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="col-span-4 flex flex-wrap gap-1.5 justify-end">
-                    {(
-                      [
-                        ['leftArm', 'Tay T'],
-                        ['rightArm', 'Tay P'],
-                        ['leftLeg', 'Chân T'],
-                        ['rightLeg', 'Chân P'],
-                      ] as const
-                    ).map(([k, label]) => {
-                      const intact = player.limbs[k];
-                      const inf = player.limbs.infected[k];
-                      return (
-                        <span
-                          key={k}
-                          className={`px-2 py-1 text-xs sm:text-sm font-medium border ${
-                            !intact
-                              ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b] line-through'
-                              : inf
-                              ? 'bg-[#261d0e] border-[#c5a059] text-[#c5a059]'
-                              : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
-                          }`}
-                        >
-                          {label}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
+                        className={`px-3 py-2 flex flex-col justify-between gap-1.5 ${
+                          isTurn ? 'df-card-active' : 'df-card'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {isTurn && <span className="text-[#fbbf24] text-xs font-bold">▸</span>}
+                            <span className="text-sm font-bold text-[#e5cfa0] truncate">
+                              {player.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs shrink-0">
+                            {player.statuses.guarding && <span title="Phòng Thủ">🛡️</span>}
+                            {player.statuses.bleeding && <span title="Chảy Máu">🩸</span>}
+                            {hasInfection && <span title="Nhiễm Trùng">☣️</span>}
+                            {!player.statuses.bleeding && (player.statuses.bleedImmunityTurns || 0) > 0 && (
+                              <span title="Đã Cầm Máu">🩹</span>
+                            )}
+                            {isPlayerPanicking(player) && <span title="Hoảng Loạn">😱</span>}
+                            {lostLimbsCount > 0 && (
+                              <span className="text-[#c96b6b] font-mono text-[11px]" title="Mất Chi">
+                                🦴×{lostLimbsCount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                {/* Row 2+: Up to 3 Recruited Allies / Undead Summons */}
-                {player.party.slice(0, 3).map((ally, idx) => {
-                  const isTurn = activeActorIdx === idx + 1 && !activeCombatEnemy.defeated;
-                  const isDead = ally.hp <= 0;
-                  const isFrenzied = ally.mind < 30 && !isDead;
-                  return (
-                    <div
-                      key={ally.id}
-                      className={`p-2.5 sm:p-3 grid grid-cols-12 items-center gap-3 text-sm ${
-                        isDead
-                          ? 'df-well opacity-45'
-                          : isTurn
-                          ? 'df-card-active'
-                          : 'df-card'
-                      }`}
-                    >
-                      <div className="col-span-3 flex items-center min-w-0">
-                        <div className="min-w-0 flex flex-wrap items-center gap-1.5">
-                          <span className="text-sm sm:text-base font-bold text-[#d3d3d3] truncate">
-                            {ally.name}
-                          </span>
-                          {isTurn && (
-                            <span className="text-xs text-[#c5a059] font-bold">
-                              [ĐANG CHỌN]
-                            </span>
-                          )}
-                          <span className="text-xs font-bold text-[#a889b8]">
-                            {ally.isUndeadSummon ? '[CHIÊU HỒN]' : '[ĐỒNG ĐỘI]'}
-                          </span>
-                          {isPureTankSummon(ally) && (
-                            <span className="px-1.5 py-0.5 bg-[#191620] border border-[#3a3a3a] text-xs text-[#d3d3d3] font-bold">
-                              [THUẦN THỦ]
-                            </span>
-                          )}
-                          {ally.guarding && (
-                            <span className="px-1.5 py-0.5 bg-[#1b1714] border border-[#c5a059] text-xs text-[#c5a059] font-bold">[THỦ]</span>
-                          )}
-                          {(ally.stunnedTurns || 0) > 0 && (
-                            <span className="px-1.5 py-0.5 bg-[#291e0e] border border-[#c5a059] text-xs text-[#e5cfa0] font-bold">
-                              [CHOÁNG]
-                            </span>
-                          )}
-                          {isFrenzied && (
-                            <span className="px-1.5 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-xs text-[#d3d3d3] font-bold">
-                              {ally.isUndeadSummon ? '[CUỒNG LOẠN]' : '[HOẢNG LOẠN]'}
-                            </span>
-                          )}
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <div className="flex justify-between text-[11px] leading-none mb-1">
+                              <span className="text-[#c96b6b] font-semibold">Thể Xác</span>
+                              <span className="font-mono font-bold text-[#e7dcc8]">
+                                {player.hp}/{player.maxHp}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-[#1a0b0d] border border-[#5e1414]">
+                              <div
+                                className="h-full bg-[#991b1b] transition-all duration-200"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, (player.hp / Math.max(1, player.maxHp)) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-[11px] leading-none mb-1">
+                              <span className="text-[#94a3b8] font-semibold">Lý Trí</span>
+                              <span className="font-mono font-bold text-[#e7dcc8]">
+                                {player.mind}/{player.maxMind}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-[#11161d] border border-[#3a4a5e]">
+                              <div
+                                className="h-full bg-[#4d627a] transition-all duration-200"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, (player.mind / Math.max(1, player.maxMind)) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="col-span-3">
-                        <div className="flex justify-between text-xs sm:text-sm mb-1">
-                          <span className="text-[#c96b6b] font-semibold">Sinh Lực</span>
-                          <span className="font-mono font-bold text-[#d3d3d3]">
-                            {ally.hp}/{ally.maxHp}
-                          </span>
-                        </div>
-                        <div className="w-full h-3 bg-[#1a0a0d] border border-[#3a3a3a]">
-                          <div
-                            className="h-full bg-[#8b0000]"
-                            style={{ width: `${Math.max(0, Math.min(100, (ally.hp / Math.max(1, ally.maxHp)) * 100))}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-span-2">
-                        <div className="flex justify-between text-xs sm:text-sm mb-1">
-                          <span className="text-[#a3b2c4] font-semibold">Lý Trí</span>
-                          <span className="font-mono font-bold text-[#d3d3d3]">
-                            {ally.mind}/{ally.maxMind}
-                          </span>
-                        </div>
-                        <div className="w-full h-3 bg-[#11151d] border border-[#3a3a3a]">
-                          <div
-                            className="h-full bg-[#5b6f8a]"
-                            style={{ width: `${Math.max(0, Math.min(100, (ally.mind / Math.max(1, ally.maxMind)) * 100))}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-span-4 flex flex-wrap gap-1.5 justify-end">
-                        {(
-                          [
-                            ['leftArm', 'Tay T'],
-                            ['rightArm', 'Tay P'],
-                            ['leftLeg', 'Chân T'],
-                            ['rightLeg', 'Chân P'],
-                          ] as const
-                        ).map(([k, label]) => {
-                          const intact = ally.limbs?.[k] ?? true;
-                          const inf = ally.limbs?.infected?.[k] ?? false;
-                          return (
-                            <span
-                              key={k}
-                              className={`px-2 py-1 text-xs sm:text-sm font-medium border ${
-                                !intact
-                                  ? 'bg-[#2a0c10] border-[#8b0000] text-[#c96b6b] line-through'
-                                  : inf
-                                  ? 'bg-[#261d0e] border-[#c5a059] text-[#c5a059]'
-                                  : 'bg-[#121914] border-[#3a3a3a] text-[#9ab08e]'
-                              }`}
-                            >
-                              {label}
+                    );
+                  })()}
+
+                  {/* Recruited Living Allies / Undead Summons Compact Cards (fallen 0 HP companions auto-removed) */}
+                  {player.party
+                    .map((ally, idx) => ({ ally, idx }))
+                    .filter(({ ally }) => ally.hp > 0)
+                    .slice(0, 3)
+                    .map(({ ally, idx }) => {
+                    const isTurn = activeActorIdx === idx + 1 && !activeCombatEnemy.defeated;
+                    const isFrenzied = ally.mind < 30;
+                    const lostLimbsCount = (
+                      ['leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as const
+                    ).filter((k) => !(ally.limbs?.[k] ?? true)).length;
+                    const hasInfection = Object.values(ally.limbs?.infected || {}).some(Boolean);
+                    return (
+                      <div
+                        key={ally.id}
+                        className={`px-3 py-2 flex flex-col justify-between gap-1.5 ${
+                          isTurn ? 'df-card-active' : 'df-card'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {isTurn && <span className="text-[#fbbf24] text-xs font-bold">▸</span>}
+                            <span className="text-sm font-bold text-[#d3d3d3] truncate">
+                              {ally.name}
                             </span>
-                          );
-                        })}
+                            {ally.isUndeadSummon && (
+                              <span className="text-[10px] text-[#a889b8] font-bold shrink-0">☠</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs shrink-0">
+                            {ally.guarding && <span title="Phòng Thủ">🛡️</span>}
+                            {(ally.stunnedTurns || 0) > 0 && <span title="Choáng">⚡</span>}
+                            {hasInfection && <span title="Nhiễm Trùng">☣️</span>}
+                            {isFrenzied && <span title="Hoảng Loạn / Cuồng Loạn">😱</span>}
+                            {lostLimbsCount > 0 && (
+                              <span className="text-[#c96b6b] font-mono text-[11px]" title="Mất Chi">
+                                🦴×{lostLimbsCount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <div className="flex justify-between text-[11px] leading-none mb-1">
+                              <span className="text-[#c96b6b] font-semibold">Thể Xác</span>
+                              <span className="font-mono font-bold text-[#d3d3d3]">
+                                {ally.hp}/{ally.maxHp}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-[#1a0a0d] border border-[#3a3a3a]">
+                              <div
+                                className="h-full bg-[#991b1b] transition-all duration-200"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, (ally.hp / Math.max(1, ally.maxHp)) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-[11px] leading-none mb-1">
+                              <span className="text-[#a3b2c4] font-semibold">Lý Trí</span>
+                              <span className="font-mono font-bold text-[#d3d3d3]">
+                                {ally.mind}/{ally.maxMind}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-[#11151d] border border-[#3a3a3a]">
+                              <div
+                                className="h-full bg-[#5b6f8a] transition-all duration-200"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, (ally.mind / Math.max(1, ally.maxMind)) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -6844,6 +7165,25 @@ export default function App() {
               </span>
             ))}
           </div>
+          {!currentRoom.isExterior && (() => {
+            const tCur = player.torchTimer ?? 120;
+            const tMax = Math.max(1, player.torchMaxTimer ?? 120);
+            const tPct = Math.round((tCur / tMax) * 100);
+            return (
+              <span
+                title="Nhiên liệu ánh sáng (Thắp Đuốc Sáng hoặc Đèn Dầu trong Túi [I] để duy trì tầm nhìn)"
+                className={`px-2 py-0.5 border font-mono text-xs leading-none flex items-center gap-1 ${
+                  tCur <= 0
+                    ? 'bg-[#1a090c] border-[#8b0000] text-[#c96b6b] animate-pulse'
+                    : tPct < 30
+                    ? 'bg-[#241608] border-[#d97706] text-[#fbbf24]'
+                    : 'bg-[#17120c] border-[#5e4b30] text-[#dfd2b4]'
+                }`}
+              >
+                {tCur <= 0 ? '🌑 Tắt Đuốc' : `🔥 ${tPct}%`}
+              </span>
+            );
+          })()}
           {(isPlayerPanicking(player) || player.party.some((a) => a.hp > 0 && a.mind < 30)) && (
             <span className="px-2 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[#d3d3d3] font-bold animate-pulse">
               😱 HOẢNG LOẠN
@@ -6897,17 +7237,22 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content: Full-Width Dungeon Stage with Right-Side Horizontal Action Confirmation & On-Demand Narrative Log */}
-      <div className="flex-1 min-h-0 max-w-[1440px] w-full mx-auto p-2.5 flex flex-col">
+      {/* Main Content: Full-Bleed 16:9 Dungeon Stage (94vw, max 1680px) */}
+      <div className="flex-1 min-h-0 w-[94vw] max-w-[1680px] mx-auto py-1.5 flex flex-col">
         <div className="w-full h-full min-h-0 flex flex-col gap-2">
           {/* Canvas Container */}
           <div className="relative flex-1 min-h-0 flex flex-col df-panel overflow-hidden">
-            {/* Top-Left Area Name Banner */}
-            <div className="absolute top-2.5 left-2.5 z-10 df-well px-3 py-1.5 pointer-events-none">
-              <div className="text-[11px] uppercase tracking-widest text-[#c5a059]">Khu Vực</div>
+            {/* Minimalist Fading Top-Left Area Typography (No heavy opaque box) */}
+            <div
+              key={areaBannerKey}
+              className="zone-title-toast absolute top-3.5 left-4 z-10 pointer-events-none select-none"
+            >
               <div
-                className="text-sm sm:text-base font-bold text-[#d3d3d3]"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                className="text-xl sm:text-2xl font-semibold tracking-wide text-[#f2ead9]"
+                style={{
+                  fontFamily: "'Cormorant Garamond', serif",
+                  textShadow: '0 2px 10px rgba(0,0,0,0.96), 0 0 4px rgba(0,0,0,0.92)',
+                }}
               >
                 {areaBannerText}
               </div>
@@ -6956,7 +7301,7 @@ export default function App() {
               </div>
             )}
 
-            <div className="relative flex-1 min-h-0 flex items-center justify-center bg-[#050407] p-1 overflow-hidden">
+            <div className="relative flex-1 min-h-0 w-full h-full bg-[#050407] overflow-hidden">
               <DungeonMapViewport
                 room={currentRoom}
                 player={player}
@@ -7009,21 +7354,31 @@ export default function App() {
                           }
                           onClick={() => choice.onSelect()}
                           className={`w-full text-left px-4 py-1.5 font-serif text-sm sm:text-base tracking-wide transition cursor-pointer ${
-                            isSelected
+                            choice.muted
+                              ? isSelected
+                                ? 'text-[#b5aba0] font-semibold'
+                                : 'text-[#847c74] hover:text-[#b5aba0]'
+                              : isSelected
                               ? 'text-[#f3e6c4] font-semibold'
                               : 'text-[#d3d3d3]/75 hover:text-[#f3e6c4]'
                           }`}
                           style={
                             isSelected
                               ? {
-                                  background:
-                                    'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
-                                  textShadow: '0 0 8px rgba(197, 160, 89, 0.55)',
+                                  background: choice.muted
+                                    ? 'radial-gradient(ellipse at center, rgba(64, 56, 54, 0.72) 0%, rgba(30, 26, 26, 0.45) 55%, rgba(15, 10, 12, 0) 100%)'
+                                    : 'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
+                                  textShadow: choice.muted ? undefined : '0 0 8px rgba(197, 160, 89, 0.55)',
                                 }
                               : undefined
                           }
                         >
-                          {choice.label}
+                          <div>{choice.label}</div>
+                          {choice.hint && (
+                            <div className="text-[11px] font-sans font-normal text-[#968d85] mt-0.5 leading-snug">
+                              ↳ {choice.hint}
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -8419,6 +8774,9 @@ export default function App() {
                                   } else {
                                     pCopy.inventory[itemId] = Math.max(0, (pCopy.inventory[itemId] || 0) - 1);
                                     applySupportItemEffects(pCopy, itemId, logs);
+                                    if (itemId === 'torch' || itemId === 'oil_lamp') {
+                                      torchLowWarnedRef.current = false;
+                                    }
                                   }
                                   setPlayer(pCopy);
                                   if (logs.length > 0) {
@@ -8850,102 +9208,418 @@ export default function App() {
       {activeModal === 'lore' && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
           <div className="max-w-4xl w-full df-panel p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#3a3a3a] pb-3">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-[#c5a059]" />
                 <h2 className="text-lg font-bold uppercase tracking-wider text-[#dfd2b4]">
-                  Thư Viện Trang Giấy Da Dê Cổ ({player.readBookIds.length}/{CONFIG.BOOKS.length} Cuộn Đã Mở)
+                  {loreModalTab === 'books'
+                    ? `Thư Viện Trang Giấy Da Dê Cổ (${player.readBookIds.length}/${CONFIG.BOOKS.length} Cuộn)`
+                    : 'Dấu Vết Định Mệnh — Hành Trình Ba Tầng'}
                 </h2>
               </div>
-              <button
-                onClick={() => setActiveModal(null)}
-                className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
-              >
-                Đóng [ESC]
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLoreModalTab('books')}
+                  className={`px-3 py-1 text-xs font-bold cursor-pointer ${
+                    loreModalTab === 'books' ? 'df-card-active text-[#f3e6c4]' : 'df-btn text-[#a3998f]'
+                  }`}
+                >
+                  Cổ Thư ({player.readBookIds.length}/{CONFIG.BOOKS.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoreModalTab('destiny')}
+                  className={`px-3 py-1 text-xs font-bold cursor-pointer ${
+                    loreModalTab === 'destiny' ? 'df-card-active text-[#f3e6c4]' : 'df-btn text-[#a3998f]'
+                  }`}
+                >
+                  ✦ Dấu Vết Định Mệnh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveModal(null)}
+                  className="df-btn px-3 py-1 text-xs font-bold cursor-pointer"
+                >
+                  Đóng [ESC]
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-              {/* Left List: Unfound books are strictly locked as [Cuộn ???] */}
-              <div className="md:col-span-5 space-y-1.5 max-h-[65vh] overflow-y-auto pr-1">
-                {CONFIG.BOOKS.map((book) => {
-                  const unlocked = player.readBookIds.includes(book.id);
-                  const active = selectedLoreBookId === book.id;
-                  return (
-                    <button
-                      key={book.id}
-                      disabled={!unlocked}
-                      onClick={() => setSelectedLoreBookId(book.id)}
-                      className={`w-full text-left p-2.5 text-xs transition ${
-                        !unlocked
-                          ? 'df-well opacity-45 text-[#7a7066] cursor-not-allowed'
-                          : active
-                          ? 'df-card-active text-[#dfd2b4] cursor-pointer'
-                          : 'df-card text-[#d3d3d3] cursor-pointer'
-                      }`}
-                    >
-                      {unlocked ? (
-                        <div className="font-bold">
-                          Cuộn #{book.vol}: {book.title}
-                        </div>
-                      ) : (
-                        <div className="italic">
-                          [Cuộn #{book.vol} ??? – Chưa tìm thấy trên kệ sách]
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Right Panel: Ancient Parchment Scroll Page (`Trang Giấy Da Dê Cổ`) */}
-              <div className="md:col-span-7">
-                {(() => {
-                  const book =
-                    CONFIG.BOOKS.find((b) => b.id === selectedLoreBookId) ||
-                    CONFIG.BOOKS[0];
-                  const isUnlocked = player.readBookIds.includes(book.id);
-
-                  if (!isUnlocked) {
+            {loreModalTab === 'books' ? (
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+                {/* Left List: Unfound books are strictly locked as [Cuộn ???] */}
+                <div className="md:col-span-5 space-y-1.5 max-h-[65vh] overflow-y-auto pr-1">
+                  {CONFIG.BOOKS.map((book) => {
+                    const unlocked = player.readBookIds.includes(book.id);
+                    const active = selectedLoreBookId === book.id;
                     return (
-                      <div className="h-full min-h-[320px] df-well flex flex-col items-center justify-center p-6 text-center space-y-2">
-                        <ItemArtworkCanvas itemOrWeaponId="ancient_parchment" size={64} />
-                        <div className="text-sm font-bold text-[#c5a059]">
-                          CUỘN SÁCH DA DÊ NÀY CHƯA ĐƯỢC TÌM THẤY
+                      <button
+                        key={book.id}
+                        disabled={!unlocked}
+                        onClick={() => setSelectedLoreBookId(book.id)}
+                        className={`w-full text-left p-2.5 text-xs transition ${
+                          !unlocked
+                            ? 'df-well opacity-45 text-[#7a7066] cursor-not-allowed'
+                            : active
+                            ? 'df-card-active text-[#dfd2b4] cursor-pointer'
+                            : 'df-card text-[#d3d3d3] cursor-pointer'
+                        }`}
+                      >
+                        {unlocked ? (
+                          <div className="font-bold">
+                            Cuộn #{book.vol}: {book.title}
+                          </div>
+                        ) : (
+                          <div className="italic">
+                            [Cuộn #{book.vol} ??? – Chưa tìm thấy trên kệ sách]
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Right Panel: Ancient Parchment Scroll Page (`Trang Giấy Da Dê Cổ`) */}
+                <div className="md:col-span-7">
+                  {(() => {
+                    const book =
+                      CONFIG.BOOKS.find((b) => b.id === selectedLoreBookId) ||
+                      CONFIG.BOOKS[0];
+                    const isUnlocked = player.readBookIds.includes(book.id);
+
+                    if (!isUnlocked) {
+                      return (
+                        <div className="h-full min-h-[320px] df-well flex flex-col items-center justify-center p-6 text-center space-y-2">
+                          <ItemArtworkCanvas itemOrWeaponId="ancient_parchment" size={64} />
+                          <div className="text-sm font-bold text-[#c5a059]">
+                            CUỘN SÁCH DA DÊ NÀY CHƯA ĐƯỢC TÌM THẤY
+                          </div>
+                          <p className="text-xs text-[#9b8f82] max-w-sm">
+                            Hãy lục soát các Kệ Sách Cổ (Bookshelf) trong Đại Giáo Đường Goethe để mở
+                            khóa tri thức giải phẫu và cổ ngữ này.
+                          </p>
                         </div>
-                        <p className="text-xs text-[#9b8f82] max-w-sm">
-                          Hãy lục soát các Kệ Sách Cổ (Bookshelf) trong Đại Giáo Đường Goethe để mở
-                          khóa tri thức giải phẫu và cổ ngữ này.
+                      );
+                    }
+
+                    return (
+                      <div
+                        className="p-6 df-parchment-frame text-[#26190d] space-y-4 max-h-[60vh] overflow-y-auto"
+                        style={{
+                          fontFamily: "'Cormorant Garamond', serif",
+                        }}
+                      >
+                        <div className="flex items-center justify-between border-b-2 border-[#6e5233]/50 pb-2">
+                          <div>
+                            <div className="text-xs uppercase tracking-widest font-bold text-[#8b0000]">
+                              Ấn Bản Cổ Tự #{book.vol} • {book.floorHint}
+                            </div>
+                            <h3 className="text-2xl font-bold text-[#1f1308]">{book.title}</h3>
+                          </div>
+                          <ItemArtworkCanvas itemOrWeaponId="ancient_parchment" size={52} />
+                        </div>
+
+                        <p className="text-base leading-relaxed font-serif text-[#2b1b0e] whitespace-pre-line">
+                          {book.content}
                         </p>
                       </div>
                     );
-                  }
-
-                  return (
-                    <div
-                      className="p-6 df-parchment-frame text-[#26190d] space-y-4 max-h-[60vh] overflow-y-auto"
-                      style={{
-                        fontFamily: "'Cormorant Garamond', serif",
-                      }}
-                    >
-                      <div className="flex items-center justify-between border-b-2 border-[#6e5233]/50 pb-2">
-                        <div>
-                          <div className="text-xs uppercase tracking-widest font-bold text-[#8b0000]">
-                            Ấn Bản Cổ Tự #{book.vol} • {book.floorHint}
-                          </div>
-                          <h3 className="text-2xl font-bold text-[#1f1308]">{book.title}</h3>
-                        </div>
-                        <ItemArtworkCanvas itemOrWeaponId="ancient_parchment" size={52} />
-                      </div>
-
-                      <p className="text-base leading-relaxed font-serif text-[#2b1b0e] whitespace-pre-line">
-                        {book.content}
-                      </p>
-                    </div>
-                  );
-                })()}
+                  })()}
+                </div>
               </div>
-            </div>
+            ) : (
+              (() => {
+                const hasVoidCore = (player.inventory.void_core || 0) > 0;
+                const hasReconScroll = (player.inventory.reconstruction_scroll || 0) > 0;
+                const reconFragCount = player.inventory.reconstruction_fragment || 0;
+                const hasElixir = (player.inventory.elixir_of_ancients || 0) > 0;
+                const child13InParty = player.party.some((a) => a.id === 'child_13' && a.hp > 0);
+                const child13Rescued = Boolean(player.questFlags?.child13Rescued);
+                const hasBook9 = player.readBookIds.includes('book_9');
+                const demonicAff = player.affinities?.demonicPact || 0;
+                const holyBanned = isHolyMotherBanned(player);
+
+                // Progressive Reveal (Fog of Information): only reveal world secrets after owning or hearing/reading clues
+                const voidCoreDiscovered =
+                  hasVoidCore ||
+                  Boolean(player.questFlags?.vaelisTalked) ||
+                  Boolean(player.questFlags?.vaelisDefeated) ||
+                  player.readBookIds.includes('book_1') ||
+                  player.readBookIds.includes('book_7');
+
+                const reconDiscovered =
+                  hasReconScroll ||
+                  reconFragCount > 0 ||
+                  player.readBookIds.includes('book_13') ||
+                  Boolean(player.questFlags?.chroniclerTalked);
+
+                const elixirDiscovered =
+                  hasElixir ||
+                  Boolean(player.questFlags?.curedPetrification) ||
+                  player.classId === 'night_hunter' ||
+                  player.readBookIds.includes('book_9') ||
+                  Boolean(player.questFlags?.physicianTalked);
+
+                const child13Discovered =
+                  child13InParty ||
+                  child13Rescued ||
+                  player.classId === 'forsaken_nun' ||
+                  player.readBookIds.includes('book_4') ||
+                  Boolean(player.questFlags?.child12Resolved);
+
+                const book9Discovered =
+                  hasBook9 ||
+                  Boolean(player.questFlags?.chroniclerTalked) ||
+                  player.readBookIds.includes('book_2') ||
+                  player.readBookIds.includes('book_6');
+
+                const worldMilestones = [
+                  {
+                    key: 'void_core',
+                    discovered: voidCoreDiscovered,
+                    title: voidCoreDiscovered ? 'Lõi Khóa Hư Vô' : '???',
+                    category: voidCoreDiscovered ? 'Dấu Vết Thế Giới' : 'Bí Ẩn Chưa Rõ',
+                    done: hasVoidCore,
+                    status: !voidCoreDiscovered
+                      ? 'Chưa có manh mối nào được ghi nhận...'
+                      : hasVoidCore
+                      ? 'Đã thu thập'
+                      : 'Đã ghi nhận manh mối về một dị vật khống chế Kết Giới.',
+                  },
+                  {
+                    key: 'recon_scroll',
+                    discovered: reconDiscovered,
+                    title: reconDiscovered ? 'Thần Chú Tái Thiết' : '???',
+                    category: reconDiscovered ? 'Dấu Vết Thế Giới' : 'Bí Ẩn Chưa Rõ',
+                    done: hasReconScroll,
+                    status: !reconDiscovered
+                      ? 'Chưa có manh mối nào được ghi nhận...'
+                      : hasReconScroll
+                      ? 'Đã ghép trọn vẹn Cuộn Thần Chú'
+                      : reconFragCount > 0
+                      ? `Đang giữ ${reconFragCount}/3 mảnh rời`
+                      : 'Đã ghi nhận manh mối về 3 mảnh cổ chú thất lạc.',
+                  },
+                  {
+                    key: 'elixir',
+                    discovered: elixirDiscovered,
+                    title: elixirDiscovered ? 'Tiên Dược Nguyên Sơ' : '???',
+                    category: elixirDiscovered ? 'Dấu Vết Thế Giới' : 'Bí Ẩn Chưa Rõ',
+                    done: hasElixir || Boolean(player.questFlags?.curedPetrification),
+                    status: !elixirDiscovered
+                      ? 'Chưa có manh mối nào được ghi nhận...'
+                      : hasElixir
+                      ? 'Đã thu thập trong Túi Đồ'
+                      : player.questFlags?.curedPetrification
+                      ? 'Đã sử dụng để hóa giải lời nguyền'
+                      : 'Đã ghi nhận manh mối về bình dược liệu cổ xưa.',
+                  },
+                  {
+                    key: 'child_13',
+                    discovered: child13Discovered,
+                    title: child13Discovered ? 'Thánh Tử Thứ 13' : '???',
+                    category: child13Discovered ? 'Dấu Vết Thế Giới' : 'Bí Ẩn Chưa Rõ',
+                    done: child13InParty,
+                    status: !child13Discovered
+                      ? 'Chưa có manh mối nào được ghi nhận...'
+                      : child13InParty
+                      ? 'Đang đồng hành cùng Tổ Đội'
+                      : child13Rescued
+                      ? 'Đã gặp và giải thoát (hiện không đi cùng Tổ Đội)'
+                      : 'Đã ghi nhận manh mối về đứa trẻ cuối cùng còn sống sót.',
+                  },
+                  {
+                    key: 'book_9',
+                    discovered: book9Discovered,
+                    title: book9Discovered ? 'Cuộn Da Dê IX' : '???',
+                    category: book9Discovered ? 'Tri Thức Cổ Ngữ' : 'Bí Ẩn Chưa Rõ',
+                    done: hasBook9,
+                    status: !book9Discovered
+                      ? 'Chưa có manh mối nào được ghi nhận...'
+                      : hasBook9
+                      ? 'Đã lĩnh hội tri thức cổ ngữ'
+                      : 'Đã ghi nhận manh mối về một cuộn cổ thư thất lạc.',
+                  },
+                ];
+
+                // Non-spoiler personal journal objective & clean Corruption threshold display
+                const personalLabel =
+                  player.classId === 'fallen_knight'
+                    ? 'Lời Thề Kỵ Đoàn (Kẻ Gác Mộ)'
+                    : player.classId === 'forsaken_nun'
+                    ? 'Tội Ác Máu Đen & Em Trai (Nữ Tu)'
+                    : 'Hóa Giải Lời Nguyền Hóa Đá (Gã Săn Di Vật)';
+
+                const personalJournalGoal =
+                  player.classId === 'fallen_knight'
+                    ? 'Đi tìm sự thật đằng sau cuộc phản bội của Đội trưởng cũ, thu thập chứng cứ từ các cổ thư và giữ tâm hồn khỏi bị Tha Hóa.'
+                    : player.classId === 'forsaken_nun'
+                    ? 'Tìm lại đứa em trai bị Giáo Hội bắt đi, thu thập bằng chứng về bi kịch Máu Đen và giữ vững đức tin thuần khiết.'
+                    : 'Truy tìm bình Tiên Dược Nguyên Sơ để xóa bỏ lớp vảy hóa đá trên cơ thể và tìm đường sống rời khỏi Thung Lũng.';
+
+                const personalDone =
+                  (player.classId === 'fallen_knight' &&
+                    Boolean(player.questFlags?.vaelisTalked) &&
+                    Boolean(player.questFlags?.vaelisDefeated) &&
+                    player.corruption < 30 &&
+                    player.readBookIds.length >= 3) ||
+                  (player.classId === 'forsaken_nun' &&
+                    child13InParty &&
+                    player.corruption < 15 &&
+                    player.readBookIds.length >= 3) ||
+                  (player.classId === 'night_hunter' &&
+                    Boolean(player.questFlags?.curedPetrification) &&
+                    Boolean(player.questFlags?.vaelisDefeated));
+
+                const corruptionLimit =
+                  player.classId === 'fallen_knight'
+                    ? 29
+                    : player.classId === 'forsaken_nun'
+                    ? 14
+                    : null;
+                const corruptionExceeded =
+                  corruptionLimit !== null && player.corruption > corruptionLimit;
+
+                return (
+                  <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+                    <div className="df-well p-3.5 text-xs text-[#cfc0a9] flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        Trạng thái tâm hồn:{' '}
+                        <strong className="text-[#c5a059]">
+                          {holyBanned
+                            ? 'Bị Thánh Mẫu Khước Từ'
+                            : player.corruption === 0
+                            ? 'Thuần Khiết (Tha Hóa 0)'
+                            : `Tha Hóa ${player.corruption}`}
+                        </strong>
+                      </span>
+                      <span className="text-[#a3998f]">
+                        Tín Ngưỡng Huyết Quỷ: <strong className="text-[#c96b6b]">{demonicAff}</strong> • Thánh Mẫu:{' '}
+                        <strong className="text-[#e2e8f0]">{player.affinities?.holyMother || 0}</strong> • Hư Vô:{' '}
+                        <strong className="text-[#c084fc]">{player.affinities?.primordialVoid || 0}</strong>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {worldMilestones.map((m) => (
+                        <div
+                          key={m.key}
+                          className={`p-3.5 space-y-1 ${
+                            m.done
+                              ? 'df-card-active'
+                              : m.discovered
+                              ? 'df-well'
+                              : 'df-well opacity-70'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className={`text-sm font-bold ${
+                                m.discovered ? 'text-[#dfd2b4]' : 'text-[#8e847b] tracking-widest'
+                              }`}
+                            >
+                              {m.title}
+                            </span>
+                            <span
+                              className={`text-[11px] font-mono font-bold ${
+                                m.done
+                                  ? 'text-[#9ab08e]'
+                                  : m.discovered
+                                  ? 'text-[#c5a059]'
+                                  : 'text-[#6e665f]'
+                              }`}
+                            >
+                              {m.done ? '✦ ĐÃ ĐẠT' : m.discovered ? '◐ ĐANG LẦN DẤU' : '○ CHƯA RÕ'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] uppercase tracking-wider text-[#c5a059]/80">
+                            {m.category}
+                          </div>
+                          <div
+                            className={`text-xs leading-snug ${
+                              m.discovered ? 'text-[#cfc0a9]' : 'text-[#8e847b] italic'
+                            }`}
+                          >
+                            {m.status}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Personal Character Journal Card (Non-Spoiler) */}
+                      <div
+                        className={`p-3.5 space-y-1.5 ${
+                          personalDone ? 'df-card-active' : 'df-well'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-bold text-[#dfd2b4]">{personalLabel}</span>
+                          <span
+                            className={`text-[11px] font-mono font-bold ${
+                              personalDone ? 'text-[#9ab08e]' : 'text-[#8e847b]'
+                            }`}
+                          >
+                            {personalDone ? '✦ ĐÃ ĐẠT' : '○ CHẤP NIỆM'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] uppercase tracking-wider text-[#c5a059]/85">
+                          Chấp Niệm Cá Nhân
+                        </div>
+                        <div className="text-xs text-[#cfc0a9] leading-snug">
+                          {personalJournalGoal}
+                        </div>
+                        <div className="pt-1 border-t border-[#3a3a3a]/70 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono">
+                          {(player.classId === 'fallen_knight' ||
+                            player.classId === 'forsaken_nun') && (
+                            <span className="text-[#cfc0a9]">
+                              Cổ thư: {player.readBookIds.length}/3
+                            </span>
+                          )}
+                          {corruptionLimit !== null && (
+                            <span
+                              className={
+                                corruptionExceeded
+                                  ? 'text-[#ef4444] font-bold'
+                                  : 'text-[#9ab08e]'
+                              }
+                            >
+                              Tha Hóa ≤ {corruptionLimit} (Hiện tại: {player.corruption})
+                              {corruptionExceeded ? ' — Vượt ngưỡng Tha Hóa' : ''}
+                            </span>
+                          )}
+                          {player.classId === 'fallen_knight' && player.questFlags?.vaelisTalked && (
+                            <span className="text-[#9ab08e]">• Đã đối chất quá khứ</span>
+                          )}
+                          {player.classId === 'fallen_knight' && player.questFlags?.vaelisDefeated && (
+                            <span className="text-[#9ab08e]">• Đã chấm dứt lời nguyền Vaelis</span>
+                          )}
+                          {player.classId === 'forsaken_nun' && child13InParty && (
+                            <span className="text-[#9ab08e]">• Em trai đang đồng hành</span>
+                          )}
+                          {player.classId === 'night_hunter' && (
+                            <span
+                              className={
+                                player.questFlags?.curedPetrification
+                                  ? 'text-[#9ab08e]'
+                                  : 'text-[#cfc0a9]'
+                              }
+                            >
+                              Hóa đá:{' '}
+                              {player.questFlags?.curedPetrification
+                                ? 'Đã hóa giải'
+                                : 'Chưa hóa giải'}
+                            </span>
+                          )}
+                          {player.classId === 'night_hunter' && player.questFlags?.vaelisDefeated && (
+                            <span className="text-[#9ab08e]">• Chướng khí đã tan</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
           </div>
         </div>
       )}
