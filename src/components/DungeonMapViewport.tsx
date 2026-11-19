@@ -472,7 +472,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             [TILE.NPC_PHYSICIAN]: { sprite: 'npc_physician', label: 'Lão Thần Y' },
             [TILE.NPC_CHRONICLER]: { sprite: 'npc_chronicler', label: 'Kẻ Chép Sử' },
             [TILE.NPC_RECRUIT_KNIGHT]: { sprite: 'fallen_knight', label: 'Kẻ Gác Mộ Garrick' },
-            [TILE.NPC_RECRUIT_NUN]: { sprite: 'forsaken_nun', label: 'Kẻ Dị Giáo Agnes' },
+            [TILE.NPC_RECRUIT_NUN]: { sprite: 'forsaken_nun', label: 'Nữ Tu Oan Khuất Agnes' },
             [TILE.NPC_RECRUIT_HUNTER]: { sprite: 'night_hunter', label: 'Gã Săn Di Vật Crow' },
           };
 
@@ -1048,7 +1048,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             else if (t === TILE.NPC_RECRUIT_KNIGHT && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
               promptLabel = '[F] Kẻ Gác Mộ Garrick';
             else if (t === TILE.NPC_RECRUIT_NUN && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
-              promptLabel = '[F] Kẻ Dị Giáo Agnes';
+              promptLabel = '[F] Nữ Tu Oan Khuất Agnes';
             else if (t === TILE.NPC_RECRUIT_HUNTER && isNpcTileActive(t, player, room.lootedCoords.includes(cKey)))
               promptLabel = '[F] Gã Săn Di Vật Crow';
             else if (t === TILE.VOID_RIFT) promptLabel = '[F] Vết Rách & Thánh Tử 13';

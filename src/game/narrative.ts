@@ -393,7 +393,7 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
     };
   }
 
-  // 6. S-Ending Nữ Tu (Kẻ Dị Giáo Mang Dấu Ấn)
+  // 6. S-Ending Nữ Tu Oan Khuất
   if (
     input.endingAction === 'ESCAPE_EXTERIOR_GATE' &&
     input.classId === 'forsaken_nun' &&
@@ -404,7 +404,7 @@ export function evaluateCanonEnding(input: EndingEvalInput): EndingResult {
   ) {
     return {
       id: 'S_ENDING_NUN',
-      title: 'KẾT CỤC VI (S-ENDING KẺ DỊ GIÁO): TRO TÀN CỦA ĐỨC TIN',
+      title: 'KẾT CỤC VI (S-ENDING NỮ TU OAN KHUẤT): TRO TÀN CỦA ĐỨC TIN',
       subtitle: 'Bằng Chứng Máu Đen & Giải Cứu Em Trai',
       epilogue:
         'Không khuất phục trước quyền năng giả tạo của Thánh Mẫu hay Huyết Quỷ, bạn ôm theo toàn bộ Sổ Kiểm Kê Tế Lễ và dắt tay người em trai — Thánh Tử Thứ 13 — bước qua Cổng Sắt Răng Cưa trở về thế giới thực. Trước hàng ngàn tín đồ bàng hoàng ngoài cổng Đại Giáo Đường Goethe, bạn ném thẳng những trang giấy thấm máu đen xuống chân các Giám Mục, châm ngòi cho sự sụp đổ của một đức tin mục nát.',

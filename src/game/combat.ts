@@ -198,7 +198,7 @@ export const GEAR_ITEMS: Record<string, ArmorGearDef> = {
     agility: -2,
     luck: 0,
     limbSeverResistPct: 0.50,
-    desc: 'Mũ sắt kín mặt của quân tiên phong Vaelis (+10 Phòng Thủ, -2 Nhanh Nhẹn, giảm 50% sát thương chí mạng vào Đầu; Kẻ Dị Giáo không thể đội).',
+    desc: 'Mũ sắt kín mặt của quân tiên phong Vaelis (+10 Phòng Thủ, -2 Nhanh Nhẹn, giảm 50% sát thương chí mạng vào Đầu; Nữ Tu Oan Khuất không thể đội).',
   },
   beak_mask: {
     id: 'beak_mask',
@@ -316,7 +316,7 @@ export const GEAR_ITEMS: Record<string, ArmorGearDef> = {
     agility: -2,
     luck: 0,
     bleedResistPct: 0.50,
-    desc: 'Giáp Hạng Nặng: Áo xích sắt dài tới đầu gối (+15 Phòng Thủ, -2 Nhanh Nhẹn, giảm 50% tỉ lệ bị Chảy Máu từ vũ khí sắc nhọn; Kẻ Dị Giáo không thể mặc).',
+    desc: 'Giáp Hạng Nặng: Áo xích sắt dài tới đầu gối (+15 Phòng Thủ, -2 Nhanh Nhẹn, giảm 50% tỉ lệ bị Chảy Máu từ vũ khí sắc nhọn; Nữ Tu Oan Khuất không thể mặc).',
   },
   legion_brigandine: {
     id: 'legion_brigandine',
@@ -331,7 +331,7 @@ export const GEAR_ITEMS: Record<string, ArmorGearDef> = {
     agility: -4,
     luck: 0,
     limbSeverResistPct: 0.45,
-    desc: 'Giáp Hạng Nặng: Các tấm thép tán đinh bên dưới lớp da dày (+22 Phòng Thủ, -4 Nhanh Nhẹn, giảm mạnh tỉ lệ bị chặt đứt Tay và Chân; Kẻ Dị Giáo không thể mặc).',
+    desc: 'Giáp Hạng Nặng: Các tấm thép tán đinh bên dưới lớp da dày (+22 Phòng Thủ, -4 Nhanh Nhẹn, giảm mạnh tỉ lệ bị chặt đứt Tay và Chân; Nữ Tu Oan Khuất không thể mặc).',
   },
   platinum_cuirass: {
     id: 'platinum_cuirass',
@@ -408,7 +408,7 @@ export function canPlayerEquipGear(
   if (p.classId === 'forsaken_nun' && (gear.forbidNun || gear.weightClass === 'heavy')) {
     return {
       allowed: false,
-      reason: 'Kẻ Dị Giáo Mang Dấu Ấn chỉ có thể mặc Giáp Nhẹ và Lễ Phục (không thể mặc Giáp Nặng / Mũ Thép Kỵ Đoàn).',
+      reason: 'Nữ Tu Oan Khuất chỉ có thể mặc Giáp Nhẹ và Lễ Phục (không thể mặc Giáp Nặng / Mũ Thép Kỵ Đoàn).',
     };
   }
   if (gear.requiresZeroCorruption && p.corruption > 0) {
@@ -735,7 +735,7 @@ export function createRecruitedAlly(
   if (allyKey === 'forsaken_nun') {
     return {
       id: 'forsaken_nun',
-      name: 'Kẻ Dị Giáo Agnes',
+      name: 'Nữ Tu Oan Khuất Agnes',
       classId: 'forsaken_nun',
       spriteKey: 'forsaken_nun',
       hp: 95,

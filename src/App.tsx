@@ -1474,7 +1474,7 @@ export default function App() {
             : 'night_hunter';
         const titleMap: Record<string, string> = {
           fallen_knight: 'KẺ GÁC MỘ VÔ DANH MARCUS',
-          forsaken_nun: 'KẺ DỊ GIÁO MANG DẤU ẤN AGNES',
+          forsaken_nun: 'NỮ TU OAN KHUẤT AGNES',
           night_hunter: 'GÃ SĂN DI VẬT CROW',
         };
         const introSpeechMap: Record<string, string> = {

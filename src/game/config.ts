@@ -220,7 +220,7 @@ export const CONFIG = {
     },
     {
       id: 'forsaken_nun',
-      name: 'Kẻ Dị Giáo Mang Dấu Ấn',
+      name: 'Nữ Tu Oan Khuất',
       title: 'Cựu Nữ Tu',
       combatPortraitUrl: '/assets/portraits/forsaken_nun.jpg',
       hp: 100,
