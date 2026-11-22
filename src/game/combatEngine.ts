@@ -458,8 +458,7 @@ export class CombatEngine {
         id: 'SLAIN_IN_COMBAT',
         title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
         subtitle: 'Sinh Lực Cạn Kiệt Trong Giao Tranh',
-        epilogue:
-          'Những nhát chém tàn khốc của quái vật đã kết thúc hành trình của bạn. Khi bắt đầu lại, Thung Lũng sẽ tái cấu trúc bằng một Seed ngẫu nhiên mới — hoặc bạn có thể tải lại Bản Lưu để quay về Seed cũ.',
+        epilogue: 'Hành trình của bạn đã kết thúc.',
       };
     } else if (res.enemyDefeated && eCopy.templateId === 'demon_lord_vaelis') {
       endingTrigger = {
@@ -568,8 +567,7 @@ export class CombatEngine {
         id: 'SLAIN_IN_COMBAT',
         title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
         subtitle: 'Sinh Lực Cạn Kiệt Trong Giao Tranh',
-        epilogue:
-          'Những nhát chém tàn khốc của quái vật đã kết thúc hành trình của bạn. Khi bắt đầu lại, Thung Lũng sẽ tái cấu trúc bằng một Seed ngẫu nhiên mới — hoặc bạn có thể tải lại Bản Lưu để quay về Seed cũ.',
+        epilogue: 'Hành trình của bạn đã kết thúc.',
       };
     } else if (res.enemyDefeated && eCopy.templateId === 'demon_lord_vaelis') {
       endingTrigger = {
@@ -627,8 +625,7 @@ export class CombatEngine {
         id: 'SLAIN_IN_COMBAT',
         title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
         subtitle: 'Sinh Lực Cạn Kiệt Trong Giao Tranh',
-        epilogue:
-          'Những nhát chém tàn khốc của quái vật đã kết thúc hành trình của bạn. Khi bắt đầu lại, Thung Lũng sẽ tái cấu trúc bằng một Seed ngẫu nhiên mới — hoặc bạn có thể tải lại Bản Lưu để quay về Seed cũ.',
+        epilogue: 'Hành trình của bạn đã kết thúc.',
       };
     } else if (res.enemyDefeated && eCopy.templateId === 'demon_lord_vaelis') {
       endingTrigger = {

@@ -1517,105 +1517,119 @@ export const CONFIG = {
   ] as SkillDef[],
 
   // 13 Canon Lore Books (4 Cuộn Da Dê Cổ + 9 Nhật Ký & Tài Liệu Mật)
+  // 13 Canon Lore Books (4 Cuộn Da Dê Cổ + 9 Nhật Ký & Tài Liệu Mật)
   BOOKS: [
     // === 4 CUỘN DA DÊ CỔ ===
     {
       id: 'book_1',
       vol: 1,
-      title: 'Cuộn Da Dê I – Biên Niên Sử Vực Sao & Kết Giới Vaelis',
+      title: 'Cuộn Da Dê I – Đêm Lâu Đài Rơi',
       floorHint: 'Cuộn Da Dê Cổ • Tầng 2 – Đại Giáo Đường Goethe',
-      content: 'Đêm định mệnh ấy, Hiệp Sĩ Trưởng Vaelis bất ngờ nhấc bổng Lâu Đài Hắc Ám giáng thẳng xuống đè nát mái vòm Đại Giáo Đường Goethe. Ba tầng không gian bị ép chặt vào nhau: Tầng 1 Lâu Đài Hắc Ám, Tầng 2 Giáo Đường Đổ Nát và Tầng 3 Vực Sao. Kết Giới Chướng Khí đẩy lùi mọi kẻ muốn quay đầu — như thể tòa lâu đài đang dùng sức nặng ngàn cân khóa chặt một thứ gì đó dưới lòng đất.',
+      content:
+        'Đêm Trăng Đỏ, tháp chuông Goethe không đổ vì bão. Chính Hiệp Sĩ Trưởng Vaelis đã kéo cả tòa Lâu Đài Hắc Ám từ trên cao giáng sập xuống mái vòm giáo đường, ép ba tầng địa ngục dính chặt vào nhau. Màn sương chướng khí ngoài cổng đẩy bật mọi kẻ muốn quay đầu — như thể cả tòa thành đá nặng ngàn cân kia chỉ là một nắp quan tài đang cố đè thứ gì đó dưới lòng đất.',
     },
     {
       id: 'book_2',
       vol: 2,
-      title: 'Cuộn Da Dê III – Chữ Khắc Nơi Đáy Vực & Đài Cộng Hưởng',
+      title: 'Cuộn Da Dê II – Lời Khắc Bên Đài Cộng Hưởng',
       floorHint: 'Cuộn Da Dê Cổ • Tầng 2 & 3 – Đài Cộng Hưởng',
       unlockRecipeId: 'recipe_herbal_salve',
-      content: 'Đài Cộng Hưởng là di tích cổ xưa nối phàm nhân với Ba Trụ Cột Thực Thể: Thánh Mẫu (Trật Tự), Huyết Quỷ (Ngọn Lửa Phản Kháng) và Hư Vô Nguyên Thủy (Sự Tĩnh Lặng Vô Tri). Mọi quyền năng đều đòi cái giá tương xứng: Huyết Quỷ làm Tha Hóa dâng trào (+15 mỗi bậc Tín Ngưỡng), còn Hư Vô bào mòn Lý Trí Tối Đa (-10 mỗi bậc) để đổi lấy miễn nhiễm Chướng Khí tầng đáy.\n\n[Giả Kim]: Lọ Nâu phá tường đá nứt; Lọ Đỏ tạt vào mặt gây mù và bào giáp.',
+      content:
+        'Đừng cầu nguyện nếu chưa sẵn sàng trả máu. Đài đá này nối thẳng tới ba thế lực cổ xưa: Thánh Mẫu đòi sự trong sạch tuyệt đối, Huyết Quỷ thổi bùng cơn đói xác thịt và bào mòn nhân tính, còn Hư Vô gặm nhấm dần sự tỉnh táo để đổi lấy đôi mắt nhìn xuyên màn sương tầng đáy.\n\n*Ghi chú bên lề bằng mực nâu:* Dung dịch nâu thổi bay được tường đá nứt; còn axit đỏ hất thẳng vào mặt lũ quái sẽ làm chúng mù lòa và mục rữa lớp giáp.',
     },
     {
       id: 'book_3',
       vol: 3,
-      title: 'Cuộn Da Dê VI – Khế Ước Huyết Quỷ & Nghịch Lý Chướng Khí',
+      title: 'Cuộn Da Dê III – Khế Ước Máu Đen',
       floorHint: 'Cuộn Da Dê Cổ • Tầng 2 – Hầm Tế',
       unlockRecipeId: 'recipe_holy_elixir',
-      content: 'Thế Lực Huyết Quỷ kết tinh từ phẫn nộ của những kẻ bị Trật Tự nghiền nát. Chúng vận hành qua Giao Kèo Máu: trao sức mạnh hủy diệt để đổi lấy Tha Hóa và cơn đói xác thịt. Cảnh báo: Chỉ cần Tha Hóa đạt >= 25%, nuốt xác, niệm Chiêu Hồn hay học phép Huyết Quỷ, Thánh Mẫu sẽ vĩnh viễn quay lưng khước từ ngươi!',
+      content:
+        'Kẻ nào từng nếm thịt đồng loại, dựng xác chết dậy hay mở miệng đọc lời thề Huyết Quỷ đều mang trên người mùi tanh không thể rửa sạch. Một khi vết nhơ Tha Hóa đã ăn sâu vào cốt tủy, đừng mất công quỳ trước tượng Thánh Mẫu nữa — bà ta sẽ vĩnh viễn ngoảnh mặt, mặc xác ngươi thối rữa trong bóng tối.',
     },
     {
       id: 'book_9',
       vol: 4,
-      title: 'Cuộn Da Dê IX – Giả Kim Thuật Về Hạt Giống',
+      title: 'Cuộn Da Dê IV – Hạt Giống Dưới Đáy Vực',
       floorHint: 'Cuộn Da Dê Cổ • Tầng 3 – Hồ Hư Vô',
       unlockRecipeId: 'recipe_holy_fire_oil',
-      content: 'Ghi chép tuyệt mật của Lão Thần Y Điên: Tiên Dược Nguyên Sơ nơi đáy Vực Sao thực chất không chỉ là thuốc chữa độc hóa đá cho phàm nhân, mà còn là chất xúc tác đánh thức mầm sống Thánh Thụ ẩn trong huyết mạch Thánh Tử Thứ 13. Chỉ khi kết hợp Lõi Khóa Hư Vô, Tiên Dược Nguyên Sơ và sự đồng hành của Thánh Tử Thứ 13 bên Vết Rách, quy luật mới của Ý Chí Tự Do mới khai sinh.',
+      content:
+        'Ghi vội bằng nét chữ run rẩy của Lão Thần Y trước khi mất tích: "Ta đã nhầm. Tiên Dược Nguyên Sơ dưới đáy Vực Sao không chỉ để giải độc hóa đá cho một kẻ phàm trần. Nó là giọt sương đánh thức mầm Thánh Thụ đang ngủ trong máu Thánh Tử Thứ 13. Nếu ai đó mang được cả Lõi Khóa, lọ Tiên Dược và đứa trẻ ấy tới trước Vết Rách... có lẽ thế giới này sẽ không phải quỳ trước vị thần nào nữa."',
     },
     // === 9 NHẬT KÝ & TÀI LIỆU MẬT ===
     {
       id: 'book_4',
       vol: 5,
-      title: 'Sổ Kiểm Kê Tế Lễ: Sự Thật Về 13 Thánh Tử & Máu Đen',
+      title: 'Sổ Kiểm Kê Tế Lễ: Mười Ba Đứa Trẻ',
       floorHint: 'Tài Liệu Mật • Tầng 2 – Phòng Giả Kim',
       unlockRecipeId: 'recipe_sedative_draught',
-      content: 'Thánh Mẫu không phải thần linh thuần khiết — bà là phàm nhân đầu tiên sống sót bên mép Vực Sao, dùng Trật Tự và Khuôn Khổ làm màng lọc biến năng lượng Hư Vô thành Thánh Quang. Để duy trì sự bất tử, Giáo hội đã chôn sống mười ba đứa trẻ làm cột trụ linh hồn dưới trận pháp Goethe. Dấu hiệu ô uế không thể giấu kín là những giọt dịch đen đặc rỉ ra từ khóe mắt tượng Thánh Mẫu.',
+      content:
+        'Mười ba đứa trẻ bị đưa xuống hầm kín trong đêm không trăng, không ghi tên, chỉ đánh số từ một đến mười ba. Giáo hội gọi chúng là cột trụ giữ Thánh Quang, nhưng ta đã thấy thứ chảy ra từ khóe mắt bức tượng Thánh Mẫu trên điện thờ. Đó không phải nước mắt. Đó là thứ dịch đen đặc quánh mùi sắt rỉ, và nó đang rỉ ra ngày một nhiều hơn.',
     },
     {
       id: 'book_5',
       vol: 6,
       title: 'Bức Thư Chưa Gửi Của Quý Cô Tháp Cao',
       floorHint: 'Nhật Ký Mật • Tầng 1 – Tiền Sảnh Lồng Kính',
-      content: '"Vaelis của em, chiếc nhẫn ngài trao cùng Thẻ Bài Kỵ Đoàn vẫn còn nằm lại đâu đó dưới sảnh giáo đường đổ nát. Ngài nhốt em vào lồng pha lê này để Chướng Khí không chạm tới em, nhưng mỗi đêm nghe tiếng ống dẫn huyết mạch găm thêm vào lưng ngài trên Ngai Vàng Máu, trái tim em đã chết từ lâu rồi."',
+      content:
+        '"Vaelis của em, chiếc nhẫn ngài trao cùng Thẻ Bài Kỵ Đoàn vẫn còn nằm lại đâu đó dưới sảnh giáo đường đổ nát. Ngài nhốt em vào lồng pha lê này để Chướng Khí không chạm tới em, nhưng mỗi đêm nghe tiếng ống sắt găm thêm vào sống lưng ngài trên Ngai Vàng Máu, trái tim em đã chết từ lâu rồi."',
     },
     {
       id: 'book_6',
       vol: 7,
-      title: 'Bản Báo Cáo Địa Chất Vực Sao & Bia Đá Cổ Ngữ',
+      title: 'Ghi Chép Địa Chất Nơi Đáy Vực',
       floorHint: 'Tài Liệu Mật • Tầng 3 – Sảnh Bia Đá',
       unlockRecipeId: 'recipe_void_acid',
-      content: '"Trước khi Đại Giáo Đường Goethe được dựng lên, nơi đây từng là một hố thiên thạch cổ đại cắm rễ vào Thánh Thụ. Những dòng cổ ngữ khắc trên bia đá không phải ngôn ngữ cầu nguyện, mà là công thức đóng đinh không gian ba chiều vào một điểm neo vật lý duy nhất dưới đáy Vực Sao."',
+      content:
+        'Đại Giáo Đường Goethe không được xây trên đất lành — nó được dựng đè lên một hố thiên thạch cổ đại. Những đường rãnh khắc trên bia đá dưới đáy vực không phải kinh cầu; chúng là đinh sắt đóng chặt vết nứt không gian vào đúng một điểm neo duy nhất. Nếu điểm neo vỡ, cả bầu trời đêm sẽ đổ ập xuống.',
     },
     {
       id: 'book_7',
       vol: 8,
-      title: 'Nhật Ký Vaelis & Mật Lệnh Tứ Trụ Tầng 1',
+      title: 'Nhật Ký Đẫm Máu Của Vaelis',
       floorHint: 'Nhật Ký Mật • Tầng 1 – Tiền Đồn Máu',
-      content: '"Ta đã nghe thấy tiếng khóc của những đứa trẻ dưới đáy giáo đường... Nếu phải mang danh kẻ phản bội để kéo cả tòa lâu đài này đè xuống khóa chặt Vết Rách Không Gian, ta cam nguyện để xiềng xích và ống dẫn tủy sống ghim nát xương tủy mình trên Ngai Vàng Xương Sắt."\n\n[Chiến thuật Tầng 1]: Đao Phủ Malakor dựa vào Đại Phủ ở Tay Phải; Kỵ Sĩ Vorath dùng Khiên Tháp che kín Thân & Đầu — phải phá Tay Trái trước!',
+      content:
+        '"Ta đã nghe thấy tiếng khóc của lũ trẻ dưới đáy giáo đường... Nếu phải mang danh kẻ phản bội để kéo cả tòa lâu đài này đè sập xuống khóa chặt Vết Rách, ta cam nguyện để xiềng xích và ống dẫn tủy ghim nát xương mình trên Ngai Vàng."\n\n*Mẩu giấy kẹp theo của lính trinh sát:* Đao Phủ Malakor chỉ đáng sợ khi còn tay phải cầm đại phủ; còn tên Vorath núp kín sau khiên tháp — đừng phí sức chém vào ngực hắn trước khi đập nát cánh tay cầm khiên.',
     },
     {
       id: 'book_8',
       vol: 9,
-      title: 'Bản Giao Kèo Máu: Huyết Nghi & Hộ Điện Tầng 1',
+      title: 'Lời Dặn Của Kẻ Sống Sót Hành Lang Đỏ',
       floorHint: 'Tài Liệu Mật • Tầng 1 – Hành Lang Đỏ',
-      content: 'Nữ Tế Seraphina nuôi dưỡng Cụm Tim Huyết Tinh bằng dòng máu chảy từ vết thương của nạn nhân — hãy dùng Băng Gạc cầm máu lập tức! Còn Cự Thú Hộ Điện Grendel lao tới bằng hai nhịp đánh dồn dập — hãy ném Thịt Thối đánh lạc hướng bản năng thú tính của nó rồi chặt gãy hai cánh tay dị dạng.',
+      content:
+        'Gặp ả Nữ Tế Seraphina thì đừng để mình chảy máu lấy một giọt — ả bóp nát cụm tim trên tay trái là hút cạn vết thương của ngươi để tự lành lại ngay trước mắt. Băng bó ngay lập tức. Còn con quái thú Grendel ở sảnh trong thì đánh liền hai nhịp rất gắt, nhưng nó vẫn giữ thói tham ăn của loài thú: quăng miếng thịt thối ra đất là đủ kéo giãn một hơi thở để chặt tay nó.',
     },
     {
       id: 'book_10',
       vol: 10,
-      title: 'Mệnh Lệnh Kỵ Đoàn & Hồ Sơ Tội Đồ Tầng 2',
+      title: 'Mệnh Lệnh Niêm Phong Cổng Sắt',
       floorHint: 'Tài Liệu Mật • Tầng 2 – Điện Thờ',
-      content: 'Tài liệu mật Kỵ Đoàn: Các giáo sĩ đã khóa chặt cổng sắt sau lưng binh đoàn viễn chinh để dùng chiến binh làm mồi nhử quái vật Vực Sao. Hãy tìm Roland ở Tầng 2 để nhận Thẻ Bài Kỵ Đoàn trả cho Quý Cô Trong Lồng Kính trên Tầng 1.\n\n[Chiến thuật Tầng 2]: Đại Nữ Tu tụ phép ở Tay Phải; Hồng Y Sáp Trắng ôm Kinh Văn ở Tay Trái — phải chặt tay khiên trước!',
+      content:
+        'Lệnh đóng chặt cổng sắt từ phía ngoài đã có chữ ký của Hội đồng Giáo sĩ ngay trước khi kỵ đoàn tiến vào — họ dùng cả binh đoàn làm mồi nhử cho lũ quái dưới vực. Nếu Roland còn sống ở tầng này, hãy lấy lại Thẻ Bài Kỵ Đoàn từ tay anh ấy để trả cho người phụ nữ trong lồng kính trên Tầng 1.\n\n*Ghi chú vội ở mặt sau:* Con mụ khóc ra sáp tụ phép ở tay phải; còn gã Hồng Y Sáp Trắng ôm cuốn kinh da người bên tay trái đỡ gần như mọi nhát chém — phải chặt tay trái của hắn trước.',
     },
     {
       id: 'book_11',
       vol: 11,
-      title: 'Ghi Chép Thí Nghiệm Số 402: Cành Cây Thịt',
+      title: 'Hồ Sơ Thí Nghiệm Số 09: Cành Cây Thịt',
       floorHint: 'Nhật Ký Mật • Tầng 3 – Phòng Thí Nghiệm Vực Sao',
       unlockRecipeId: 'recipe_stimulant_serum',
-      content: 'Phòng thí nghiệm Vực Sao ghi nhận Thực Thể Hư Vô là quy luật phân rã nguyên thủy. Khi tiếp xúc Chướng Khí, vật chủ biến dị thành Cành Cây Thịt khổng lồ. Hãy chặt đứt Bộ Rễ Xương trước khi nó tung đòn, hoặc ném Lọ Nâu / Thịt Thối thẳng vào Tán Cây Quả Tim lúc nó chuẩn bị Nuốt Chửng.',
+      content:
+        'Ngày thứ mười bốn, xương sườn vật chủ số 09 tự tách đôi, mọc lên một thân cây trắng bệch treo đầy những quả tim còn đập. Nó dùng bộ rễ xương máu trói chân con mồi trước khi nuốt chửng. Chặt đứt đám rễ đó ngay từ đầu, hoặc ném thẳng thuốc nổ nâu hay thịt thối vào tán tim thịt lúc nó há miệng.',
     },
     {
       id: 'book_12',
       vol: 12,
-      title: 'Biên Bản Giải Phẫu Sáp Trắng & Lò Rèn Huyết Thiết',
+      title: 'Ghi Chép Nhà Xác & Lò Rèn Không Đầu',
       floorHint: 'Nhật Ký Mật • Tầng 1 & 2 – Nhà Xác & Lò Rèn',
-      content: 'Thứ sáp chảy ra từ các chân nến trên Tầng 2 co giật nhẹ như mô cơ còn sống. Trong khi đó ở Tầng 1, Kẻ Đúc Kiếm Không Đầu đã tự chặt đầu mình ném vào lò nung để rèn nên những lưỡi Huyết Rèn biết khát máu — kẻ nào cầm chúng sẽ nhận thêm Tha Hóa nhưng chém đứt cả vỏ bọc bất khả xâm phạm của quái Vực Sao.',
+      content:
+        'Đống sáp chảy dưới chân nến Tầng 2 vẫn còn co giật nhẹ khi ta chọc dao vào — đó không phải sáp ong. Còn trên Tầng 1, gã thợ rèn không đầu đã tự ném thủ cấp mình vào lò than để đúc nên dòng vũ khí Huyết Rèn. Lưỡi thép của hắn chém rách được cả lớp vỏ dị giới, nhưng cầm lâu sẽ nghe thấy tiếng thì thầm đòi máu.',
     },
     {
       id: 'book_13',
       vol: 13,
-      title: '3 Mảnh Thần Chú Tái Thiết & Khải Huyền Vô Danh',
+      title: 'Trang Cuối Của Kẻ Vô Danh',
       floorHint: 'Tài Liệu Mật • Tầng 1 & Tầng 3 – Điểm Tận Cùng',
-      content: '"Trật Tự đòi hỏi sự phục tùng mù quáng. Huyết Quỷ đòi hỏi cơn cuồng sát bất tận. Hư Vô đòi hỏi sự tan rã hoàn toàn. Nhưng giữa ba vực thẳm ấy, vẫn có một hạt mầm thứ tư chưa từng được gọi tên — hạt mầm chỉ nảy nở khi con người từ chối quỳ gối trước cả ba vị thần."\n\n[Cảnh báo Ngai Vàng]: Khi đối đầu Vaelis, hãy trò chuyện thấu hiểu bi kịch trước khi vung nhát kiếm cuối.',
+      content:
+        '"Trật Tự đòi ta quỳ gối. Huyết Quỷ đòi ta chém giết. Hư Vô đòi ta tan biến. Nhưng giữa ba vực thẳm ấy vẫn có một con đường thứ tư không thuộc về vị thần nào cả."\n\n*Dòng chữ cào bằng móng tay dưới chân trang:* Đứng trước Ngai Vàng của Vaelis, hãy thử lên tiếng trước khi vung nhát kiếm cuối cùng.',
     },
   ] as LoreBookDef[],
 
@@ -1643,13 +1657,6 @@ export const CONFIG = {
       telegraphDesc: 'Giơ cao liềm gặt rỉ máu và ngọn đuốc lửa cuồng tín nhắm vào chân bạn!',
       mechanicHint: 'Chặt Tay Phải cầm liềm để ngăn đòn cắt đứt chân.',
       dropEnergyStones: 0,
-      coinFlipSkill: {
-        name: 'Liềm Gặt Chặt Chi',
-        telegraphText: 'Giáo Dân Cuồng Tín giơ cao Liềm Gặt nhắm chặt đứt cánh tay bạn! Hãy Phòng Thủ hoặc chặt Tay Phải ngay!',
-        requiredLimb: 'rightArm',
-        penaltyType: 'sever_limb',
-        damageMultiplier: 1.5,
-      },
       limbs: [
         { id: 'head', name: 'Đầu Trùm Khăn', hp: 220, maxHp: 220, isVital: true, evasionBonus: 0.25, roleDesc: 'Điểm yếu chí mạng (Né +25%)' },
         { id: 'torso', name: 'Thân Áo Vải', hp: 620, maxHp: 620, isVital: true, roleDesc: 'Thân thể gầy gò cuồng tín' },
@@ -1791,13 +1798,6 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'holy_elixir',
       guaranteedWeaponDrop: 'estoc_rapier',
-      coinFlipSkill: {
-        name: 'Nghiến Bánh Xe Sáp Sôi',
-        telegraphText: 'Nữ Tu Khóc Ra Sáp nghiến bánh xe lao tới phun sáp sôi! Hãy Phòng Thủ hoặc chặt Tay Phải / làm Mù Đầu!',
-        requiredLimb: 'rightArm',
-        penaltyType: 'heavy_bleed',
-        damageMultiplier: 1.65,
-      },
       limbs: [
         { id: 'head', name: 'Đầu Phủ Mạng Sáp Trắng', hp: 950, maxHp: 950, isVital: true, evasionBonus: 0.25, roleDesc: 'Nửa mặt trên phủ sáp nến đông cứng, miệng phun sáp sôi' },
         { id: 'torso', name: 'Thân Trói Chặt Trên Bánh Xe', hp: 2450, maxHp: 2450, isVital: true, armor: 0.20, roleDesc: 'Thân thể già nua buộc chặt vào khung bánh xe tra tấn' },
@@ -1904,13 +1904,6 @@ export const CONFIG = {
       telegraphDesc: 'Sói Địa Ngục nhe hàm răng rực lửa chuẩn bị ngoạm đứt lìa chân bạn!',
       mechanicHint: 'Chạy 2 bước/lượt trên map! Ném Thịt Thối trong trận đấu khiến nó bận ăn và bỏ qua lượt cắn.',
       dropEnergyStones: 0,
-      coinFlipSkill: {
-        name: 'Hàm Lửa Xé Chi',
-        telegraphText: 'Sói Địa Ngục cúi thấp gầm gừ, chuẩn bị ngoạm đứt chi của bạn! Hãy Phòng Thủ hoặc làm Mù Đầu nó!',
-        requiredLimb: 'head',
-        penaltyType: 'sever_limb',
-        damageMultiplier: 1.55,
-      },
       limbs: [
         { id: 'head', name: 'Đầu Hàm Răng Lửa', hp: 850, maxHp: 850, isVital: true, isWeaponArm: true, evasionBonus: 0.25, roleDesc: 'Cắn đứt chân người chơi' },
         { id: 'torso', name: 'Thân Lông Đen Mạch Lửa', hp: 1850, maxHp: 1850, isVital: true, roleDesc: 'Tim lửa địa ngục' },
@@ -2029,13 +2022,6 @@ export const CONFIG = {
       mechanicHint: 'Gây cả Nhiễm Trùng lẫn Ký Sinh Trùng! Hãy chuẩn bị Thuốc Giải Độc và vũ khí xuyên giáp.',
       dropEnergyStones: 0,
       guaranteedDropItem: 'castle_key_f1',
-      coinFlipSkill: {
-        name: 'Hàm Thép Truyền Ký Sinh',
-        telegraphText: 'Xác Sống Thiết Giáp há toác hàm thép lao vào ngoạm cổ! Hãy Phòng Thủ hoặc làm Mù Đầu nó!',
-        requiredLimb: 'head',
-        penaltyType: 'heavy_bleed',
-        damageMultiplier: 1.5,
-      },
       limbs: [
         { id: 'head', name: 'Đầu Xác Sống Hàm Thép', hp: 960, maxHp: 960, isVital: true, isWeaponArm: true, armor: 0.30, evasionBonus: 0.15, roleDesc: 'Cắn truyền Ký Sinh Trùng + Nhiễm Trùng' },
         { id: 'torso', name: 'Thân Thiết Giáp Rỉ Sét', hp: 2650, maxHp: 2650, isVital: true, armor: 0.45, roleDesc: 'Giáp sắt hàn chặt vào thịt thối' },
@@ -2105,13 +2091,6 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'red_vial',
       guaranteedWeaponDrop: 'black_reaper_scythe',
-      coinFlipSkill: {
-        name: 'Trọng Kiếm Đen Chặt Đôi',
-        telegraphText: 'Vorath tụ hắc khí vào Trọng Kiếm Đen chuẩn bị bổ đôi giáp trụ! Hãy Phòng Thủ hoặc chặt Tay Phải ngay!',
-        requiredLimb: 'rightArm',
-        penaltyType: 'sever_limb',
-        damageMultiplier: 1.75,
-      },
       limbs: [
         { id: 'right_arm', name: 'Tay Phải (Trọng Kiếm Đen)', hp: 1250, maxHp: 1250, isWeaponArm: true, armor: 0.30, roleDesc: 'Chém xuyên giáp bằng Trọng Kiếm Đen gây sát thương chí mạng' },
         { id: 'left_arm', name: 'Tay Trái (Khiên Tháp Rỉ Máu)', hp: 1150, maxHp: 1150, isVital: false, isShieldArm: true, isWeaponArm: true, armor: 0.25, roleDesc: 'KHIÊN CHE THÂN & ĐẦU: Giảm 80% sát thương vào Thân/Đầu cho tới khi bị phá vỡ!' },
@@ -2142,13 +2121,6 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'holy_elixir',
       guaranteedWeaponDrop: 'ancient_rune_holysword',
-      coinFlipSkill: {
-        name: 'Huyết Nghi Hút Cạn Sinh Mệnh',
-        telegraphText: 'Seraphina bóp nát Cụm Tim Huyết Tinh tung Huyết Nghi! Hãy Phòng Thủ hoặc chặt Tay Trái ngay!',
-        requiredLimb: 'leftArm',
-        penaltyType: 'heavy_bleed',
-        damageMultiplier: 1.65,
-      },
       limbs: [
         { id: 'right_arm', name: 'Tay Phải (Trượng Xương)', hp: 950, maxHp: 950, isWeaponArm: true, roleDesc: 'Phóng huyết thuật gây rách mạch máu và Chảy máu nặng' },
         { id: 'left_arm', name: 'Tay Trái (Cụm Tim Huyết Tinh)', hp: 900, maxHp: 900, isWeaponArm: true, roleDesc: 'Kích hoạt Huyết Nghi hồi 1.000 Sinh Lực nếu nạn nhân đang Chảy máu' },
@@ -2180,13 +2152,6 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'brown_vial',
       guaranteedWeaponDrop: 'demon_lord_sledge',
-      coinFlipSkill: {
-        name: 'Búa Thịt Nghiền Nát Xương',
-        telegraphText: 'Grendel phồng căng Bướu Chướng Khí giơ Càng Xương & Búa Thịt! Hãy Phòng Thủ hoặc chặt tay nó!',
-        requiredLimb: 'rightArm',
-        penaltyType: 'sever_limb',
-        damageMultiplier: 1.75,
-      },
       limbs: [
         { id: 'left_arm', name: 'Càng Xương Khổng Lồ Trái', hp: 1100, maxHp: 1100, isWeaponArm: true, roleDesc: 'Đòn liên hoàn thứ nhất: Xé toạc giáp trụ' },
         { id: 'right_arm', name: 'Cánh Tay Búa Thịt Phải', hp: 1100, maxHp: 1100, isWeaponArm: true, roleDesc: 'Đòn liên hoàn thứ hai: Nghiền nát xương cốt' },
@@ -2333,13 +2298,6 @@ export const CONFIG = {
       telegraphDesc: 'Cơ thể rách toạc lộ lõi sao tím biến mất vào hư không rồi vồ thẳng vào cổ họng bạn!',
       mechanicHint: 'Tốc độ nhanh; ném Thịt Thối để làm nó dừng lại ăn hoặc chặt Chân Sau.',
       dropEnergyStones: 0,
-      coinFlipSkill: {
-        name: 'Bước Nhảy Vồ Cổ Họng',
-        telegraphText: 'Hổ Báo Hư Vô Hóa biến mất vào hư không chuẩn bị vồ đứt cổ! Hãy Phòng Thủ hoặc làm Mù Đầu nó!',
-        requiredLimb: 'head',
-        penaltyType: 'heavy_bleed',
-        damageMultiplier: 1.55,
-      },
       limbs: [
         { id: 'head', name: 'Đầu Báo Bốn Mắt Tím', hp: 620, maxHp: 620, isVital: true, isWeaponArm: true, evasionBonus: 0.30, roleDesc: 'Cắn đứt cổ họng' },
         { id: 'torso', name: 'Thân Rách Lộ Lõi Sao', hp: 1400, maxHp: 1400, isVital: true, roleDesc: 'Lõi năng lượng dị không gian' },
@@ -2484,13 +2442,6 @@ export const CONFIG = {
       dropLuckyCoins: 1,
       guaranteedDropItem: 'elixir_of_ancients',
       guaranteedWeaponDrop: 'heavy_lumber_axe',
-      coinFlipSkill: {
-        name: 'Đại Kiếm Đá Vôi Nghiền Xác',
-        telegraphText: 'Kẻ Gác Đền Hóa Thạch giơ Đại Kiếm Đá Vôi tụ bụi hóa thạch! Hãy Phòng Thủ hoặc chặt Tay Phải ngay!',
-        requiredLimb: 'rightArm',
-        penaltyType: 'sever_limb',
-        damageMultiplier: 1.75,
-      },
       limbs: [
         { id: 'head', name: 'Đầu Nửa Đá Vôi Nửa Thịt Đỏ (Đầu)', hp: 1600, maxHp: 1600, isVital: true, evasionBonus: 0.15, roleDesc: 'ĐƯỢC CHE CHẮN: Phải chặt >= 2 bộ phận đá mới chạm tới!' },
         { id: 'torso', name: 'Lõi Ngực Đá Vôi Cổ Đại', hp: 2700, maxHp: 2700, isVital: true, armor: 0.25, roleDesc: '70% hóa đá vôi xám, 30% cơ bắp đỏ tươi rỉ máu' },

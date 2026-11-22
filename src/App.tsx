@@ -4380,8 +4380,7 @@ export default function App() {
           id: 'STARVED_IN_DARKNESS',
           title: 'XÁC KHÔ GIỮA ĐẠI GIÁO ĐƯỜNG',
           subtitle: `Gục ngã bởi Cơn Đói và Vết Thương • Seed mới tiếp theo: ${nextRandomSeed}`,
-          epilogue:
-            'Không còn chút sức lực nào, bạn gục xuống nền đá lạnh lẽo của Thung Lũng Xương Tàn. Định mệnh đã xoay chuyển sang một Hạt Giống (Seed) ngẫu nhiên mới, trừ khi bạn tải lại ký ức đã lưu.',
+          epilogue: 'Hành trình của bạn đã kết thúc.',
         });
         setScreen('ending');
         return;
@@ -4681,8 +4680,7 @@ export default function App() {
                       id: 'SLAIN_IN_COMBAT',
                       title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
                       subtitle: `Gục Ngã Trước Đòn Tử Thần • Seed ngẫu nhiên mới: ${nextRandomSeed}`,
-                      epilogue:
-                        'Đòn đánh báo trước mang tính hủy diệt đã kết thúc hành trình của bạn giữa bóng tối. Hãy tải lại Bản Lưu hoặc thử thách một Seed mới.',
+                      epilogue: 'Hành trình của bạn đã kết thúc.',
                     });
                     handleCombatEnd({ nextScreen: 'ending' });
                     return;
@@ -5518,6 +5516,8 @@ export default function App() {
               combatSpriteUrl: tpl.combatSpriteUrl,
               limbs: pngLimbEntries,
               nowSec,
+              selectedLimbId: !activeCombatEnemy.defeated ? selectedLimbId : undefined,
+              timeMs: now,
             }
           );
 
@@ -5638,6 +5638,7 @@ export default function App() {
     currentRoom.isExterior,
     player,
     activeActorIdx,
+    selectedLimbId,
   ]);
 
   const renderCoinTossModal = () => (
@@ -5765,6 +5766,39 @@ export default function App() {
         combatSubCursor={combatSubCursor}
         pendingSkillId={pendingSkillId}
         coinTossNode={renderCoinTossModal()}
+        onHoverLimb={(limbId) => {
+          if (isResolvingTurn || activeCombatEnemy.defeated) return;
+          setSelectedLimbId(limbId);
+          setFocusedLimbId(limbId);
+        }}
+        onClickLimb={(limbId) => {
+          if (isResolvingTurn || activeCombatEnemy.defeated) return;
+          setSelectedLimbId(limbId);
+          setFocusedLimbId(limbId);
+          if (combatFocusPhase !== 'limb') {
+            sfx.playSfx('ui_confirm');
+            setCombatMenuMode('main');
+            setCombatFocusPhase('limb');
+            return;
+          }
+          const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+          const targetCheck = canTargetEnemyLimb(activeCombatEnemy, tpl, limbId);
+          if (!targetCheck.allowed) {
+            sfx.playSfx('ui_move');
+            setCombatLogs((prev) => [
+              `${targetCheck.reason || 'Bộ phận này đang bị che chắn!'}`,
+              ...prev.slice(0, 18),
+            ]);
+            return;
+          }
+          if (pendingSkillId) {
+            const skId = pendingSkillId;
+            setPendingSkillId(null);
+            runCombatTurn('SKILL', { limbId, skillId: skId });
+          } else {
+            runCombatTurn('ATTACK', { limbId });
+          }
+        }}
       />
     );
   }

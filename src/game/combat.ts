@@ -4062,7 +4062,7 @@ function finishCombatRoundWithEnemyTurn(
       }
 
       enemy.telegraphing = true;
-      if (tpl.coinFlipSkill && isCoinSkillLimbReady(tpl.coinFlipSkill.requiredLimb)) {
+      if (tpl.coinFlipSkill && isCoinSkillLimbReady(tpl.coinFlipSkill.requiredLimb) && rng.chance(0.45)) {
         enemy.telegraphCoinFlip = true;
         logs.push(`CẢNH BÁO TỬ THẦN (TUNG XU): ${tpl.coinFlipSkill.telegraphText}`);
       } else {

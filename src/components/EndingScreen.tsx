@@ -50,6 +50,10 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
   const endingArtSrc = endingArtworkMap[endingInfo.id] || prologueFrame1Img;
   const bannerHeading = endingInfo.endingBannerLabel || endingInfo.title;
 
+  const isDefeat =
+    endingInfo.id === 'SLAIN_IN_COMBAT' || endingInfo.id === 'STARVED_IN_DARKNESS';
+  const displayEpilogue = isDefeat ? 'Hành trình của bạn đã kết thúc.' : endingInfo.epilogue;
+
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[#050408] text-[#e7dcc8] flex flex-col justify-between select-none">
       {/* Full-Bleed 16:9 Dark Gothic Ending Painting */}
@@ -83,12 +87,6 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
       {/* Bottom Panoramic Narrative & Action Overlay */}
       <div className="relative z-10 w-full max-w-4xl mx-auto px-6 pb-6 pt-4 space-y-4 text-center">
         <div className="space-y-1.5">
-          <div
-            className="text-xs sm:text-sm uppercase tracking-[0.26em] text-[#c5a059] font-bold"
-            style={{ textShadow: '0 2px 10px rgba(0,0,0,0.95)' }}
-          >
-            ✦ {endingInfo.subtitle} ✦
-          </div>
           <h1
             className="text-3xl sm:text-5xl font-bold text-[#f3ead6] tracking-wide leading-tight"
             style={{
@@ -102,7 +100,7 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
 
         <div className="df-panel bg-[#0a080e]/82 px-6 py-4 text-left sm:text-center max-h-[26vh] overflow-y-auto">
           <p className="text-sm sm:text-base text-[#e2d7c5] leading-relaxed">
-            {endingInfo.epilogue}
+            {displayEpilogue}
           </p>
         </div>
 

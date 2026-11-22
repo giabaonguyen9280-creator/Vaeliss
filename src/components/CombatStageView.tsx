@@ -25,6 +25,18 @@ export interface CombatVfxState {
   key: number;
 }
 
+const combatLogsKeyMap = new WeakMap<string[], number>();
+let nextCombatLogsKey = 1;
+
+function getCombatLogsKey(logs: string[]): number {
+  let id = combatLogsKeyMap.get(logs);
+  if (id === undefined) {
+    id = nextCombatLogsKey++;
+    combatLogsKeyMap.set(logs, id);
+  }
+  return id;
+}
+
 export interface CombatStageViewProps {
   combatStageCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   combatEngine: CombatEngine;
@@ -42,6 +54,8 @@ export interface CombatStageViewProps {
   combatSubCursor: number;
   pendingSkillId: string | null;
   coinTossNode?: React.ReactNode;
+  onHoverLimb?: (limbId: string) => void;
+  onClickLimb?: (limbId: string) => void;
 }
 
 export const CombatStageView: React.FC<CombatStageViewProps> = ({
@@ -61,6 +75,8 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
   combatSubCursor,
   pendingSkillId,
   coinTossNode,
+  onHoverLimb,
+  onClickLimb,
 }) => {
   const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
   const reticleMap = getLimbReticlePositions(tpl.spriteKey);
@@ -94,6 +110,13 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
             : ''
         }`}
       >
+        {activeCombatEnemy.telegraphCoinFlip && (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 animate-pulse"
+            style={{ boxShadow: 'inset 0 0 95px rgba(185, 28, 28, 0.55)' }}
+          />
+        )}
+
         {/* Top Chamfered Telegraph & Enemy Header Banner */}
         <div className="z-20 w-full max-w-5xl mt-1.5 px-3 shrink-0">
           <div
@@ -127,25 +150,22 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                   </span>
                 )}
               </div>
-              {(activeCombatEnemy.telegraphCoinFlip || activeCombatEnemy.telegraphing) && (
-                <div
-                  className={`text-sm truncate mt-0.5 ${
-                    activeCombatEnemy.telegraphCoinFlip
-                      ? 'text-[#fca5a5] font-bold animate-pulse'
-                      : 'text-[#fbbf24] font-semibold'
-                  }`}
-                >
-                  {activeCombatEnemy.telegraphCoinFlip
-                    ? `▸ ĐÒN TỬ THẦN BÁO TRƯỚC: [${tpl.coinFlipSkill?.name || tpl.telegraphName}] — Chọn [3] PHÒNG THỦ hoặc chuẩn bị Tung Đồng Xu!`
-                    : `▸ SẮP TUNG: [${tpl.telegraphName}]`}
+              {!activeCombatEnemy.telegraphCoinFlip && activeCombatEnemy.telegraphing && (
+                <div className="text-sm mt-0.5 text-[#fbbf24] font-semibold">
+                  {`▸ SẮP TUNG: [${tpl.telegraphName}]`}
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0 text-xs sm:text-sm uppercase tracking-wider text-[#a3998f] font-mono">
-              <span>⌖ Chọn:</span>
-              <span className="text-[#c5a059] font-bold">{currentTargetLimb?.name}</span>
+            <div className="flex items-center shrink-0 text-xs sm:text-sm uppercase tracking-wider text-[#c5a059] font-mono font-bold">
+              <span>⌖ {currentTargetLimb?.name}</span>
             </div>
           </div>
+
+          {activeCombatEnemy.telegraphCoinFlip && (
+            <div className="mt-1 px-4 py-1.5 bg-[#2a070b]/95 border border-[#dc2626] shadow-[0_0_18px_rgba(220,38,38,0.45)] text-xs sm:text-sm text-[#fca5a5] font-bold tracking-wide animate-pulse">
+              {`▸ TỬ THẦN BÁO TRƯỚC: [${tpl.coinFlipSkill?.name || tpl.telegraphName}] — Bấm [3] PHÒNG THỦ hoặc chuẩn bị Tung Xu!`}
+            </div>
+          )}
         </div>
 
         {/* Center Responsive 16:11 Unified Canvas Stage with Weapon VFX & Minimalist Anatomical Reticles */}
@@ -215,22 +235,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                       </div>
                     )}
 
-                    {showExpanded ? (
-                      <div className="pointer-events-none select-none px-2.5 py-1 df-card-active text-[#c5a059] scale-110 ring-1 ring-[#fbbf24]">
-                        <div className="flex items-center gap-1.5 text-xs font-bold whitespace-nowrap">
-                          <span className="text-[#c96b6b]">⌖</span>
-                          <span>{limb.name}</span>
-                          <span className="font-mono text-xs text-[#c5a059]">
-                            {!targetable ? '[KHÓA]' : `${preview.hitPct}%`}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-[#fbbf24] font-bold uppercase tracking-tighter mt-0.5">
-                          {pendingSkillId
-                            ? '[Enter / F: TUNG KỸ NĂNG]'
-                            : '[Enter / F: TẤN CÔNG] • [ESC: Hủy]'}
-                        </div>
-                      </div>
-                    ) : isSevered ? (
+                    {isSevered ? (
                       <div
                         className="pointer-events-none select-none flex items-center gap-1 px-1.5 py-0.5 bg-[#160608]/85 border border-[#7f1d1d]/75 opacity-75"
                         aria-hidden="true"
@@ -241,59 +246,38 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                         </span>
                       </div>
                     ) : (
-                      <div
-                        className="pointer-events-none select-none relative flex items-center justify-center w-4 h-4"
-                        aria-hidden="true"
-                      >
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full border shadow-[0_0_6px_rgba(0,0,0,0.9)] ${
-                            !targetable
-                              ? 'bg-[#292524]/85 border-[#78716c]'
-                              : isSelected
-                              ? 'bg-[#1a1209]/90 border-[#fbbf24] ring-2 ring-[#fbbf24]/35'
-                              : 'bg-[#09070c]/80 border-[#c5a059]/85'
-                          }`}
-                        />
-                        {targetable && (
-                          <span className="absolute w-1 h-1 rounded-full bg-[#dc2626]" />
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        aria-label={limb.name}
+                        onMouseEnter={() => onHoverLimb?.(limb.id)}
+                        onClick={() => onClickLimb?.(limb.id)}
+                        className="pointer-events-auto w-11 h-11 bg-transparent border-0 cursor-pointer focus:outline-none"
+                      />
                     )}
 
-                    {/* Damage Preview Side Tooltip (Min-Max Dmg, Hit %, Crit %, Armor) ONLY when Focused / Selected */}
+                    {/* Merged Compact Limb Damage Tooltip (only when Focused / Selected) */}
                     {showExpanded && !isSevered && (
                       <div
                         className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${
                           tooltipOnLeft ? 'right-full mr-2' : 'left-full ml-2'
-                        } w-48 df-panel p-3 text-xs text-[#d3d3d3] space-y-1`}
+                        } df-card-active px-2.5 py-1.5 ring-1 ring-[#fbbf24] whitespace-nowrap space-y-0.5 shadow-[0_0_16px_rgba(0,0,0,0.9)]`}
                       >
-                        <div className="font-bold text-[#c5a059] border-b border-[#3a3a3a] pb-0.5">
-                          <span>DỰ KIẾN SÁT THƯƠNG</span>
+                        <div className="text-xs font-bold text-[#e7dcc8]">
+                          ⌖ {limb.name}
+                          {!targetable && <span className="text-[#fca5a5] ml-1.5">[KHÓA]</span>}
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#a3998f]">Sát thương:</span>
-                          <span className="font-mono font-bold text-[#c96b6b]">
-                            {preview.minDmg}–{preview.maxDmg}
+                        <div className="flex items-center gap-2.5 text-[11px] font-mono">
+                          <span className="text-[#fca5a5]">
+                            {preview.minDmg}-{preview.maxDmg} ST
                           </span>
+                          <span className="text-[#86efac]">{preview.hitPct}% Trúng</span>
+                          <span className="text-[#fde047]">{preview.critPct}% CM</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#a3998f]">Tỷ lệ Trúng:</span>
-                          <span className="font-mono font-bold text-[#9ab08e]">
-                            {preview.hitPct}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#a3998f]">Tỷ lệ Chí mạng:</span>
-                          <span className="font-mono font-bold text-[#c5a059]">
-                            {preview.critPct}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#a3998f]">Giáp bộ phận:</span>
-                          <span className="font-mono font-bold text-[#94a3b8]">
-                            {preview.armorPoints} (-{preview.armorReductionPct}%)
-                          </span>
-                        </div>
+                        {preview.armorPoints > 0 && (
+                          <div className="text-[11px] font-mono text-[#94a3b8]">
+                            Giáp: {preview.armorPoints} (-{preview.armorReductionPct}%)
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -303,19 +287,17 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
         </div>
 
         {/* Bottom Strip of Upper Stage: Recent Combat Log Line & Active Weapon Hint */}
-        <div className="z-20 w-full bg-[#0b090f]/90 border-t border-[#3a3a3a] px-5 py-1.5 flex items-center justify-between text-xs sm:text-sm">
-          <div className="text-[#d3d3d3] truncate max-w-3xl">
-            <span className="text-[#c5a059] font-bold mr-2">Diễn biến:</span>
-            {combatLogs[0]}
+        <div className="z-20 w-full bg-[#0b090f]/90 border-t border-[#3a3a3a] px-5 py-1.5 flex items-center justify-between gap-4 text-xs sm:text-sm">
+          <div className="text-[#d3d3d3] flex-1 min-w-0 flex items-baseline gap-2 overflow-hidden">
+            <span className="text-[#c5a059] font-bold shrink-0">Diễn biến:</span>
+            {combatLogs[0] ? (
+              <span key={getCombatLogsKey(combatLogs)} className="min-w-0 combat-log-slide-in">
+                {combatLogs[0]}
+              </span>
+            ) : null}
           </div>
           <div className="text-[#a3998f] shrink-0 hidden md:block text-xs">
-            Lượt: <span className="text-[#c5a059] font-semibold">{actingName}</span> • Vũ khí:{' '}
-            <span className="text-[#d3d3d3] font-semibold">{activeWeapon.name}</span> •{' '}
-            <span className="font-mono text-[#c5a059]">
-              {combatFocusPhase === 'limb'
-                ? '[WASD] Ngắm • [Enter/Space/F] Chém • Giữ [Shift] Tua • [ESC] Hủy'
-                : `[W/S] Chọn • [Enter/Space/F] Xác nhận • Giữ [Shift] Tua • ${activeActorIdx === 0 ? '[1..6]' : '[1..4]'}`}
-            </span>
+            Vũ khí: <span className="text-[#d3d3d3] font-semibold">{activeWeapon.name}</span>
           </div>
         </div>
       </div>
@@ -339,9 +321,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                 }`}
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
-                {isPureTankTurn
-                  ? '[1] Khóa Công (Thuần Thủ)'
-                  : `[1] Đ.Thường (${currentTargetLimb?.name})`}
+                {isPureTankTurn ? '[1] Khóa Công (Thuần Thủ)' : '[1] Tấn Công'}
               </div>
               <div
                 className={`w-full py-0.5 px-2.5 text-left text-sm font-bold ${
@@ -359,6 +339,10 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                   (combatFocusPhase === 'action' && combatActionCursor === 2) || isPureTankTurn
                     ? 'df-btn-active ring-1 ring-[#fbbf24]'
                     : 'df-btn'
+                } ${
+                  activeCombatEnemy.telegraphCoinFlip
+                    ? 'border-[#dc2626] text-[#fca5a5]! outline-1 outline-[#dc2626] ring-1 ring-[#fbbf24]/80 animate-pulse'
+                    : ''
                 }`}
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
@@ -501,7 +485,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
               <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-[#a3998f] border-b border-[#3a3a3a] pb-1">
                 <span>Đội Hình ({1 + player.party.filter((a) => a.hp > 0).slice(0, 3).length})</span>
                 <span className="font-mono text-[#c5a059]/85">
-                  [WASD] Chọn • [F/Enter/Space] Xác nhận • [ESC] Hủy
+                  [WASD] Chọn • [F/Enter] Xác nhận • [Shift] Tua • [ESC] Hủy
                 </span>
               </div>
 
