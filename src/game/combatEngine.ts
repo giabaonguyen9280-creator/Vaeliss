@@ -161,11 +161,18 @@ export class CombatEngine {
     // Update Screen Shake
     if (this.shakeTimerMs > 0) {
       this.shakeTimerMs = Math.max(0, this.shakeTimerMs - clampedDt);
-      const decay = this.shakeTimerMs / Math.max(1, this.shakeMaxDurationMs);
-      const amp = this.shakeAmplitude * decay;
-      this.currentShakeX = (Math.random() * 2 - 1) * amp;
-      this.currentShakeY = (Math.random() * 2 - 1) * amp * 0.75;
+      if (this.shakeTimerMs <= 0) {
+        this.shakeAmplitude = 0;
+        this.currentShakeX = 0;
+        this.currentShakeY = 0;
+      } else {
+        const decay = this.shakeTimerMs / Math.max(1, this.shakeMaxDurationMs);
+        const amp = this.shakeAmplitude * decay;
+        this.currentShakeX = (Math.random() * 2 - 1) * amp;
+        this.currentShakeY = (Math.random() * 2 - 1) * amp * 0.75;
+      }
     } else {
+      this.shakeAmplitude = 0;
       this.currentShakeX = 0;
       this.currentShakeY = 0;
     }
@@ -407,6 +414,9 @@ export class CombatEngine {
     const hitY = Math.round(limbNorm.ny * 440);
 
     if (res.lastDealtDmg && res.lastDealtDmg > 0) {
+      if (action === 'ITEM') {
+        this.enemyHitDelayTimerMs = 80;
+      }
       const pKind =
         res.particleType ||
         (opts?.skillId === 'holy_light' || opts?.itemId === 'brown_vial'
@@ -514,6 +524,9 @@ export class CombatEngine {
     const hitY = Math.round(limbNorm.ny * 440);
 
     if (res.lastDealtDmg && res.lastDealtDmg > 0) {
+      if (action === 'ITEM') {
+        this.enemyHitDelayTimerMs = 80;
+      }
       const pKind =
         res.particleType ||
         (opts?.skillId === 'holy_light' || opts?.itemId === 'brown_vial' || opts?.itemId === 'holy_fire_oil'

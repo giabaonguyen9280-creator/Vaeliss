@@ -1,6 +1,6 @@
 {
   "name": "Vaelis – Thung Lũng Xương Tàn",
-  "description": "Game nhập vai sinh tồn theo lượt phong cách Dark Fantasy Pixel-Art (Fear & Hunger inspired) với hệ thống chặt bộ phận, 6 địa hình ngẫu nhiên, vật phẩm thực dụng, 10 Mini-Boss và Ma Vương Vaelis.",
+  "description": "Game nhập vai sinh tồn theo lượt phong cách Dark Fantasy",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

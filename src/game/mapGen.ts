@@ -447,6 +447,7 @@ export function generateWorld(seed: string): WorldMapState {
         'void_panther',
         'void_leech_beast',
         'hollowed_void_walker',
+        'dimensional_viper',
       ],
       bossId: 'void_chimera',
     },
@@ -745,64 +746,20 @@ export function generateWorld(seed: string): WorldMapState {
       }
 
       const popTileWithBuffer = (rngSource: SeededRNG, bufferRadius = 1): [number, number] | null => {
-        for (let attempt = 0; attempt < openTiles.length; attempt++) {
-          const i = rngSource.int(0, openTiles.length - 1);
-          const [tx, ty] = openTiles[i];
-          openTiles.splice(i, 1);
-          if (reservedMask.has(`${tx},${ty}`)) continue;
-          reserveArea(tx, ty, bufferRadius);
-          return [tx, ty];
-        }
-        return null;
+        const candidates = openTiles.filter(([tx, ty]) => !reservedMask.has(`${tx},${ty}`));
+        if (candidates.length === 0) return null;
+        const pick = candidates[rngSource.int(0, candidates.length - 1)];
+        const [tx, ty] = pick;
+        const origIdx = openTiles.findIndex(([ox, oy]) => ox === tx && oy === ty);
+        if (origIdx >= 0) openTiles.splice(origIdx, 1);
+        reserveArea(tx, ty, bufferRadius);
+        return [tx, ty];
       };
-
-      if (!isBossRoom && roomMiniBossId) {
-        const normalId = fc.normalPool[idx % fc.normalPool.length];
-        const eSpot1 = popTileWithBuffer(rng, 1);
-        if (eSpot1) {
-          enemies.push(
-            createMapEnemyInstance(`${roomId}_E1`, normalId, eSpot1[0], eSpot1[1], {
-              facing: facings[rng.int(0, facings.length - 1)],
-            })
-          );
-        }
-        const mbSpot = popTileWithBuffer(rng, 1);
-        if (mbSpot) {
-          enemies.push(
-            createMapEnemyInstance(`${roomId}_MB`, roomMiniBossId, mbSpot[0], mbSpot[1], {
-              facing: 'left',
-            })
-          );
-        }
-        if (extraRoomMiniBossId) {
-          const mbSpot2 = popTileWithBuffer(rng, 2) || popTileWithBuffer(rng, 1);
-          if (mbSpot2) {
-            enemies.push(
-              createMapEnemyInstance(`${roomId}_MB2`, extraRoomMiniBossId, mbSpot2[0], mbSpot2[1], {
-                facing: 'left',
-              })
-            );
-          }
-        }
-      } else if (!isBossRoom) {
-        const smallCount = rng.int(1, 3);
-        for (let sIdx = 0; sIdx < smallCount; sIdx++) {
-          const normalId = fc.normalPool[(idx + sIdx) % fc.normalPool.length];
-          const eSpot = popTileWithBuffer(rng, 1);
-          if (eSpot) {
-            enemies.push(
-              createMapEnemyInstance(`${roomId}_E${sIdx + 1}`, normalId, eSpot[0], eSpot[1], {
-                facing: facings[rng.int(0, facings.length - 1)],
-              })
-            );
-          }
-        }
-      }
 
       const extraRng = new SeededRNG(`${seed}_${roomId}_extra_props`);
       const ritualCircles: Record<string, { deityType: RitualDeityType; used?: boolean }> = {};
 
-      // Place Ritual Circle (3x3 footprint) in odd non-boss rooms before smaller props
+      // Place Ritual Circle (3x3 footprint) in odd non-boss rooms BEFORE enemies so landmarks never get crowded out
       if (!isBossRoom && idx % 2 === 1) {
         const fixedDeityByRoom: Record<string, RitualDeityType> = {
           F2_R1: 'uninscribed',
@@ -830,6 +787,58 @@ export function generateWorld(seed: string): WorldMapState {
             placeLandmark(rx, ry, TILE.RITUAL_CIRCLE, 1, 2);
             ritualCircles[`${rx},${ry}`] = { deityType: assignedDeity, used: false };
             break;
+          }
+        }
+      }
+
+      if (!isBossRoom && roomMiniBossId) {
+        const normalId1 = fc.normalPool[idx % fc.normalPool.length];
+        const normalId2 = fc.normalPool[(idx + 2) % fc.normalPool.length];
+        const eSpot1 = popTileWithBuffer(rng, 1);
+        if (eSpot1) {
+          enemies.push(
+            createMapEnemyInstance(`${roomId}_E1`, normalId1, eSpot1[0], eSpot1[1], {
+              facing: facings[rng.int(0, facings.length - 1)],
+            })
+          );
+        }
+        const eSpot2 = popTileWithBuffer(rng, 1);
+        if (eSpot2) {
+          enemies.push(
+            createMapEnemyInstance(`${roomId}_E2`, normalId2, eSpot2[0], eSpot2[1], {
+              facing: facings[rng.int(0, facings.length - 1)],
+            })
+          );
+        }
+        const mbSpot = popTileWithBuffer(rng, 1);
+        if (mbSpot) {
+          enemies.push(
+            createMapEnemyInstance(`${roomId}_MB`, roomMiniBossId, mbSpot[0], mbSpot[1], {
+              facing: 'left',
+            })
+          );
+        }
+        if (extraRoomMiniBossId) {
+          const mbSpot2 = popTileWithBuffer(rng, 2) || popTileWithBuffer(rng, 1);
+          if (mbSpot2) {
+            enemies.push(
+              createMapEnemyInstance(`${roomId}_MB2`, extraRoomMiniBossId, mbSpot2[0], mbSpot2[1], {
+                facing: 'left',
+              })
+            );
+          }
+        }
+      } else if (!isBossRoom) {
+        const smallCount = fc.floor === 3 ? 3 : rng.int(1, 3);
+        for (let sIdx = 0; sIdx < smallCount; sIdx++) {
+          const normalId = fc.normalPool[(idx + sIdx) % fc.normalPool.length];
+          const eSpot = popTileWithBuffer(rng, 1);
+          if (eSpot) {
+            enemies.push(
+              createMapEnemyInstance(`${roomId}_E${sIdx + 1}`, normalId, eSpot[0], eSpot[1], {
+                facing: facings[rng.int(0, facings.length - 1)],
+              })
+            );
           }
         }
       }
@@ -898,7 +907,22 @@ export function generateWorld(seed: string): WorldMapState {
 
       if (!isBossRoom) {
         for (let tIdx = 0; tIdx < 2; tIdx++) {
-          const trapSpot = popTileWithBuffer(extraRng, 1);
+          let trapSpot = popTileWithBuffer(extraRng, 1) || popTileWithBuffer(extraRng, 0);
+          if (!trapSpot) {
+            // Scan entire room floor for any unoccupied tile if central openTiles ran dry
+            const fallbackFloors: [number, number][] = [];
+            for (let y = 3; y < roomH - 2; y++) {
+              for (let x = 3; x < roomW - 3; x++) {
+                if (grid[y][x] === TILE.FLOOR && !reservedMask.has(`${x},${y}`)) {
+                  fallbackFloors.push([x, y]);
+                }
+              }
+            }
+            if (fallbackFloors.length > 0) {
+              trapSpot = fallbackFloors[extraRng.int(0, fallbackFloors.length - 1)];
+              reserveArea(trapSpot[0], trapSpot[1], 0);
+            }
+          }
           if (trapSpot) grid[trapSpot[1]][trapSpot[0]] = TILE.FLOOR_TRAP;
         }
         const miasmaSpot = popTileWithBuffer(extraRng, 1);
@@ -939,39 +963,39 @@ export function generateWorld(seed: string): WorldMapState {
             'Kiến trúc đá đen nặng nề của Lâu Đài Ma Vương đè trĩu lên trần Giáo Đường. Mạch dung nham máu rực đỏ dưới khe đá báo hiệu Giao Kèo Máu.',
         },
         F1_R1: {
-          name: 'Tầng 1 – Khu 2: Lò Rèn Quỷ & Chảo Máu',
+          name: 'Tầng 1 – Khu 2: Lò Rèn Quỷ',
           sensory:
-            'Tiếng búa tạ nện vang vọng rợn người. Kẻ Đúc Kiếm Không Đầu có bốn cánh tay sần sùi đứng bên đe rèn đẫm máu và chảo sắt sôi lửa đỏ.',
+            'Tiếng búa tạ nện vang vọng rợn người trong ánh lửa lò rèn đỏ rực.',
         },
         F1_R2: {
-          name: 'Tầng 1 – Khu 3: Tiền Sảnh Bàn Tiệc & Lồng Kính Pha Lê',
+          name: 'Tầng 1 – Khu 3: Tiền Sảnh Bàn Tiệc',
           sensory:
-            'Ngay trước cửa phòng Ngai Vàng Xương Sắt, Quý Cô Trong Lồng Kính bị giam giữa bàn tiệc đổ nát và những chân nến tắt lịm.',
+            'Ngay trước cửa phòng Ngai Vàng Xương Sắt, Quý Cô Trong Lồng Kính bị giam giữ.',
         },
         F1_R3: {
-          name: 'Tầng 1 – Khu 4: Đại Điện Ngai Vàng Máu Vaelis',
+          name: 'Tầng 1 – Khu 4: Đại Điện Ngai Máu Vaelis',
           sensory:
-            'Thảm Đỏ Hoàng Gia viền vàng trải dài giữa hai hàng cột đá Gothic và lư hương lửa đỏ dẫn tới Bệ Đá Tam Cấp. Trên Ngai Vàng Xương Sắt khổng lồ, Hiệp Sĩ Trưởng Vaelis ngồi uy nghi bất động chờ nhát kiếm phán xét.',
+            'Thảm Đỏ Hoàng Gia viền vàng trải dài giữa hai hàng cột đá Gothic và lư hương lửa đỏ dẫn tới Bệ Đá Tam Cấp. Trên Ngai Vàng Xương Sắt khổng lồ, Hiệp Sĩ Trưởng Vaelis ngồi uy nghi bất động.',
         },
         F3_R0: {
-          name: 'Tầng 3 – Khu 1: Vực Sao Cổ Ngữ & Cành Cây Thịt',
+          name: 'Tầng 3 – Khu 1: Vực Sao Cổ Ngữ',
           sensory:
-            'Không gian và thời gian uốn cong bên dưới nền móng Goethe. Thí Nghiệm Thất Bại Số 09 đang bò lết giữa những rễ cây bằng thịt đỏ hỏn.',
+            'Không gian và thời gian uốn cong bên dưới nền móng Goethe.',
         },
         F3_R1: {
-          name: 'Tầng 3 – Khu 2: Sảnh Bia Đá Cổ Ngữ & Kẻ Chép Sử Hóa Thạch',
+          name: 'Tầng 3 – Khu 2: Sảnh Bia Đá Cổ Ngữ',
           sensory:
             'Giữa những bia đá khắc cổ ngữ phát sáng và chồng sách da dê hóa thạch, Kẻ Chép Sử Hóa Thạch vẫn lẩm bẩm về 3 Mảnh Thần Chú Tái Thiết.',
         },
         F3_R2: {
-          name: 'Tầng 3 – Khu 3: Phòng Thí Nghiệm Vực Sao & Lão Thần Y',
+          name: 'Tầng 3 – Khu 3: Phòng Thí Nghiệm Vực Sao',
           sensory:
             'Bên bàn mổ đá và tủ kính đựng ống nghiệm xanh-tím, Lão Thần Y Điên ngồi trên chiếc xe lăn gỗ đã dính liền vào nửa thân dưới hóa đá.',
         },
         F3_R3: {
           name: 'Tầng 3 – Khu 4: Tâm Điểm Vết Rách & Thánh Tử Thứ 13',
           sensory:
-            'Khe nứt không gian tím thẫm gầm rú phía trên lồng sắt mở hé của Thánh Tử Thứ 13 và bệ đá đặt bình Tiên Dược Nguyên Sơ. Sứ Giả Của Vết Rách lơ lửng trấn giữ đáy vực.',
+            'Khe nứt không gian tím thẫm gầm rú dữ dội giữa khoảng không tĩnh mịch.',
         },
       };
       const meta = canonRoomMeta[roomId];
@@ -1461,6 +1485,19 @@ export function advanceRoomEnemiesOneTurn(
     }
 
     if (aiState === 'chase') {
+      // Stealth immediately breaks active chase and forces enemy back to patrol
+      if (stealthActive) {
+        nextEnemies.push({
+          ...enemy,
+          aiState: 'patrol' as const,
+          alertTimerMs: 0,
+          loseSightTimerMs: 0,
+          questionTimerMs: 0,
+          moveCooldownMs: 0,
+        });
+        continue;
+      }
+
       // Immediate combat lock if chasing enemy is already adjacent/overlapping (Manhattan <= 1)
       if (manhattanToPlayer <= 1) {
         const lockedFacing = getFacingToward(enemy.x, enemy.y, playerPos.x, playerPos.y, facing);
@@ -1480,15 +1517,95 @@ export function advanceRoomEnemiesOneTurn(
         continue;
       }
 
-      // Drop chase immediately back to Patrol if > sightRange (3 tiles) or blocked by obstacle/wall (!hasLOS)
+      // If lost sight or out of range: pursue lastSeenX/lastSeenY while loseSightTimerMs > 0 (-500ms/turn)
       if (manhattanToPlayer > sightRange || !hasLOS) {
+        const nextLoseTimer = Math.max(0, loseSightTimerMs - 500);
+        const alreadyAtLastSeen = enemy.x === lastSeenX && enemy.y === lastSeenY;
+        if (loseSightTimerMs <= 0 || alreadyAtLastSeen) {
+          nextEnemies.push({
+            ...enemy,
+            aiState: 'patrol' as const,
+            alertTimerMs: 0,
+            loseSightTimerMs: 0,
+            questionTimerMs: 0,
+            moveCooldownMs: 0,
+          });
+          continue;
+        }
+
+        const pursueStep = findNextChaseStepBFS(
+          room.grid,
+          roomW,
+          roomH,
+          enemy.x,
+          enemy.y,
+          lastSeenX,
+          lastSeenY,
+          room.shortcutOpened,
+          blockedSecretSet,
+          occupiedAll
+        );
+        if (pursueStep) {
+          const nx = enemy.x + pursueStep.dx;
+          const ny = enemy.y + pursueStep.dy;
+          const nextFacing: 'up' | 'down' | 'left' | 'right' =
+            pursueStep.dx !== 0
+              ? pursueStep.dx > 0
+                ? 'right'
+                : 'left'
+              : pursueStep.dy > 0
+              ? 'down'
+              : 'up';
+          const nextKey = `${nx},${ny}`;
+          if (
+            !(nx === playerPos.x && ny === playerPos.y) &&
+            nx >= 1 &&
+            nx < roomW - 1 &&
+            ny >= 1 &&
+            ny < roomH - 1 &&
+            isWalkableTile(room.grid[ny][nx], room.shortcutOpened) &&
+            !blockedSecretSet.has(nextKey) &&
+            !occupiedAll.has(nextKey)
+          ) {
+            occupiedAll.delete(`${enemy.x},${enemy.y}`);
+            occupiedAll.add(nextKey);
+            const arrived = nx === lastSeenX && ny === lastSeenY;
+            const nextState: 'patrol' | 'chase' = arrived || nextLoseTimer <= 0 ? 'patrol' : 'chase';
+            const movedEnemy: MapEnemyInstance = {
+              ...enemy,
+              x: nx,
+              y: ny,
+              facing: nextFacing,
+              aiState: nextState,
+              alertTimerMs: 0,
+              loseSightTimerMs: nextState === 'patrol' ? 0 : nextLoseTimer,
+              questionTimerMs: 0,
+              moveCooldownMs: 0,
+              lastSeenX,
+              lastSeenY,
+            };
+            if (Math.abs(nx - playerPos.x) + Math.abs(ny - playerPos.y) <= 1) {
+              collidedEnemy = {
+                ...movedEnemy,
+                aiState: 'chase',
+                facing: getFacingToward(nx, ny, playerPos.x, playerPos.y, nextFacing),
+              };
+            }
+            nextEnemies.push(movedEnemy);
+            continue;
+          }
+        }
+
+        const fallbackState: 'patrol' | 'chase' = nextLoseTimer <= 0 ? 'patrol' : 'chase';
         nextEnemies.push({
           ...enemy,
-          aiState: 'patrol' as const,
+          aiState: fallbackState,
           alertTimerMs: 0,
-          loseSightTimerMs: 0,
+          loseSightTimerMs: fallbackState === 'patrol' ? 0 : nextLoseTimer,
           questionTimerMs: 0,
           moveCooldownMs: 0,
+          lastSeenX,
+          lastSeenY,
         });
         continue;
       }

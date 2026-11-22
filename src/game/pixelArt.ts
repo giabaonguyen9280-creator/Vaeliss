@@ -508,8 +508,8 @@ export function getLimbReticlePositions(spriteKey: string): Record<string, { nx:
     return {
       head: { nx: 0.50, ny: 0.20 },
       torso: { nx: 0.50, ny: 0.46 },
-      coiling_body: { nx: 0.30, ny: 0.68 },
-      lashing_tail: { nx: 0.72, ny: 0.70 },
+      right_arm: { nx: 0.30, ny: 0.66 },
+      legs: { nx: 0.72, ny: 0.70 },
     };
   }
   if (spriteKey === 'void_chimera') {
@@ -723,6 +723,44 @@ function drawBlindedEyeSlash(ctx: CanvasRenderingContext2D, cx: number, y: numbe
 }
 
 /**
+ * Draws a compact, wrist-proportioned clenched hand/gauntlet strictly ON TOP of weapon shafts
+ * so fingers cleanly wrap around the grip rather than the shaft cutting across the hand.
+ */
+function drawGrippingHand(
+  ctx: CanvasRenderingContext2D,
+  hx: number,
+  hy: number,
+  scale: number,
+  fillColor: string,
+  angle: number = 0
+) {
+  ctx.save();
+  ctx.translate(hx, hy);
+  if (angle !== 0) ctx.rotate(angle);
+
+  // Compact fist/gauntlet silhouette proportioned to forearm wrist
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = '#050505';
+  ctx.lineWidth = Math.max(1.2, 1.65 * scale);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 4.1 * scale, 3.2 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Subtle curled-finger knuckle creases across the grip
+  ctx.strokeStyle = 'rgba(5, 5, 5, 0.72)';
+  ctx.lineWidth = Math.max(0.8, 0.95 * scale);
+  ctx.beginPath();
+  ctx.moveTo(-1.2 * scale, -2.1 * scale);
+  ctx.lineTo(-1.2 * scale, 2.0 * scale);
+  ctx.moveTo(1.2 * scale, -2.0 * scale);
+  ctx.lineTo(1.2 * scale, 1.9 * scale);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/**
  * Helper to draw distinct, recognizable dark-fantasy weapons & props in monster/hero hands
  */
 function drawDetailedWeapon(
@@ -739,54 +777,54 @@ function drawDetailedWeapon(
 
   if (hand === 'left') {
     if (spriteKey === 'fanatic_zealot' || spriteKey === 'crypt_keybearer') {
-      // Burning Torch + Iron Key Ring for crypt_keybearer
+      // Burning Torch (shaft centered through (0, 0) grip) + Iron Key Ring for crypt_keybearer
       ctx.fillStyle = '#4a321f';
       ctx.strokeStyle = '#070608';
       ctx.lineWidth = 1.8 * scale;
       ctx.beginPath();
-      ctx.moveTo(-4 * scale, 10 * scale);
-      ctx.lineTo(-14 * scale, -26 * scale);
-      ctx.lineTo(-7 * scale, -28 * scale);
-      ctx.lineTo(3 * scale, 8 * scale);
+      ctx.moveTo(-1.5 * scale, 10 * scale);
+      ctx.lineTo(-11.5 * scale, -26 * scale);
+      ctx.lineTo(-4.5 * scale, -28 * scale);
+      ctx.lineTo(5.5 * scale, 8 * scale);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
-      const fGrad = ctx.createRadialGradient(-12 * scale, -34 * scale, 2 * scale, -12 * scale, -34 * scale, 16 * scale);
+      const fGrad = ctx.createRadialGradient(-9.5 * scale, -34 * scale, 2 * scale, -9.5 * scale, -34 * scale, 16 * scale);
       fGrad.addColorStop(0, '#fff3b0');
       fGrad.addColorStop(0.45, '#f59e0b');
       fGrad.addColorStop(1, 'rgba(220, 38, 38, 0)');
       ctx.fillStyle = fGrad;
       ctx.beginPath();
-      ctx.arc(-12 * scale, -34 * scale, 16 * scale, 0, Math.PI * 2);
+      ctx.arc(-9.5 * scale, -34 * scale, 16 * scale, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = '#fbbf24';
       ctx.beginPath();
-      ctx.moveTo(-17 * scale, -26 * scale);
-      ctx.quadraticCurveTo(-20 * scale, -42 * scale, -11 * scale, -48 * scale);
-      ctx.quadraticCurveTo(-3 * scale, -39 * scale, -7 * scale, -26 * scale);
+      ctx.moveTo(-14.5 * scale, -26 * scale);
+      ctx.quadraticCurveTo(-17.5 * scale, -42 * scale, -8.5 * scale, -48 * scale);
+      ctx.quadraticCurveTo(-0.5 * scale, -39 * scale, -4.5 * scale, -26 * scale);
       ctx.closePath();
       ctx.fill();
 
       if (spriteKey === 'crypt_keybearer') {
-        // Large Iron Crypt Key Ring hanging from hand
+        // Large Iron Crypt Key Ring hanging directly from gripped hand
         ctx.strokeStyle = '#eab308';
         ctx.lineWidth = 2.2 * scale;
         ctx.beginPath();
-        ctx.arc(-4 * scale, 14 * scale, 7 * scale, 0, Math.PI * 2);
+        ctx.arc(-1 * scale, 12 * scale, 7 * scale, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillRect(-6 * scale, 21 * scale, 4 * scale, 12 * scale);
+        ctx.fillRect(-3 * scale, 19 * scale, 4 * scale, 12 * scale);
       }
     } else if (spriteKey === 'rotting_priest') {
-      // Tarnished Brass Soul-Bell (Quai cầm + Miệng chuông đồng vàng xỉn)
+      // Tarnished Brass Soul-Bell (handle ring centered at (0, 0) grip)
       ctx.strokeStyle = '#785c18';
       ctx.lineWidth = 2.4 * scale;
       ctx.beginPath();
-      ctx.arc(-8 * scale, 2 * scale, 5.5 * scale, Math.PI, 0);
+      ctx.arc(0, 4.5 * scale, 5.2 * scale, Math.PI, 0);
       ctx.stroke();
 
-      const bellGrad = ctx.createLinearGradient(-16 * scale, 4 * scale, 2 * scale, 24 * scale);
+      const bellGrad = ctx.createLinearGradient(-8 * scale, 6 * scale, 10 * scale, 26 * scale);
       bellGrad.addColorStop(0, '#eab308');
       bellGrad.addColorStop(0.5, '#a16207');
       bellGrad.addColorStop(1, '#422006');
@@ -794,18 +832,18 @@ function drawDetailedWeapon(
       ctx.strokeStyle = '#070608';
       ctx.lineWidth = 1.8 * scale;
       ctx.beginPath();
-      ctx.moveTo(-14 * scale, 4 * scale);
-      ctx.lineTo(-2 * scale, 4 * scale);
-      ctx.quadraticCurveTo(3 * scale, 18 * scale, 5 * scale, 23 * scale);
-      ctx.lineTo(-21 * scale, 23 * scale);
-      ctx.quadraticCurveTo(-19 * scale, 18 * scale, -14 * scale, 4 * scale);
+      ctx.moveTo(-6 * scale, 6 * scale);
+      ctx.lineTo(6 * scale, 6 * scale);
+      ctx.quadraticCurveTo(11 * scale, 20 * scale, 13 * scale, 25 * scale);
+      ctx.lineTo(-13 * scale, 25 * scale);
+      ctx.quadraticCurveTo(-11 * scale, 20 * scale, -6 * scale, 6 * scale);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = '#fef08a';
       ctx.beginPath();
-      ctx.arc(-8 * scale, 24 * scale, 3.5 * scale, 0, Math.PI * 2);
+      ctx.arc(0, 26 * scale, 3.5 * scale, 0, Math.PI * 2);
       ctx.fill();
     } else if (spriteKey === 'executioner_paladin') {
       // Colossal Raised Cross Tower-Shield covering half of Paladin's upper body
@@ -862,9 +900,9 @@ function drawDetailedWeapon(
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 2.8 * scale;
       ctx.beginPath();
-      ctx.moveTo(-4 * scale, 0);
-      ctx.lineTo(-14 * scale, 18 * scale);
-      ctx.arc(-20 * scale, 18 * scale, 7 * scale, 0, Math.PI * 1.35);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-12 * scale, 18 * scale);
+      ctx.arc(-18 * scale, 18 * scale, 7 * scale, 0, Math.PI * 1.35);
       ctx.stroke();
     } else if (spriteKey === 'countess_carmilla') {
       // Floating Ruby Blood Chalice (Ly Huyết Ngọc lơ lửng)
@@ -958,37 +996,38 @@ function drawDetailedWeapon(
   }
 
   // =========================================================================
-  // RIGHT-HAND PRIMARY WEAPONS
+  // RIGHT-HAND PRIMARY WEAPONS (all shafts/hilts pass cleanly through (0, 0) grip)
   // =========================================================================
   ctx.strokeStyle = '#070608';
   ctx.lineWidth = 1.8 * scale;
 
   if (spriteKey === 'night_hunter') {
-    // Curved Steel Hunting Dagger (Dao Săn Cong Thép Lạnh — khớp Khung III)
+    // Curved Steel Hunting Dagger (hilt centered on (0, 0))
     ctx.fillStyle = '#451a03';
-    ctx.fillRect(-3 * scale, -2 * scale, 6 * scale, 10 * scale);
-    const bladeGrad = ctx.createLinearGradient(0, 0, 22 * scale, -34 * scale);
+    ctx.fillRect(-3 * scale, -3 * scale, 6 * scale, 11 * scale);
+    ctx.strokeRect(-3 * scale, -3 * scale, 6 * scale, 11 * scale);
+    const bladeGrad = ctx.createLinearGradient(0, -2 * scale, 22 * scale, -36 * scale);
     bladeGrad.addColorStop(0, '#64748b');
     bladeGrad.addColorStop(0.55, '#cbd5e1');
     bladeGrad.addColorStop(1, '#f8fafc');
     ctx.fillStyle = bladeGrad;
     ctx.beginPath();
-    ctx.moveTo(2 * scale, 0);
-    ctx.bezierCurveTo(22 * scale, -8 * scale, 26 * scale, -28 * scale, 8 * scale, -36 * scale);
-    ctx.bezierCurveTo(16 * scale, -24 * scale, 12 * scale, -10 * scale, -2 * scale, -2 * scale);
+    ctx.moveTo(2 * scale, -2 * scale);
+    ctx.bezierCurveTo(22 * scale, -10 * scale, 26 * scale, -30 * scale, 8 * scale, -38 * scale);
+    ctx.bezierCurveTo(16 * scale, -26 * scale, 12 * scale, -12 * scale, -2 * scale, -4 * scale);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
   } else if (spriteKey === 'forsaken_nun') {
-    // Flanged Steel Holy Mother Mace (Chùy Thép Khía Thánh Mẫu — khớp Khung III)
+    // Flanged Steel Holy Mother Mace (shaft passes cleanly through (0, 0))
     ctx.strokeStyle = '#334155';
     ctx.lineWidth = 3.4 * scale;
     ctx.beginPath();
-    ctx.moveTo(0, 10 * scale);
-    ctx.lineTo(12 * scale, -28 * scale);
+    ctx.moveTo(-3.5 * scale, 10 * scale);
+    ctx.lineTo(10.5 * scale, -28 * scale);
     ctx.stroke();
 
-    const headX = 13 * scale;
+    const headX = 11.5 * scale;
     const headY = -32 * scale;
     const maceGrad = ctx.createRadialGradient(headX - 2 * scale, headY - 2 * scale, 1.5, headX, headY, 10 * scale);
     maceGrad.addColorStop(0, '#e2e8f0');
@@ -1013,12 +1052,12 @@ function drawDetailedWeapon(
     ctx.fill();
     ctx.stroke();
   } else if (spriteKey === 'fanatic_zealot') {
-    // Bloodied Reaper Sickle
+    // Bloodied Reaper Sickle (wooden shaft passes directly through (0, 0))
     ctx.strokeStyle = '#5c3a21';
     ctx.lineWidth = 3.2 * scale;
     ctx.beginPath();
-    ctx.moveTo(0, 6 * scale);
-    ctx.lineTo(8 * scale, -18 * scale);
+    ctx.moveTo(-2.5 * scale, 7 * scale);
+    ctx.lineTo(7.5 * scale, -19 * scale);
     ctx.stroke();
 
     const bladeGrad = ctx.createLinearGradient(4 * scale, -18 * scale, 24 * scale, -38 * scale);
@@ -1027,9 +1066,9 @@ function drawDetailedWeapon(
     bladeGrad.addColorStop(1, '#991b1b');
     ctx.fillStyle = bladeGrad;
     ctx.beginPath();
-    ctx.moveTo(7 * scale, -17 * scale);
-    ctx.bezierCurveTo(26 * scale, -22 * scale, 26 * scale, -44 * scale, 4 * scale, -42 * scale);
-    ctx.bezierCurveTo(16 * scale, -36 * scale, 16 * scale, -23 * scale, 5 * scale, -19 * scale);
+    ctx.moveTo(6.5 * scale, -18 * scale);
+    ctx.bezierCurveTo(25 * scale, -22 * scale, 25 * scale, -44 * scale, 3 * scale, -42 * scale);
+    ctx.bezierCurveTo(15 * scale, -36 * scale, 15 * scale, -24 * scale, 4.5 * scale, -20 * scale);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -1038,15 +1077,15 @@ function drawDetailedWeapon(
     spriteKey === 'weeping_inquisitor' ||
     spriteKey === 'black_bone_skeleton'
   ) {
-    // Spiked Morning Star Mace (Chùy gai sắt)
+    // Spiked Morning Star Mace (iron handle passes cleanly through (0, 0))
     ctx.strokeStyle = '#475569';
     ctx.lineWidth = 3.5 * scale;
     ctx.beginPath();
-    ctx.moveTo(0, 8 * scale);
-    ctx.lineTo(14 * scale, -28 * scale);
+    ctx.moveTo(-3.2 * scale, 8 * scale);
+    ctx.lineTo(12 * scale, -28 * scale);
     ctx.stroke();
 
-    const ballX = 15 * scale;
+    const ballX = 13.5 * scale;
     const ballY = -32 * scale;
     ctx.fillStyle = '#334155';
     ctx.strokeStyle = '#09070a';
@@ -1068,15 +1107,15 @@ function drawDetailedWeapon(
       ctx.stroke();
     }
   } else if (spriteKey === 'executioner_paladin') {
-    // Colossal Judgment Warhammer (Búa Phán Quyết khổng lồ)
+    // Colossal Judgment Warhammer (haft passes through (0, 0))
     ctx.strokeStyle = '#78350f';
     ctx.lineWidth = 4.2 * scale;
     ctx.beginPath();
-    ctx.moveTo(-2 * scale, 14 * scale);
-    ctx.lineTo(16 * scale, -44 * scale);
+    ctx.moveTo(-4.5 * scale, 14 * scale);
+    ctx.lineTo(14.5 * scale, -44 * scale);
     ctx.stroke();
 
-    const hamGrad = ctx.createLinearGradient(2 * scale, -52 * scale, 32 * scale, -34 * scale);
+    const hamGrad = ctx.createLinearGradient(0, -52 * scale, 30 * scale, -34 * scale);
     hamGrad.addColorStop(0, '#fef08a');
     hamGrad.addColorStop(0.5, '#cbd5e1');
     hamGrad.addColorStop(1, '#475569');
@@ -1084,30 +1123,30 @@ function drawDetailedWeapon(
     ctx.strokeStyle = '#09070a';
     ctx.lineWidth = 2 * scale;
     ctx.beginPath();
-    ctx.moveTo(2 * scale, -48 * scale);
-    ctx.lineTo(30 * scale, -36 * scale);
-    ctx.lineTo(26 * scale, -24 * scale);
-    ctx.lineTo(-2 * scale, -36 * scale);
+    ctx.moveTo(0, -48 * scale);
+    ctx.lineTo(28 * scale, -36 * scale);
+    ctx.lineTo(24 * scale, -24 * scale);
+    ctx.lineTo(-4 * scale, -36 * scale);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
   } else if (spriteKey === 'butcher_kaelgor') {
-    // Đại Phủ Chặt Đầu khổng lồ (Executioner Cleaver)
+    // Đại Phủ Chặt Đầu khổng lồ (Executioner Cleaver — haft passes through (0, 0))
     ctx.strokeStyle = '#5c3a21';
     ctx.lineWidth = 4.5 * scale;
     ctx.beginPath();
-    ctx.moveTo(0, 12 * scale);
-    ctx.lineTo(18 * scale, -44 * scale);
+    ctx.moveTo(-4 * scale, 12 * scale);
+    ctx.lineTo(15 * scale, -44 * scale);
     ctx.stroke();
 
     ctx.fillStyle = '#475569';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2.2 * scale;
     ctx.beginPath();
-    ctx.moveTo(10 * scale, -18 * scale);
-    ctx.lineTo(36 * scale, -54 * scale);
-    ctx.lineTo(44 * scale, -24 * scale);
-    ctx.lineTo(14 * scale, -6 * scale);
+    ctx.moveTo(7 * scale, -18 * scale);
+    ctx.lineTo(33 * scale, -54 * scale);
+    ctx.lineTo(41 * scale, -24 * scale);
+    ctx.lineTo(11 * scale, -6 * scale);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -1116,27 +1155,27 @@ function drawDetailedWeapon(
     ctx.strokeStyle = '#dc2626';
     ctx.lineWidth = 2.5 * scale;
     ctx.beginPath();
-    ctx.moveTo(35 * scale, -51 * scale);
-    ctx.lineTo(42 * scale, -25 * scale);
+    ctx.moveTo(32 * scale, -51 * scale);
+    ctx.lineTo(39 * scale, -25 * scale);
     ctx.stroke();
   } else if (spriteKey === 'grand_abbess' || spriteKey === 'rotting_priest') {
-    // Glowing Holy Mother Staff (Trượng Thánh Mẫu phát hào quang chói lòa)
+    // Glowing Holy Mother Staff (shaft passes directly through (0, 0))
     ctx.strokeStyle = '#b45309';
     ctx.lineWidth = 3.6 * scale;
     ctx.beginPath();
-    ctx.moveTo(2 * scale, 18 * scale);
-    ctx.lineTo(15 * scale, -42 * scale);
+    ctx.moveTo(-4.5 * scale, 18 * scale);
+    ctx.lineTo(11 * scale, -42 * scale);
     ctx.stroke();
 
     const haloR = (spriteKey === 'grand_abbess' ? (isTelegraphing ? 28 : 20) : 14) * scale;
-    const glow = ctx.createRadialGradient(15 * scale, -46 * scale, 2, 15 * scale, -46 * scale, haloR);
+    const glow = ctx.createRadialGradient(11 * scale, -46 * scale, 2, 11 * scale, -46 * scale, haloR);
     glow.addColorStop(0, '#ffffff');
     glow.addColorStop(0.35, '#fef08a');
     glow.addColorStop(0.7, 'rgba(234, 179, 8, 0.55)');
     glow.addColorStop(1, 'rgba(234, 179, 8, 0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(15 * scale, -46 * scale, haloR, 0, Math.PI * 2);
+    ctx.arc(11 * scale, -46 * scale, haloR, 0, Math.PI * 2);
     ctx.fill();
 
     // Converging Judgment Light Beams when Grand Abbess is telegraphing
@@ -1146,8 +1185,8 @@ function drawDetailedWeapon(
       for (let i = 0; i < 8; i++) {
         const ang = (i * Math.PI * 2) / 8;
         ctx.beginPath();
-        ctx.moveTo(15 * scale + Math.cos(ang) * 9 * scale, -46 * scale + Math.sin(ang) * 9 * scale);
-        ctx.lineTo(15 * scale + Math.cos(ang) * haloR, -46 * scale + Math.sin(ang) * haloR);
+        ctx.moveTo(11 * scale + Math.cos(ang) * 9 * scale, -46 * scale + Math.sin(ang) * 9 * scale);
+        ctx.lineTo(11 * scale + Math.cos(ang) * haloR, -46 * scale + Math.sin(ang) * haloR);
         ctx.stroke();
       }
     }
@@ -1155,14 +1194,21 @@ function drawDetailedWeapon(
     ctx.strokeStyle = '#fde047';
     ctx.lineWidth = 3.2 * scale;
     ctx.beginPath();
-    ctx.moveTo(15 * scale, -58 * scale);
-    ctx.lineTo(15 * scale, -34 * scale);
-    ctx.moveTo(6 * scale, -48 * scale);
-    ctx.lineTo(24 * scale, -48 * scale);
+    ctx.moveTo(11 * scale, -58 * scale);
+    ctx.lineTo(11 * scale, -34 * scale);
+    ctx.moveTo(2 * scale, -48 * scale);
+    ctx.lineTo(20 * scale, -48 * scale);
     ctx.stroke();
   } else if (spriteKey === 'demon_lord_vaelis') {
     // World-Ending Apocalypse Greatsword (Đại Đao Diệt Thế rực lửa dung nham)
-    const bGrad = ctx.createLinearGradient(2 * scale, 4 * scale, 28 * scale, -64 * scale);
+    ctx.strokeStyle = '#3f2014';
+    ctx.lineWidth = 4.2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(-3 * scale, 10 * scale);
+    ctx.lineTo(4 * scale, -4 * scale);
+    ctx.stroke();
+
+    const bGrad = ctx.createLinearGradient(2 * scale, 0, 28 * scale, -64 * scale);
     bGrad.addColorStop(0, '#450a0a');
     bGrad.addColorStop(0.4, '#dc2626');
     bGrad.addColorStop(0.8, '#f97316');
@@ -1171,12 +1217,12 @@ function drawDetailedWeapon(
     ctx.strokeStyle = '#09050a';
     ctx.lineWidth = 2 * scale;
     ctx.beginPath();
-    ctx.moveTo(0, 4 * scale);
+    ctx.moveTo(0, -3 * scale);
     ctx.lineTo(22 * scale, -62 * scale);
     ctx.lineTo(34 * scale, -54 * scale);
     ctx.lineTo(26 * scale, -34 * scale);
     ctx.lineTo(31 * scale, -28 * scale);
-    ctx.lineTo(12 * scale, 8 * scale);
+    ctx.lineTo(10 * scale, 2 * scale);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -1185,32 +1231,41 @@ function drawDetailedWeapon(
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 3.8 * scale;
     ctx.beginPath();
-    ctx.moveTo(-6 * scale, -2 * scale);
-    ctx.quadraticCurveTo(6 * scale, 6 * scale, 18 * scale, 8 * scale);
+    ctx.moveTo(-6 * scale, -7 * scale);
+    ctx.quadraticCurveTo(5 * scale, -1 * scale, 16 * scale, 2 * scale);
     ctx.stroke();
   } else {
-    // Broad Iron Sword / Penitent Greatsword / Vorath Dark Greatsword
+    // Broad Iron Sword / Penitent Greatsword / Vorath Dark Greatsword (leather hilt centered on (0, 0))
     const isColossal = spriteKey === 'penitent_knight' || spriteKey === 'dullahan_knight';
-    const len = isColossal ? -58 : -46;
-    const bGrad = ctx.createLinearGradient(4 * scale, 0, 22 * scale, len * scale);
+    const len = isColossal ? -60 : -48;
+    ctx.strokeStyle = '#3f2314';
+    ctx.lineWidth = 3.6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(-3 * scale, 9 * scale);
+    ctx.lineTo(3 * scale, -5 * scale);
+    ctx.stroke();
+
+    const bGrad = ctx.createLinearGradient(2 * scale, -4 * scale, 20 * scale, len * scale);
     bGrad.addColorStop(0, spriteKey === 'dullahan_knight' ? '#1e293b' : '#64748b');
     bGrad.addColorStop(0.55, spriteKey === 'dullahan_knight' ? '#475569' : '#e2e8f0');
     bGrad.addColorStop(1, '#991b1b');
     ctx.fillStyle = bGrad;
+    ctx.strokeStyle = '#070608';
+    ctx.lineWidth = 1.8 * scale;
     ctx.beginPath();
-    ctx.moveTo(1 * scale, 2 * scale);
-    ctx.lineTo(18 * scale, len * scale);
-    ctx.lineTo(28 * scale, (len + 5) * scale);
-    ctx.lineTo(10 * scale, 6 * scale);
+    ctx.moveTo(-1 * scale, -5 * scale);
+    ctx.lineTo(16 * scale, len * scale);
+    ctx.lineTo(26 * scale, (len + 5) * scale);
+    ctx.lineTo(8 * scale, -1 * scale);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
     ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 3.4 * scale;
+    ctx.lineWidth = 3.2 * scale;
     ctx.beginPath();
-    ctx.moveTo(-4 * scale, -1 * scale);
-    ctx.lineTo(15 * scale, 8 * scale);
+    ctx.moveTo(-6 * scale, -7 * scale);
+    ctx.lineTo(12 * scale, 1 * scale);
     ctx.stroke();
   }
 
@@ -1491,12 +1546,19 @@ export function drawPixelSprite(
     ctx.lineTo(cx + 40 * scale, destH * 0.20 + rightArmBobY);
     ctx.stroke();
 
-    // Heavy Blacksmith Hammer in Upper Right Hand
+    // Heavy Blacksmith Hammer in Upper Right Hand (handle -> hammer head -> gripping hand on top)
+    ctx.strokeStyle = '#5c3a21';
+    ctx.lineWidth = 3.4 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx + 40 * scale, destH * 0.25 + rightArmBobY);
+    ctx.lineTo(cx + 40 * scale, destH * 0.14 + rightArmBobY);
+    ctx.stroke();
     ctx.fillStyle = '#64748b';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2 * scale;
-    ctx.fillRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 12 * scale);
-    ctx.strokeRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 12 * scale);
+    ctx.fillRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 11 * scale);
+    ctx.strokeRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 11 * scale);
+    drawGrippingHand(ctx, cx + 40 * scale, destH * 0.20 + rightArmBobY, scale, '#6b4c3b', 0.15);
     ctx.restore();
     return;
   }
@@ -1604,7 +1666,13 @@ export function drawPixelSprite(
     ctx.lineTo(cx + 1 * scale, py + destH * 0.31 + headBobY);
     ctx.stroke();
 
-    // Wooden Staff with Rusted Bronze Bells
+    // Forearm -> Wooden Staff with Rusted Bronze Bells -> Gripping Hand on top
+    ctx.strokeStyle = '#4b5563';
+    ctx.lineWidth = 5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx + 10 * scale, py + destH * 0.36);
+    ctx.lineTo(cx + 19.5 * scale, py + destH * 0.44);
+    ctx.stroke();
     ctx.strokeStyle = '#78350f';
     ctx.lineWidth = 3.2 * scale;
     ctx.beginPath();
@@ -1616,6 +1684,7 @@ export function drawPixelSprite(
     ctx.arc(cx + 26 * scale, py + destH * 0.14, 4.5 * scale, 0, Math.PI * 2);
     ctx.arc(cx + 18 * scale, py + destH * 0.18, 4 * scale, 0, Math.PI * 2);
     ctx.fill();
+    drawGrippingHand(ctx, cx + 19.5 * scale, py + destH * 0.44, scale, '#d6c7b2', 0.1);
     ctx.restore();
     return;
   }
@@ -1718,13 +1787,20 @@ export function drawPixelSprite(
     ctx.fillStyle = '#27272a'; // Beard
     ctx.fillRect(cx - 8 * scale, sitY + destH * 0.11, 16 * scale, 6 * scale);
 
-    // Rusted Shortblade propped in right hand
+    // Forearm -> Rusted Shortblade propped in right hand -> Gripping Gauntlet on top
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 5.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx + 14 * scale, sitY + destH * 0.24);
+    ctx.lineTo(cx + 21 * scale, destH * 0.66);
+    ctx.stroke();
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 3 * scale;
     ctx.beginPath();
-    ctx.moveTo(cx + 20 * scale, destH * 0.64);
+    ctx.moveTo(cx + 20 * scale, destH * 0.63);
     ctx.lineTo(cx + 28 * scale, destH * 0.88);
     ctx.stroke();
+    drawGrippingHand(ctx, cx + 21 * scale, destH * 0.66, scale, '#475569', 0.2);
     ctx.restore();
     return;
   }
@@ -1853,7 +1929,7 @@ export function drawPixelSprite(
     ctx.fillStyle = '#facc15';
     ctx.fillRect(cx + 11 * scale, destH * 0.57 + torsoBreathY, 4 * scale, 2 * scale);
 
-    // Left Arm holding Glowing Storm Lantern
+    // Left Arm -> Glowing Storm Lantern -> Gloved Hand on top of bail
     const lanX = cx - 26 * scale + leftArmSwayX;
     const lanY = destH * 0.56 + leftArmBobY;
     ctx.strokeStyle = '#2b2530';
@@ -1869,11 +1945,17 @@ export function drawPixelSprite(
     ctx.beginPath();
     ctx.arc(lanX, lanY + 4 * scale, 16 * scale, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#78716c';
+    ctx.lineWidth = 1.6 * scale;
+    ctx.beginPath();
+    ctx.arc(lanX, lanY - 1 * scale, 3 * scale, Math.PI, 0);
+    ctx.stroke();
     ctx.fillStyle = '#f59e0b';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 1.6 * scale;
     ctx.fillRect(lanX - 4 * scale, lanY, 8 * scale, 10 * scale);
     ctx.strokeRect(lanX - 4 * scale, lanY, 8 * scale, 10 * scale);
+    drawGrippingHand(ctx, lanX, lanY - 4 * scale, scale, '#3f3847', -0.18);
 
     // Hood & Iron Half-Mask Head
     ctx.save();
@@ -2188,13 +2270,30 @@ export function drawPixelSprite(
   // FLOOR 3 NORMAL VIPER: MÃNG XÀ KHÔNG GIAN (`dimensional_viper`)
   // =========================================================================
   if (spriteKey === 'dimensional_viper') {
-    // Coiled star-scaled serpent body (`coiling_body` & `lashing_tail`)
-    ctx.strokeStyle = '#4c1d95';
-    ctx.lineWidth = 14 * scale;
-    ctx.beginPath();
-    ctx.moveTo(cx - 32 * scale, destH * 0.78);
-    ctx.bezierCurveTo(cx - 42 * scale, destH * 0.52, cx + 42 * scale, destH * 0.56, cx + 34 * scale, destH * 0.80);
-    ctx.stroke();
+    // Coiling constriction loop (`right_arm` — Khúc Thân Siết)
+    if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#4c1d95';
+      ctx.lineWidth = 14 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx, destH * 0.64);
+      ctx.bezierCurveTo(cx - 26 * scale, destH * 0.54, cx - 44 * scale, destH * 0.62, cx - 32 * scale, destH * 0.78);
+      ctx.stroke();
+    } else {
+      drawArterialStump(ctx, cx - 22 * scale, destH * 0.66, 9 * scale);
+    }
+
+    // Lashing void tail (`legs` — Đuôi Quất Hư Vô)
+    if (!severedLimbs.has('legs')) {
+      ctx.strokeStyle = '#581c87';
+      ctx.lineWidth = 12 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx, destH * 0.64);
+      ctx.bezierCurveTo(cx + 22 * scale, destH * 0.58, cx + 42 * scale, destH * 0.64, cx + 34 * scale, destH * 0.80);
+      ctx.stroke();
+    } else {
+      drawArterialStump(ctx, cx + 22 * scale, destH * 0.70, 9 * scale);
+    }
+
     // Upper torso & hooded fanged head
     ctx.strokeStyle = '#7e22ce';
     ctx.lineWidth = 11 * scale;
@@ -2215,6 +2314,8 @@ export function drawPixelSprite(
       ctx.arc(cx - 6 * scale, destH * 0.18 + headBobY, 2.5 * scale, 0, Math.PI * 2);
       ctx.arc(cx + 6 * scale, destH * 0.18 + headBobY, 2.5 * scale, 0, Math.PI * 2);
       ctx.fill();
+    } else {
+      drawArterialStump(ctx, cx, destH * 0.24, 9 * scale);
     }
     ctx.restore();
     return;
@@ -2844,6 +2945,8 @@ export function drawPixelSprite(
       ctx.arc(censerX, censerY, 10 * scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+      // Gauntlet gripping top of censer chain on top layer
+      drawGrippingHand(ctx, cx + 48 * scale, destH * 0.44, scale, '#475569', 0.3);
     } else {
       drawArmoredSeveredStump(ctx, cx + 32 * scale, destH * 0.40, 11 * scale, scale);
     }
@@ -2966,7 +3069,7 @@ export function drawPixelSprite(
     ctx.strokeRect(cx - 20 * scale, destH * 0.34, 40 * scale, 28 * scale);
     ctx.restore();
 
-    // left_arm: Xích Móc Sắt
+    // left_arm: Xích Móc Sắt (cẳng tay -> xích móc -> bàn tay nắm trên cùng)
     if (!severedLimbs.has('left_arm')) {
       ctx.save();
       ctx.translate(leftArmSwayX, leftArmBobY);
@@ -2983,12 +3086,13 @@ export function drawPixelSprite(
       ctx.lineTo(cx - 44 * scale, destH * 0.72);
       ctx.arc(cx - 48 * scale, destH * 0.74, 7 * scale, 0, Math.PI * 1.35);
       ctx.stroke();
+      drawGrippingHand(ctx, cx - 40 * scale, destH * 0.52, scale, '#78350f', -0.25);
       ctx.restore();
     } else {
       drawArmoredSeveredStump(ctx, cx - 30 * scale, destH * 0.36, 9 * scale, scale);
     }
 
-    // right_arm: Đại Phủ Chặt Đầu
+    // right_arm: Đại Phủ Chặt Đầu (cẳng tay -> đại phủ -> bàn tay nắm trên cùng)
     if (!severedLimbs.has('right_arm')) {
       ctx.save();
       ctx.translate(rightArmSwayX, rightArmBobY);
@@ -2998,7 +3102,8 @@ export function drawPixelSprite(
       ctx.moveTo(cx + 30 * scale, destH * 0.32);
       ctx.lineTo(cx + 38 * scale, destH * 0.50);
       ctx.stroke();
-      drawDetailedWeapon(ctx, 'butcher_kaelgor', 'right', cx + 36 * scale, destH * 0.50, scale, isTelegraphing);
+      drawDetailedWeapon(ctx, 'butcher_kaelgor', 'right', cx + 38 * scale, destH * 0.50, scale, isTelegraphing);
+      drawGrippingHand(ctx, cx + 38 * scale, destH * 0.50, scale, '#78350f', 0.25);
       ctx.restore();
     } else {
       drawArmoredSeveredStump(ctx, cx + 30 * scale, destH * 0.36, 9 * scale, scale);
@@ -3070,7 +3175,7 @@ export function drawPixelSprite(
     ctx.strokeRect(cx - 18 * scale, destH * 0.34, 36 * scale, 22 * scale);
     ctx.restore();
 
-    // right_arm: Trọng Kiếm Đen
+    // right_arm: Trọng Kiếm Đen (cẳng tay -> trọng kiếm -> găng giáp nắm trên cùng)
     if (!severedLimbs.has('right_arm')) {
       ctx.save();
       ctx.translate(rightArmSwayX, rightArmBobY);
@@ -3080,7 +3185,8 @@ export function drawPixelSprite(
       ctx.moveTo(cx + 26 * scale, destH * 0.32);
       ctx.lineTo(cx + 38 * scale, destH * 0.50);
       ctx.stroke();
-      drawDetailedWeapon(ctx, 'dullahan_knight', 'right', cx + 36 * scale, destH * 0.50, scale, isTelegraphing);
+      drawDetailedWeapon(ctx, 'dullahan_knight', 'right', cx + 38 * scale, destH * 0.50, scale, isTelegraphing);
+      drawGrippingHand(ctx, cx + 38 * scale, destH * 0.50, scale, '#334155', 0.25);
       ctx.restore();
     } else {
       drawArmoredSeveredStump(ctx, cx + 28 * scale, destH * 0.36, 9 * scale, scale);
@@ -3216,7 +3322,7 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 22 * scale, destH * 0.36, 8 * scale);
     }
 
-    // right_arm: Trượng Xương
+    // right_arm: Trượng Xương (cẳng tay -> trượng xương -> bàn tay nắm trên cùng)
     if (!severedLimbs.has('right_arm')) {
       ctx.strokeStyle = '#d6b89c';
       ctx.lineWidth = 5 * scale;
@@ -3234,6 +3340,7 @@ export function drawPixelSprite(
       ctx.beginPath();
       ctx.arc(cx + 36 * scale, destH * 0.14 + rightArmBobY, 6 * scale, 0, Math.PI * 2);
       ctx.fill();
+      drawGrippingHand(ctx, cx + 36 * scale, destH * 0.48 + rightArmBobY, scale, '#d6b89c', 0.1);
     } else {
       drawArterialStump(ctx, cx + 22 * scale, destH * 0.36, 8 * scale);
     }
@@ -3525,6 +3632,10 @@ export function drawPixelSprite(
       ctx.arc(cx + 50 * scale, destH * 0.22 + rightArmBobY, 9 * scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+
+      // Both pale wax hands gripping the bronze bell staff on top layer
+      drawGrippingHand(ctx, cx + 44 * scale, destH * 0.40 + rightArmBobY, scale, '#f1f5f9', 0.08);
+      drawGrippingHand(ctx, cx + 44 * scale, destH * 0.52 + rightArmBobY, scale, '#f1f5f9', 0.08);
     } else {
       drawArmoredSeveredStump(ctx, cx + 30 * scale, destH * 0.42, 10 * scale, scale);
     }
@@ -3622,9 +3733,16 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 22 * scale, destH * 0.42, 8 * scale);
     }
 
-    // right_arm: Tay phải điều khiển trượng sáp nóng (nx: 0.75, ny: 0.44)
+    // right_arm: Tay phải điều khiển trượng sáp nóng (cẳng tay -> trượng -> bàn tay nắm trên cùng)
     if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 18 * scale, destH * 0.34);
+      ctx.lineTo(cx + 28 * scale, destH * 0.48);
+      ctx.stroke();
       drawDetailedWeapon(ctx, 'grand_abbess', 'right', cx + 28 * scale, destH * 0.48, scale, isTelegraphing);
+      drawGrippingHand(ctx, cx + 28 * scale, destH * 0.48, scale, '#cbd5e1', 0.2);
     } else {
       drawArterialStump(ctx, cx + 22 * scale, destH * 0.42, 8 * scale);
     }
@@ -3723,12 +3841,18 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 30 * scale, destH * 0.42, 9 * scale);
     }
 
-    // right_arm: Cầm Chùy Chiến Bạch Kim đầu vuông nặng trịch (nx: 0.76, ny: 0.44)
+    // right_arm: Cầm Chùy Chiến Bạch Kim đầu vuông nặng trịch (cẳng tay -> chùy -> găng bạch kim trên cùng)
     if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 8 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 25 * scale, destH * 0.34 + rightArmBobY);
+      ctx.lineTo(cx + 36 * scale, destH * 0.46 + rightArmBobY);
+      ctx.stroke();
       ctx.strokeStyle = '#64748b';
       ctx.lineWidth = 4 * scale;
       ctx.beginPath();
-      ctx.moveTo(cx + 34 * scale, destH * 0.62 + rightArmBobY);
+      ctx.moveTo(cx + 34.5 * scale, destH * 0.62 + rightArmBobY);
       ctx.lineTo(cx + 38 * scale, destH * 0.18 + rightArmBobY);
       ctx.stroke();
       ctx.fillStyle = '#e2e8f0';
@@ -3736,6 +3860,7 @@ export function drawPixelSprite(
       ctx.lineWidth = 2.2 * scale;
       ctx.fillRect(cx + 28 * scale, destH * 0.12 + rightArmBobY, 20 * scale, 16 * scale);
       ctx.strokeRect(cx + 28 * scale, destH * 0.12 + rightArmBobY, 20 * scale, 16 * scale);
+      drawGrippingHand(ctx, cx + 36 * scale, destH * 0.46 + rightArmBobY, scale, '#cbd5e1', 0.12);
     } else {
       drawArterialStump(ctx, cx + 30 * scale, destH * 0.42, 9 * scale);
     }
@@ -3877,6 +4002,8 @@ export function drawPixelSprite(
           destH * 0.68
         );
         ctx.stroke();
+      } else {
+        drawArterialStump(ctx, cx + dir * 22 * scale, destH * 0.48, 8 * scale);
       }
     }
 
@@ -3923,6 +4050,9 @@ export function drawPixelSprite(
       ctx.moveTo(cx + 10 * scale, destH * 0.56);
       ctx.lineTo(cx + 14 * scale, destH * 0.88);
       ctx.stroke();
+    } else {
+      drawArterialStump(ctx, cx - 10 * scale, destH * 0.58, 7 * scale);
+      drawArterialStump(ctx, cx + 10 * scale, destH * 0.58, 7 * scale);
     }
     // Charred black ribcage & spine
     ctx.strokeStyle = '#18181b';
@@ -3939,8 +4069,40 @@ export function drawPixelSprite(
       ctx.lineTo(cx + 16 * scale, ry);
       ctx.stroke();
     }
+    // Left arm with shattered shield fragment
+    if (!severedLimbs.has('left_arm')) {
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 16 * scale, destH * 0.34);
+      ctx.lineTo(cx - 26 * scale, destH * 0.48);
+      ctx.stroke();
+      ctx.fillStyle = '#334155';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 35 * scale, destH * 0.38);
+      ctx.lineTo(cx - 19 * scale, destH * 0.40);
+      ctx.lineTo(cx - 22 * scale, destH * 0.56);
+      ctx.lineTo(cx - 32 * scale, destH * 0.60);
+      ctx.lineTo(cx - 37 * scale, destH * 0.50);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      drawArterialStump(ctx, cx - 18 * scale, destH * 0.36, 7 * scale);
+    }
     if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 4.2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 16 * scale, destH * 0.34);
+      ctx.lineTo(cx + 24 * scale, destH * 0.48);
+      ctx.stroke();
       drawDetailedWeapon(ctx, 'black_bone_skeleton', 'right', cx + 24 * scale, destH * 0.48, scale, isTelegraphing);
+      drawGrippingHand(ctx, cx + 24 * scale, destH * 0.48, scale, '#27272a', 0.25);
+    } else {
+      drawArterialStump(ctx, cx + 18 * scale, destH * 0.36, 7 * scale);
     }
     if (!severedLimbs.has('head')) {
       ctx.fillStyle = '#18181b';
@@ -3955,6 +4117,8 @@ export function drawPixelSprite(
       ctx.arc(cx - 4 * scale, destH * 0.18 + headBobY, 2.5 * scale, 0, Math.PI * 2);
       ctx.arc(cx + 4 * scale, destH * 0.18 + headBobY, 2.5 * scale, 0, Math.PI * 2);
       ctx.fill();
+    } else {
+      drawArterialStump(ctx, cx, destH * 0.22, 8 * scale);
     }
     ctx.restore();
     return;
@@ -4021,7 +4185,7 @@ export function drawPixelSprite(
   }
 
   if (spriteKey === 'broken_knight') {
-    // Kỵ Sĩ Roland: Áo giáp xám sứt mẻ, mũ sắt không chỏm lông, râu rậm
+    // Kỵ Sĩ Roland: Áo giáp xám sứt mẻ, mũ sắt không chỏm lông, râu rậm (đồng bộ cẳng tay -> kiếm -> găng tay trên cùng)
     ctx.fillStyle = '#475569';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2 * scale;
@@ -4031,6 +4195,18 @@ export function drawPixelSprite(
     ctx.strokeRect(cx - 14 * scale, destH * 0.62, 10 * scale, 26 * scale);
     ctx.fillRect(cx + 4 * scale, destH * 0.62, 10 * scale, 26 * scale);
     ctx.strokeRect(cx + 4 * scale, destH * 0.62, 10 * scale, 26 * scale);
+    if (!severedLimbs.has('left_arm')) {
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(cx - 26 * scale, destH * 0.34, 8 * scale, 22 * scale);
+      ctx.strokeRect(cx - 26 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    }
+    if (!severedLimbs.has('right_arm')) {
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(cx + 18 * scale, destH * 0.34, 8 * scale, 22 * scale);
+      ctx.strokeRect(cx + 18 * scale, destH * 0.34, 8 * scale, 22 * scale);
+      drawDetailedWeapon(ctx, 'broken_knight', 'right', cx + 22 * scale, destH * 0.55, scale, isTelegraphing);
+      drawGrippingHand(ctx, cx + 22 * scale, destH * 0.55, scale, '#475569', 0.22);
+    }
     ctx.fillStyle = '#64748b';
     ctx.beginPath();
     ctx.arc(cx, destH * 0.20 + headBobY * 0.4, 11 * scale, 0, Math.PI * 2);
@@ -4063,6 +4239,16 @@ export function drawPixelSprite(
       ctx.moveTo(cx + 8 * scale, destH * 0.58);
       ctx.lineTo(cx + 10 * scale, destH * 0.88);
       ctx.stroke();
+      if (!severedLimbs.has('right_arm')) {
+        ctx.strokeStyle = '#18181b';
+        ctx.lineWidth = 3.8 * scale;
+        ctx.beginPath();
+        ctx.moveTo(cx + 8 * scale, destH * 0.34);
+        ctx.lineTo(cx + 21 * scale, destH * 0.50);
+        ctx.stroke();
+        drawDetailedWeapon(ctx, 'black_bone_skeleton', 'right', cx + 21 * scale, destH * 0.50, scale, isTelegraphing);
+        drawGrippingHand(ctx, cx + 21 * scale, destH * 0.50, scale, '#27272a', 0.24);
+      }
       ctx.fillStyle = '#27272a';
       ctx.beginPath();
       ctx.arc(cx, destH * 0.19, 10 * scale, 0, Math.PI * 2);
@@ -4333,8 +4519,21 @@ export function drawPixelSprite(
   ctx.strokeRect(cx - tw * 0.78, destH * 0.55, tw * 1.56, 6 * scale);
   ctx.restore();
 
-  // 4. LEFT ARM (Hides forearm, hand, and weapon completely when severed)
+  const humanoidHandCol =
+    spriteKey === 'fallen_knight'
+      ? '#64748b'
+      : spriteKey === 'armored_ghoul'
+      ? '#475569'
+      : fleshMid;
+
+  // 4. LEFT ARM (Forearm -> Weapon/Shield -> Gripping Hand strictly on top when not behind large shield)
   if (!severedLimbs.has('left_arm')) {
+    const isLeftLargeShield =
+      spriteKey === 'executioner_paladin' ||
+      spriteKey === 'fallen_knight' ||
+      spriteKey === 'dullahan_knight';
+    const leftGripX = isLeftLargeShield ? cx - 30 * scale : cx - 28.5 * scale;
+    const leftGripY = isLeftLargeShield ? destH * 0.54 : destH * 0.555;
     ctx.save();
     ctx.translate(leftArmSwayX, leftArmBobY);
     ctx.fillStyle = fleshMid;
@@ -4346,7 +4545,10 @@ export function drawPixelSprite(
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    drawDetailedWeapon(ctx, spriteKey, 'left', cx - 30 * scale, destH * 0.54, scale, isTelegraphing);
+    drawDetailedWeapon(ctx, spriteKey, 'left', leftGripX, leftGripY, scale, isTelegraphing);
+    if (!isLeftLargeShield) {
+      drawGrippingHand(ctx, leftGripX, leftGripY, scale, humanoidHandCol, -0.22);
+    }
     ctx.restore();
   } else if (useArmoredStump) {
     drawArmoredSeveredStump(ctx, cx - tw * 0.9, destH * 0.36 + torsoBreathY, 8.5 * scale, scale);
@@ -4354,8 +4556,10 @@ export function drawPixelSprite(
     drawArterialStump(ctx, cx - tw * 0.9, destH * 0.36 + torsoBreathY, 8.5 * scale);
   }
 
-  // 5. RIGHT ARM (Hides forearm, hand, and weapon completely when severed)
+  // 5. RIGHT ARM (Forearm -> Weapon -> Gripping Hand strictly on top layer)
   if (!severedLimbs.has('right_arm')) {
+    const rightGripX = cx + 28.5 * scale;
+    const rightGripY = destH * 0.555;
     ctx.save();
     ctx.translate(rightArmSwayX, rightArmBobY);
     ctx.fillStyle = fleshMid;
@@ -4367,7 +4571,8 @@ export function drawPixelSprite(
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    drawDetailedWeapon(ctx, spriteKey, 'right', cx + 30 * scale, destH * 0.54, scale, isTelegraphing);
+    drawDetailedWeapon(ctx, spriteKey, 'right', rightGripX, rightGripY, scale, isTelegraphing);
+    drawGrippingHand(ctx, rightGripX, rightGripY, scale, humanoidHandCol, 0.22);
     ctx.restore();
   } else if (useArmoredStump) {
     drawArmoredSeveredStump(ctx, cx + tw * 0.9, destH * 0.36 + torsoBreathY, 8.5 * scale, scale);
@@ -4624,6 +4829,14 @@ export function drawPartyBackSprite(
   }
 
   if (classId === 'summon_skeleton') {
+    if (limbs.rightArm) {
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.72, h * 0.56);
+      ctx.lineTo(w * 0.88, h * 0.14);
+      ctx.stroke();
+    }
     ctx.strokeStyle = isHit ? '#dc2626' : '#27272a';
     ctx.lineWidth = 6;
     ctx.beginPath();
@@ -4644,14 +4857,6 @@ export function drawPartyBackSprite(
     ctx.arc(w * 0.50, h * 0.22, w * 0.16, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    if (limbs.rightArm) {
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.72, h * 0.56);
-      ctx.lineTo(w * 0.88, h * 0.14);
-      ctx.stroke();
-    }
     ctx.restore();
     return;
   }
@@ -4688,6 +4893,111 @@ export function drawPartyBackSprite(
     ? '#3a252e'
     : '#2e4232';
   const cloakDark = classId === 'fallen_knight' ? '#450a0a' : '#09070c';
+
+  // 0. Right Arm Class Weapon (drawn BEHIND back cloak, shoulder pauldrons & headgear)
+  if (limbs.rightArm) {
+    if (classId === 'forsaken_nun') {
+      ctx.strokeStyle = '#050505';
+      ctx.lineWidth = 6.5;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.75, h * 0.58);
+      ctx.lineTo(w * 0.90, h * 0.15);
+      ctx.stroke();
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 3.8;
+      ctx.stroke();
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.strokeStyle = '#050505';
+      ctx.lineWidth = 2;
+      for (let f = 0; f < 6; f++) {
+        const ang = (f / 6) * Math.PI * 2;
+        const hx = w * 0.90;
+        const hy = h * 0.14;
+        ctx.beginPath();
+        ctx.moveTo(hx + Math.cos(ang - 0.25) * 5, hy + Math.sin(ang - 0.25) * 5);
+        ctx.lineTo(hx + Math.cos(ang) * 14, hy + Math.sin(ang) * 14);
+        ctx.lineTo(hx + Math.cos(ang + 0.25) * 5, hy + Math.sin(ang + 0.25) * 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else if (classId === 'night_hunter') {
+      const dagGrad = ctx.createLinearGradient(w * 0.72, h * 0.55, w * 0.96, h * 0.10);
+      dagGrad.addColorStop(0, '#64748b');
+      dagGrad.addColorStop(0.6, '#e2e8f0');
+      dagGrad.addColorStop(1, '#ffffff');
+      ctx.fillStyle = dagGrad;
+      ctx.strokeStyle = '#050505';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.75, h * 0.55);
+      ctx.quadraticCurveTo(w * 0.98, h * 0.32, w * 0.86, h * 0.10);
+      ctx.quadraticCurveTo(w * 0.88, h * 0.34, w * 0.69, h * 0.52);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = rimCol;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.86, h * 0.11);
+      ctx.quadraticCurveTo(w * 0.96, h * 0.32, w * 0.76, h * 0.54);
+      ctx.stroke();
+    } else if (classId === 'ally_kael') {
+      ctx.fillStyle = '#94a3b8';
+      ctx.strokeStyle = '#050505';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.74, h * 0.58);
+      ctx.lineTo(w * 0.88, h * 0.16);
+      ctx.lineTo(w * 0.94, h * 0.19);
+      ctx.lineTo(w * 0.80, h * 0.60);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      const bladeGrad = ctx.createLinearGradient(w * 0.74, h * 0.56, w * 0.96, h * 0.02);
+      bladeGrad.addColorStop(0, '#475569');
+      bladeGrad.addColorStop(0.55, '#cbd5e1');
+      bladeGrad.addColorStop(1, '#f8fafc');
+      ctx.fillStyle = bladeGrad;
+      ctx.strokeStyle = '#050505';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.73, h * 0.56);
+      ctx.lineTo(w * 0.92, h * 0.04);
+      ctx.lineTo(w * 0.99, h * 0.08);
+      ctx.lineTo(w * 0.81, h * 0.59);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Rim highlight along sword edge + dried blood near tip
+      ctx.strokeStyle = rimCol;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.74, h * 0.55);
+      ctx.lineTo(w * 0.92, h * 0.05);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(139, 0, 0, 0.72)';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.89, h * 0.13);
+      ctx.lineTo(w * 0.94, h * 0.15);
+      ctx.lineTo(w * 0.91, h * 0.24);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = '#050505';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.67, h * 0.50);
+      ctx.lineTo(w * 0.87, h * 0.58);
+      ctx.stroke();
+      ctx.strokeStyle = '#c5a059';
+      ctx.lineWidth = 3.2;
+      ctx.stroke();
+    }
+  }
 
   // 1. Broad Back Cloak / Tattered Nun Habit / Belted Hunter Trench Coat
   const grad = ctx.createLinearGradient(0, h * 0.25, 0, h);
@@ -4954,111 +5264,6 @@ export function drawPartyBackSprite(
     ctx.beginPath();
     ctx.arc(w * 0.50, h * 0.23, w * 0.176, Math.PI * 1.12, Math.PI * 1.88);
     ctx.stroke();
-  }
-
-  // 4. Right Arm Class Weapon Raised in Foreground with Metallic Rim & Dried Blood Edge
-  if (limbs.rightArm) {
-    if (classId === 'forsaken_nun') {
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 6.5;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.75, h * 0.58);
-      ctx.lineTo(w * 0.90, h * 0.15);
-      ctx.stroke();
-      ctx.strokeStyle = '#475569';
-      ctx.lineWidth = 3.8;
-      ctx.stroke();
-
-      ctx.fillStyle = '#cbd5e1';
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2;
-      for (let f = 0; f < 6; f++) {
-        const ang = (f / 6) * Math.PI * 2;
-        const hx = w * 0.90;
-        const hy = h * 0.14;
-        ctx.beginPath();
-        ctx.moveTo(hx + Math.cos(ang - 0.25) * 5, hy + Math.sin(ang - 0.25) * 5);
-        ctx.lineTo(hx + Math.cos(ang) * 14, hy + Math.sin(ang) * 14);
-        ctx.lineTo(hx + Math.cos(ang + 0.25) * 5, hy + Math.sin(ang + 0.25) * 5);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-    } else if (classId === 'night_hunter') {
-      const dagGrad = ctx.createLinearGradient(w * 0.72, h * 0.55, w * 0.96, h * 0.10);
-      dagGrad.addColorStop(0, '#64748b');
-      dagGrad.addColorStop(0.6, '#e2e8f0');
-      dagGrad.addColorStop(1, '#ffffff');
-      ctx.fillStyle = dagGrad;
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.75, h * 0.55);
-      ctx.quadraticCurveTo(w * 0.98, h * 0.32, w * 0.86, h * 0.10);
-      ctx.quadraticCurveTo(w * 0.88, h * 0.34, w * 0.69, h * 0.52);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = rimCol;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.86, h * 0.11);
-      ctx.quadraticCurveTo(w * 0.96, h * 0.32, w * 0.76, h * 0.54);
-      ctx.stroke();
-    } else if (classId === 'ally_kael') {
-      ctx.fillStyle = '#94a3b8';
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.74, h * 0.58);
-      ctx.lineTo(w * 0.88, h * 0.16);
-      ctx.lineTo(w * 0.94, h * 0.19);
-      ctx.lineTo(w * 0.80, h * 0.60);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    } else {
-      const bladeGrad = ctx.createLinearGradient(w * 0.74, h * 0.56, w * 0.96, h * 0.02);
-      bladeGrad.addColorStop(0, '#475569');
-      bladeGrad.addColorStop(0.55, '#cbd5e1');
-      bladeGrad.addColorStop(1, '#f8fafc');
-      ctx.fillStyle = bladeGrad;
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.73, h * 0.56);
-      ctx.lineTo(w * 0.92, h * 0.04);
-      ctx.lineTo(w * 0.99, h * 0.08);
-      ctx.lineTo(w * 0.81, h * 0.59);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Rim highlight along sword edge + dried blood near tip
-      ctx.strokeStyle = rimCol;
-      ctx.lineWidth = 1.3;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.74, h * 0.55);
-      ctx.lineTo(w * 0.92, h * 0.05);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(139, 0, 0, 0.72)';
-      ctx.beginPath();
-      ctx.moveTo(w * 0.89, h * 0.13);
-      ctx.lineTo(w * 0.94, h * 0.15);
-      ctx.lineTo(w * 0.91, h * 0.24);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.67, h * 0.50);
-      ctx.lineTo(w * 0.87, h * 0.58);
-      ctx.stroke();
-      ctx.strokeStyle = '#c5a059';
-      ctx.lineWidth = 3.2;
-      ctx.stroke();
-    }
   }
 
   ctx.restore();
@@ -5479,18 +5684,21 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
     itemId === 'void_woven_robe' ||
     itemId === 'goethe_cassock' ||
     itemId === 'boiled_cuirass' ||
+    itemId === 'hardened_leather_cuirass' ||
     itemId === 'star_pelt_coat' ||
     itemId === 'flayed_disguise' ||
     itemId === 'vanguard_hauberk' ||
     itemId === 'legion_brigandine' ||
     itemId === 'platinum_cuirass'
   ) {
-    // Body Armor / Robe Icons (7 new + 2 legacy)
+    // Body Armor / Robe Icons
     ctx.fillStyle =
       itemId === 'platinum_cuirass'
         ? '#e2e8f0'
         : itemId === 'legion_brigandine' || itemId === 'vanguard_hauberk' || itemId === 'cathedral_chainmail'
         ? '#475569'
+        : itemId === 'hardened_leather_cuirass'
+        ? '#6b3e1e'
         : itemId === 'boiled_cuirass'
         ? '#78350f'
         : itemId === 'flayed_disguise'
@@ -7833,11 +8041,11 @@ export function drawParabolicCoinFlipStage(
     const rimThickness = Math.max(2, Math.round(12 * (1 - scaleY * 0.82)));
     if (rimThickness > 2) {
       const edgeGrad = ctx.createLinearGradient(-r, 0, r, 0);
-      edgeGrad.addColorStop(0, '#451a03');
-      edgeGrad.addColorStop(0.25, '#b45309');
-      edgeGrad.addColorStop(0.5, '#fef08a');
-      edgeGrad.addColorStop(0.75, '#92400e');
-      edgeGrad.addColorStop(1, '#451a03');
+      edgeGrad.addColorStop(0, '#0f172a');
+      edgeGrad.addColorStop(0.25, '#64748b');
+      edgeGrad.addColorStop(0.5, '#f8fafc');
+      edgeGrad.addColorStop(0.75, '#475569');
+      edgeGrad.addColorStop(1, '#0f172a');
 
       ctx.fillStyle = edgeGrad;
       ctx.beginPath();
@@ -7846,7 +8054,7 @@ export function drawParabolicCoinFlipStage(
       ctx.ellipse(0, 0, r, r * scaleY, 0, Math.PI, 0, true);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = '#451a03';
+      ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
@@ -8111,81 +8319,83 @@ export function drawMultiTileLandmark(
   }
 
   if (tileType === 'BOOKSHELF') {
-    // 1x2 Tile (48x96px) Tall Gothic Wooden Bookcase reaching toward the ceiling
+    // 1x2 Gothic Wooden Bookcase seated cleanly so crown and candle never clip into top wall
     const px = tileX * tileW;
-    const py = (tileY - 1) * tileH;
     const w = tileW;
-    const h = tileH * 2;
+    const h = Math.round(tileH * 1.58);
+    const py = (tileY + 1) * tileH - h - 4;
 
     // Ground drop shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-    ctx.fillRect(px + 2, py + h - 10, w - 4, 12);
+    ctx.fillRect(px + 2, py + h - 8, w - 4, 10);
 
     // Tall Gothic Oak Frame + Pointed Arch Crown
     ctx.fillStyle = '#2b180c';
-    ctx.fillRect(px + 3, py + 12, w - 6, h - 16);
+    ctx.fillRect(px + 3, py + 11, w - 6, h - 14);
     ctx.beginPath();
-    ctx.moveTo(px + 3, py + 14);
-    ctx.lineTo(px + w / 2, py + 2);
-    ctx.lineTo(px + w - 3, py + 14);
+    ctx.moveTo(px + 3, py + 13);
+    ctx.lineTo(px + w / 2, py + 3);
+    ctx.lineTo(px + w - 3, py + 13);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = '#120904';
     ctx.lineWidth = 2;
-    ctx.strokeRect(px + 3, py + 12, w - 6, h - 16);
+    ctx.strokeRect(px + 3, py + 11, w - 6, h - 14);
 
     // 4 Tiers of Shelves packed with Ancient Tomes & Parchment Scrolls
     const tomeColors = ['#991b1b', '#1e3a8a', '#b45309', '#581c87', '#065f46', '#78350f'];
+    const shelfStep = Math.floor((h - 22) / 4);
+    const shelfH = Math.max(9, shelfStep - 3);
     for (let row = 0; row < 4; row++) {
-      const sy = py + 18 + row * 17;
+      const sy = py + 15 + row * shelfStep;
       ctx.fillStyle = '#160c06';
-      ctx.fillRect(px + 6, sy, w - 12, 13);
+      ctx.fillRect(px + 6, sy, w - 12, shelfH);
 
       for (let b = 0; b < 6; b++) {
         // If looted, leave gaps where books were pulled out
         if (isLooted && (row + b) % 3 === 0) continue;
         ctx.fillStyle = tomeColors[(row * 3 + b) % tomeColors.length];
-        ctx.fillRect(px + 7 + b * 5.6, sy + 2, 4.4, 11);
+        ctx.fillRect(px + 7 + b * 5.6, sy + 1.5, 4.4, shelfH - 2);
       }
       // Rolled parchment scroll on row 1
       if (!isLooted && row === 1) {
         ctx.fillStyle = '#fde68a';
-        ctx.fillRect(px + w - 16, sy + 4, 8, 4);
+        ctx.fillRect(px + w - 16, sy + 3, 8, 3.5);
       }
     }
 
     if (!isLooted) {
       // Unlooted: Golden candle burning brightly on top ledge
       const cX = px + w - 11;
-      const cY = py + 12;
+      const cY = py + 11;
       ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(cX - 2, cY - 7, 4, 7);
-      const glow = ctx.createRadialGradient(cX, cY - 10, 1, cX, cY - 10, 16);
+      ctx.fillRect(cX - 2, cY - 6, 4, 6);
+      const glow = ctx.createRadialGradient(cX, cY - 9, 1, cX, cY - 9, 14);
       glow.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
       glow.addColorStop(0.5, 'rgba(245, 158, 11, 0.45)');
       glow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(cX, cY - 10, 16, 0, Math.PI * 2);
+      ctx.arc(cX, cY - 9, 14, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#fef08a';
       ctx.beginPath();
-      ctx.arc(cX, cY - 9 + (animTick % 2), 2.8, 0, Math.PI * 2);
+      ctx.arc(cX, cY - 8 + (animTick % 2), 2.6, 0, Math.PI * 2);
       ctx.fill();
     } else {
       // Looted: Candle extinguished + Scattered pages & fallen book at foot of shelf
       const cX = px + w - 11;
-      const cY = py + 12;
+      const cY = py + 11;
       ctx.fillStyle = '#94a3b8';
       ctx.fillRect(cX - 2, cY - 4, 4, 4);
 
       // Scattered parchment pages at base
       ctx.fillStyle = '#d6c5ad';
-      ctx.fillRect(px + 8, py + h - 9, 10, 6);
+      ctx.fillRect(px + 8, py + h - 8, 10, 5);
       ctx.fillStyle = '#991b1b';
-      ctx.fillRect(px + 22, py + h - 8, 12, 7);
+      ctx.fillRect(px + 22, py + h - 7, 12, 6);
       ctx.fillStyle = '#e7dcc8';
-      ctx.fillRect(px + 24, py + h - 7, 8, 4);
+      ctx.fillRect(px + 24, py + h - 6, 8, 3.5);
     }
 
     ctx.restore();
@@ -8678,22 +8888,47 @@ export function drawInventoryPaperdoll(
       : '#0f0c12';
   let trim = '#c5a059';
 
-  if (bodyId.includes('inquisitor') || bodyId.includes('blood')) {
+  if (bodyId === 'platinum_cuirass') {
+    coatLight = '#e2e8f0';
+    coatDark = '#64748b';
+    trim = '#facc15';
+  } else if (bodyId === 'flayed_disguise' || bodyId.includes('inquisitor') || bodyId.includes('blood')) {
     coatLight = '#7f1d1d';
     coatDark = '#29070a';
     trim = '#eab308';
-  } else if (bodyId.includes('plate') || bodyId.includes('chainmail') || bodyId.includes('iron')) {
+  } else if (
+    bodyId === 'vanguard_hauberk' ||
+    bodyId === 'legion_brigandine' ||
+    bodyId === 'cathedral_chainmail' ||
+    bodyId.includes('plate') ||
+    bodyId.includes('chainmail') ||
+    bodyId.includes('iron')
+  ) {
     coatLight = '#94a3b8';
     coatDark = '#334155';
     trim = '#cbd5e1';
-  } else if (bodyId.includes('void') || bodyId.includes('abyss')) {
+  } else if (
+    bodyId === 'void_woven_robe' ||
+    bodyId === 'star_pelt_coat' ||
+    bodyId.includes('void') ||
+    bodyId.includes('abyss')
+  ) {
     coatLight = '#4c1d95';
     coatDark = '#170a2e';
     trim = '#c084fc';
-  } else if (bodyId.includes('leather') || bodyId.includes('hunter')) {
+  } else if (
+    bodyId === 'hardened_leather_cuirass' ||
+    bodyId === 'boiled_cuirass' ||
+    bodyId.includes('leather') ||
+    bodyId.includes('hunter')
+  ) {
     coatLight = '#573b26';
     coatDark = '#24160d';
     trim = '#a16207';
+  } else if (bodyId === 'goethe_cassock') {
+    coatLight = '#374151';
+    coatDark = '#111827';
+    trim = '#facc15';
   }
 
   ctx.strokeStyle = '#070509';
@@ -8808,10 +9043,30 @@ export function drawInventoryPaperdoll(
       const shId = spec.equippedShield;
       const sx = cx - 33 * scale;
       const sy = h * 0.52;
+      const isAegis = shId === 'aegis_of_order';
       const isBlessed = shId.includes('holy') || shId.includes('sanctuary');
-      const isIron = shId.includes('iron') || shId.includes('tower') || shId.includes('aegis');
-      ctx.fillStyle = isBlessed ? '#d4af37' : isIron ? '#64748b' : '#5c3a1e';
-      ctx.strokeStyle = isBlessed ? '#fef08a' : '#070509';
+      const isBloodShield = shId === 'blood_thorn_shield' || shId === 'widows_shield';
+      const isSteelShield =
+        shId === 'legion_heater' ||
+        shId === 'cathedral_iron_shield' ||
+        shId.includes('iron') ||
+        shId.includes('tower');
+      ctx.fillStyle = isAegis
+        ? '#e2e8f0'
+        : isBloodShield
+        ? '#4c0519'
+        : isBlessed
+        ? '#d4af37'
+        : isSteelShield
+        ? '#64748b'
+        : '#5c3a1e';
+      ctx.strokeStyle = isAegis
+        ? '#facc15'
+        : isBloodShield
+        ? '#991b1b'
+        : isBlessed
+        ? '#fef08a'
+        : '#070509';
       ctx.beginPath();
       ctx.moveTo(sx - 11 * scale, sy - 14 * scale);
       ctx.lineTo(sx + 11 * scale, sy - 14 * scale);
@@ -8908,6 +9163,16 @@ export function drawInventoryPaperdoll(
       ctx.fill();
       ctx.stroke();
       ctx.restore();
+    }
+    if (cat !== 'unarmed') {
+      const paperHandCol = inf.rightArm
+        ? '#65a30d'
+        : key === 'fallen_knight'
+        ? '#64748b'
+        : isSkeleton
+        ? '#27272a'
+        : '#d8c2ae';
+      drawGrippingHand(ctx, hx, hy, scale, paperHandCol, 0.18);
     }
   } else {
     drawArterialStump(ctx, cx + 21 * scale, h * 0.36, 7 * scale);

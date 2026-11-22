@@ -117,6 +117,9 @@ class SoundEngine {
       }
     }
     this.syncGains();
+    if (!this.settings.muted && !this.isTabHidden && this.ctx?.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
     return this.getSettings();
   }
 
@@ -265,7 +268,7 @@ class SoundEngine {
         [146.83, 155.56, 220.0], // D phrygian tension
       ];
       const id = window.setInterval(() => {
-        if (!this.ctx || !this.bgmGain || this.settings.muted) return;
+        if (!this.ctx || !this.bgmGain || this.settings.muted || this.isTabHidden || this.ctx.state !== 'running') return;
         const chord = titleChords[this.bgmStep % titleChords.length];
         this.bgmStep++;
         const now = this.ctx.currentTime;
@@ -347,7 +350,7 @@ class SoundEngine {
       }
 
       const id = window.setInterval(() => {
-        if (!this.ctx || !this.bgmGain || this.settings.muted) return;
+        if (!this.ctx || !this.bgmGain || this.settings.muted || this.isTabHidden || this.ctx.state !== 'running') return;
         const now = this.ctx.currentTime;
         this.bgmStep++;
         if (lowMind) {
@@ -409,7 +412,7 @@ class SoundEngine {
       : [73.42, 73.42, 87.31, 73.42, 77.78, 73.42, 110.0, 98.0];
 
     const id = window.setInterval(() => {
-      if (!this.ctx || !this.bgmGain || this.settings.muted) return;
+      if (!this.ctx || !this.bgmGain || this.settings.muted || this.isTabHidden || this.ctx.state !== 'running') return;
       const now = this.ctx.currentTime;
       const step = this.bgmStep++;
 
@@ -489,7 +492,6 @@ class SoundEngine {
   public playSfx(type: SfxType, opts?: { isCrit?: boolean; legPenalty?: number }) {
     const ctx = this.ensureCtx();
     if (!ctx || !this.sfxGain) return;
-    this.syncGains();
     const now = ctx.currentTime;
 
     if (type === 'step') {

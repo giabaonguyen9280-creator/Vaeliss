@@ -58,6 +58,7 @@ import {
   getPlayerStepCooldownMs,
   isPlayerPanicking,
   isPureTankSummon,
+  getUndeadSummonDmgMultiplier,
   learnOrUpgradeHexenSkill,
   prayAffinityAtHexen,
   reclaimUndeadSummonGear,
@@ -82,12 +83,26 @@ import {
   dissectEnemyCorpseCleanly,
   useEmergencyAmputationScroll,
   HOLY_MOTHER_REFUSAL_MSG,
+  ALTAR_EXHAUSTED_MSG,
+  HOLY_ALTAR_REFUSAL_MSG,
+  HOLY_ALTAR_SUCCESS_MSG,
+  BLOOD_ALTAR_SUCCESS_MSG,
+  VOID_ALTAR_SUCCESS_MSG,
+  CORRUPTION_DIEGETIC_WARNING_MSG,
+  checkCorruptionDiegeticWarning,
+  buildAltarKey,
+  performAltarAffinityRitual,
   getFleeChancePct,
+  getChestMaxTier,
+  getEligibleChestWeaponIds,
+  getEligibleChestGearIds,
+  getEligibleNormalCorpseWeaponIds,
 } from './combat';
 import { CombatEngine } from './combatEngine';
 import {
   CHARACTER_INTRO_STEPS,
   evaluateCanonEnding,
+  evaluateVoidRiftRequirements,
   evaluateSmugglerHaggle,
   SMUGGLER_VALUABLE_IDS,
 } from './narrative';
@@ -640,7 +655,7 @@ test('4-person party recruitment, Necromancy summons, Vorath Shield Arm mechanic
   const wraithAct = executeSingleActorCombatAction(p, targetEnemy, 3, 'ATTACK', 'torso', undefined, rng);
   assert.equal(getEnemyRemainingTotalHp(targetEnemy), enemyHpBeforeTank);
   assert.equal(wraith.guarding, true);
-  assert.equal(p.statuses.divineAegisTurns >= 1, true);
+  assert.equal(p.statuses.divineAegisTurns, 0);
   assert.equal(wraithAct.logs.some((l) => l.includes('Thuần Phòng Thủ')), true);
   assert.equal(enemyHpBefore >= enemyHpBeforeTank, true);
   const roundEnd = resolveEnemyCombatRound(p, targetEnemy, rng);
@@ -1355,7 +1370,7 @@ test('Companion Permadeath Auto-Remove: fallen companions (hp <= 0) leave party 
   assert.equal(p.npcLifecycle?.npc_prisoner, 'dead');
   assert.equal(p.unlockedGear.includes('boiled_cuirass'), true);
   assert.equal(
-    deathLogs.some((l) => l.includes('☠ [') && l.includes('đã gục ngã vĩnh viễn và rời khỏi đội hình...')),
+    deathLogs.some((l) => l.includes(`[${kael.name}]`) && l.includes('đã gục ngã vĩnh viễn và rời khỏi đội hình...')),
     true
   );
 
@@ -1419,6 +1434,995 @@ test('Combat PNG Engine & Full-Bleed Map: combatSpriteUrl, maskBox, destination-
   // 7. loadCombatImage returns null gracefully when absent/SSR so fallback Canvas art renders cleanly
   assert.equal(loadCombatImage('/assets/combat/demon_lord_vaelis.png'), null);
 });
+
+test('Diegetic UI & Blind Choices: all 27 Character Intro options define contextHint & outcomeFlavor without HP/SAN/COR or ending spoilers', () => {
+  const classIds = ['fallen_knight', 'forsaken_nun', 'night_hunter'] as const;
+  let totalOptions = 0;
+
+  for (const classId of classIds) {
+    const steps = CHARACTER_INTRO_STEPS[classId];
+    assert.equal(steps.length, 3, `Expected 3 backstory steps for ${classId}`);
+    for (const step of steps) {
+      assert.equal(step.options.length, 3, `Expected 3 options in ${classId}/step ${step.stepNumber}`);
+      for (const opt of step.options) {
+        totalOptions += 1;
+        assert.equal(typeof opt.contextHint, 'string');
+        assert.equal((opt.contextHint || '').trim().length >= 10, true, `Short/missing contextHint on ${opt.id}`);
+        assert.equal(typeof opt.outcomeFlavor, 'string');
+        assert.equal((opt.outcomeFlavor || '').trim().length >= 15, true, `Short/missing outcomeFlavor on ${opt.id}`);
+
+        const combinedPreChoice = `${opt.label} ${opt.contextHint || ''}`;
+        assert.equal(/\b(HP|SAN|COR|Order Ending|World Ending|S-Ending)\b/i.test(combinedPreChoice), false, `Spoiler leaked in pre-choice text for ${opt.id}`);
+        assert.equal(/\b(HP|SAN|COR|Order Ending|World Ending|S-Ending)\b/i.test(opt.effectText), false, `Raw stat/ending spoiler in effectText for ${opt.id}`);
+      }
+    }
+  }
+  assert.equal(totalOptions, 27);
+});
+
+test('Loot Table Rebalance: bossOnly/isCursed weapons never enter Chest or Normal Corpse pools, floor tiers gate weapons/gear, and all Boss/Mini-Boss drops are tagged bossOnly', () => {
+  // 1. Every Boss & Mini-Boss guaranteedWeaponDrop + vaelis_torment_blade has bossOnly: true
+  assert.equal(CONFIG.WEAPONS.vaelis_torment_blade.bossOnly, true);
+  assert.equal(CONFIG.WEAPONS.vaelis_eclipse_blade.bossOnly, true);
+  for (const enemy of Object.values(CONFIG.ENEMIES)) {
+    if ((enemy.tier === 'boss' || enemy.tier === 'miniboss') && enemy.guaranteedWeaponDrop) {
+      const wDef = CONFIG.WEAPONS[enemy.guaranteedWeaponDrop];
+      assert.ok(wDef, `Missing weapon ${enemy.guaranteedWeaponDrop}`);
+      assert.equal(wDef.bossOnly, true, `Expected ${wDef.id} (from ${enemy.id}) to have bossOnly: true`);
+    }
+  }
+
+  // 2. Every non-unarmed normal weapon has tier 1 | 2 | 3
+  for (const w of Object.values(CONFIG.WEAPONS)) {
+    if (w.id === 'bite_headbutt') continue;
+    assert.equal(w.tier === 1 || w.tier === 2 || w.tier === 3, true, `Weapon ${w.id} must have tier 1|2|3`);
+  }
+
+  // 3. Floor maxTier mapping: Exterior -> 1, Floor 1/2 -> 2, Floor 3 -> 3
+  assert.equal(getChestMaxTier({ isExterior: true, floor: 2 }), 1);
+  assert.equal(getChestMaxTier({ isExterior: false, floor: 1 }), 2);
+  assert.equal(getChestMaxTier({ isExterior: false, floor: 2 }), 2);
+  assert.equal(getChestMaxTier({ isExterior: false, floor: 3 }), 3);
+
+  // 4. Chest weapon pools across all areas never include bossOnly, isCursed, or bite_headbutt
+  const rooms = [
+    { isExterior: true, floor: 2 as const },
+    { isExterior: false, floor: 2 as const },
+    { isExterior: false, floor: 1 as const },
+    { isExterior: false, floor: 3 as const },
+  ];
+  for (const r of rooms) {
+    const maxTier = getChestMaxTier(r);
+    const chestWeapons = getEligibleChestWeaponIds(r, []);
+    assert.equal(chestWeapons.includes('vaelis_torment_blade'), false);
+    assert.equal(chestWeapons.includes('vaelis_eclipse_blade'), false);
+    assert.equal(chestWeapons.includes('claymore_greatsword'), false);
+    assert.equal(chestWeapons.includes('bite_headbutt'), false);
+    for (const wid of chestWeapons) {
+      const def = CONFIG.WEAPONS[wid];
+      assert.equal(Boolean(def.bossOnly), false);
+      assert.equal(Boolean(def.isCursed), false);
+      assert.equal(def.tier <= maxTier, true);
+    }
+  }
+
+  // 5. Exterior chests never drop Tier 2/3 gear such as platinum_cuirass or void_woven_robe
+  const extGear = getEligibleChestGearIds({ isExterior: true, floor: 2 }, []);
+  assert.equal(extGear.includes('platinum_cuirass'), false);
+  assert.equal(extGear.includes('void_woven_robe'), false);
+  const f3Gear = getEligibleChestGearIds({ isExterior: false, floor: 3 }, []);
+  assert.equal(f3Gear.includes('platinum_cuirass'), true);
+
+  // 6. Normal corpse weapon pool excludes bossOnly, isCursed, bite_headbutt, and tier > 2
+  const corpseWeapons = getEligibleNormalCorpseWeaponIds([]);
+  assert.equal(corpseWeapons.length > 0, true);
+  assert.equal(corpseWeapons.includes('vaelis_torment_blade'), false);
+  assert.equal(corpseWeapons.includes('vaelis_eclipse_blade'), false);
+  assert.equal(corpseWeapons.includes('claymore_greatsword'), false);
+  for (const wid of corpseWeapons) {
+    const def = CONFIG.WEAPONS[wid];
+    assert.equal(Boolean(def.bossOnly), false);
+    assert.equal(Boolean(def.isCursed), false);
+    assert.equal(def.tier <= 2, true);
+  }
+});
+
+test('Altar Rituals & Affinity Rebalance: 1-time usedAltarKeys cap, Void 0-Corruption Mind drain, Blood HP/Bleed/+12 COR, and Holy Mother refusal', () => {
+  // 1. Each altar coordinate ("floorId:x:y") only grants affinity once (2nd attempt blocked by usedAltarKeys)
+  const pHoly = createInitialPlayer('forsaken_nun');
+  pHoly.corruption = 10;
+  pHoly.hunger = 15;
+  const holyKey = buildAltarKey('F2_R3', 6, 4);
+  assert.equal(holyKey, 'F2_R3:6:4');
+
+  const firstHoly = performAltarAffinityRitual(pHoly, {
+    altarKey: holyKey,
+    deity: 'holy_mother',
+    holyMode: 'fasting',
+  });
+  assert.equal(firstHoly.success, true);
+  assert.equal(firstHoly.message, HOLY_ALTAR_SUCCESS_MSG);
+  assert.equal(pHoly.hunger, 35); // +20 hunger for fasting
+  assert.equal(pHoly.corruption, 5); // -5 corruption
+  assert.equal(pHoly.affinities.holyMother, 1);
+  assert.equal(pHoly.usedAltarKeys.includes(holyKey), true);
+
+  // Repeat on same altar coordinate -> blocked with exhausted message, no state mutation
+  const secondHoly = performAltarAffinityRitual(pHoly, {
+    altarKey: holyKey,
+    deity: 'holy_mother',
+    holyMode: 'fasting',
+  });
+  assert.equal(secondHoly.success, false);
+  assert.equal(secondHoly.blockedByUsed, true);
+  assert.equal(secondHoly.message, ALTAR_EXHAUSTED_MSG);
+  assert.equal(pHoly.affinities.holyMother, 1);
+  assert.equal(pHoly.hunger, 35);
+
+  // Save/Load JSON round-trip preserves usedAltarKeys and still blocks repeat use
+  const reloadedHoly = JSON.parse(JSON.stringify(pHoly));
+  const afterReload = performAltarAffinityRitual(reloadedHoly, {
+    altarKey: holyKey,
+    deity: 'holy_mother',
+    holyMode: 'fasting',
+  });
+  assert.equal(afterReload.success, false);
+  assert.equal(afterReload.blockedByUsed, true);
+
+  // Holy Mother white_herb offering works on a different altar coordinate
+  const holyKey2 = buildAltarKey('F2_R1', 4, 5);
+  pHoly.inventory.white_herb = 1;
+  const herbRes = performAltarAffinityRitual(pHoly, {
+    altarKey: holyKey2,
+    deity: 'holy_mother',
+    holyMode: 'white_herb',
+  });
+  assert.equal(herbRes.success, true);
+  assert.equal(pHoly.inventory.white_herb, 0);
+  assert.equal(pHoly.hunger, 35); // No extra hunger when offering white_herb
+  assert.equal(pHoly.corruption, 0);
+  assert.equal(pHoly.affinities.holyMother, 2);
+
+  // 2. Void Altar drains 30 Mind (can push straight into Panic) with strictly +0 Corruption
+  const pVoid = createInitialPlayer('fallen_knight');
+  pVoid.mind = 50;
+  pVoid.corruption = 7;
+  const voidKey = buildAltarKey('F3_R1', 9, 3);
+  const voidRes = performAltarAffinityRitual(pVoid, {
+    altarKey: voidKey,
+    deity: 'void_god',
+  });
+  assert.equal(voidRes.success, true);
+  assert.equal(voidRes.message, VOID_ALTAR_SUCCESS_MSG);
+  assert.equal(pVoid.mind, 20); // -30 Mind
+  assert.equal(isPlayerPanicking(pVoid), true); // < 30 triggers Panic
+  assert.equal(pVoid.corruption, 7); // Strictly +0 Corruption
+  assert.equal(pVoid.affinities.primordialVoid, 1);
+  assert.equal(pVoid.usedAltarKeys.includes(voidKey), true);
+
+  // 2nd attempt on same Void Altar is blocked
+  const voidRepeat = performAltarAffinityRitual(pVoid, {
+    altarKey: voidKey,
+    deity: 'void_god',
+  });
+  assert.equal(voidRepeat.success, false);
+  assert.equal(voidRepeat.blockedByUsed, true);
+  assert.equal(pVoid.affinities.primordialVoid, 1);
+  assert.equal(pVoid.mind, 20);
+
+  // 3. Blood Altar drains 25%-30% maxHp (min 1 HP, never fatal), inflicts Bleeding, +12 Corruption, +1 demonicPact
+  const pBlood = createInitialPlayer('night_hunter'); // maxHp 105
+  pBlood.hp = 105;
+  pBlood.corruption = 0;
+  pBlood.statuses.bleeding = false;
+  const bloodKey = buildAltarKey('F1_R1', 8, 6);
+  const bloodRes = performAltarAffinityRitual(pBlood, {
+    altarKey: bloodKey,
+    deity: 'demon_lord',
+    bloodHpLossRatio: 0.28,
+  });
+  assert.equal(bloodRes.success, true);
+  assert.equal(bloodRes.message, BLOOD_ALTAR_SUCCESS_MSG);
+  const expectedLoss = Math.round(105 * 0.28);
+  assert.equal(pBlood.hp, 105 - expectedLoss);
+  assert.equal(pBlood.statuses.bleeding, true);
+  assert.equal(pBlood.corruption, 12); // Strictly +12 Corruption
+  assert.equal(pBlood.affinities.demonicPact, 1);
+  assert.equal(pBlood.usedAltarKeys.includes(bloodKey), true);
+
+  // Blood Altar is never directly lethal (clamps at 1 HP when low)
+  const pLowBlood = createInitialPlayer('forsaken_nun');
+  pLowBlood.hp = 10;
+  const bloodLowRes = performAltarAffinityRitual(pLowBlood, {
+    altarKey: buildAltarKey('F1_R2', 3, 3),
+    deity: 'demon_lord',
+    bloodHpLossRatio: 0.3,
+  });
+  assert.equal(bloodLowRes.success, true);
+  assert.equal(pLowBlood.hp, 1);
+  assert.equal(pLowBlood.statuses.bleeding, true);
+
+  // 4. Holy Mother Altar refuses when banned via taboo OR via Corruption >= 25
+  const pBanned = createInitialPlayer('forsaken_nun');
+  pBanned.hunger = 10;
+  banHolyMother(pBanned);
+  const refusedByBan = performAltarAffinityRitual(pBanned, {
+    altarKey: buildAltarKey('F2_R3', 2, 2),
+    deity: 'holy_mother',
+    holyMode: 'fasting',
+  });
+  assert.equal(refusedByBan.success, false);
+  assert.equal(refusedByBan.blockedByBan, true);
+  assert.equal(refusedByBan.message, HOLY_ALTAR_REFUSAL_MSG);
+  assert.equal(pBanned.affinities.holyMother, 0);
+  assert.equal(pBanned.hunger, 10);
+
+  const pCorrupt = createInitialPlayer('fallen_knight');
+  pCorrupt.corruption = 25;
+  pCorrupt.inventory.white_herb = 1;
+  const refusedByCor = performAltarAffinityRitual(pCorrupt, {
+    altarKey: buildAltarKey('F2_R3', 3, 3),
+    deity: 'holy_mother',
+    holyMode: 'white_herb',
+  });
+  assert.equal(refusedByCor.success, false);
+  assert.equal(refusedByCor.blockedByBan, true);
+  assert.equal(refusedByCor.message, HOLY_ALTAR_REFUSAL_MSG);
+  assert.equal(pCorrupt.inventory.white_herb, 1);
+  assert.equal(pCorrupt.affinities.holyMother, 0);
+});
+
+test('TILE.VOID_RIFT end-game dialogue requirements: Lõi Khóa, Tiên Dược, Thánh Tử 13, Order/True/Dark/Personal/Normal gating', () => {
+  // 1. Fresh player arriving at TILE.VOID_RIFT without artifacts or rescued Child 13
+  const baseEmpty = {
+    classId: 'fallen_knight',
+    corruption: 0,
+    demonicPactAffinity: 0,
+    holyMotherBanned: false,
+    readBookIds: [] as string[],
+    inventory: {} as Record<string, number>,
+    vaelisTalked: false,
+    vaelisDefeated: false,
+    curedPetrification: false,
+    child13Rescued: false,
+    child13InParty: false,
+    riftElixirCollected: false,
+  };
+  const emptyAvail = evaluateVoidRiftRequirements(baseEmpty);
+  assert.equal(emptyAvail.canCollectElixir, true);
+  assert.equal(emptyAvail.canRescueChild13, true);
+  assert.equal(emptyAvail.trueEnding.ready, false);
+  assert.equal(emptyAvail.trueEnding.missing.includes('Lõi Khóa Hư Vô'), true);
+  assert.equal(emptyAvail.trueEnding.missing.includes('Tiên Dược Nguyên Sơ'), true);
+  assert.equal(emptyAvail.trueEnding.missing.includes('Thánh Tử 13'), true);
+  assert.equal(emptyAvail.orderEnding.ready, false);
+  assert.equal(emptyAvail.orderEnding.missing.includes('Lõi Khóa Hư Vô'), true);
+  assert.equal(emptyAvail.orderEnding.missing.includes('Thần Chú Tái Thiết'), true);
+  assert.equal(emptyAvail.darkEnding.ready, false);
+  assert.equal(emptyAvail.normalEnding.ready, false);
+
+  // 2. True Ending requires Lõi Khóa + Tiên Dược + Thánh Tử 13 + Seed Lore (book_9 or >=4 books)
+  const missingChild13 = evaluateCanonEnding({
+    classId: 'fallen_knight',
+    corruption: 10,
+    readBookIds: ['book_9'],
+    inventory: { void_core: 1, elixir_of_ancients: 1 },
+    learnedSkillIds: [],
+    vaelisTalked: true,
+    vaelisDefeated: true,
+    curedPetrification: false,
+    child13Rescued: false,
+    child13InParty: false,
+    endingAction: 'POUR_ELIXIR_CHILD13_RIFT',
+  });
+  assert.notEqual(missingChild13.id, 'TRUE_ENDING');
+
+  const trueReady = evaluateVoidRiftRequirements({
+    ...baseEmpty,
+    inventory: { void_core: 1, elixir_of_ancients: 1 },
+    readBookIds: ['book_9'],
+    child13Rescued: true,
+    child13InParty: false, // Even if party was full when freeing Child 13 at the rift
+    riftElixirCollected: true,
+  });
+  assert.equal(trueReady.trueEnding.ready, true);
+  assert.equal(trueReady.trueEnding.missing.length, 0);
+  assert.equal(trueReady.canCollectElixir, false);
+  assert.equal(trueReady.canRescueChild13, false);
+
+  // 3. Order Ending requires pure soul (cor === 0, not holyMotherBanned) + Lõi Khóa + Thần Chú Tái Thiết
+  const orderReady = evaluateVoidRiftRequirements({
+    ...baseEmpty,
+    corruption: 0,
+    holyMotherBanned: false,
+    inventory: { void_core: 1, reconstruction_scroll: 1 },
+  });
+  assert.equal(orderReady.orderEnding.ready, true);
+
+  const orderBlockedByBan = evaluateVoidRiftRequirements({
+    ...baseEmpty,
+    corruption: 0,
+    holyMotherBanned: true,
+    inventory: { void_core: 1, reconstruction_scroll: 1 },
+  });
+  assert.equal(orderBlockedByBan.orderEnding.ready, false);
+  assert.equal(orderBlockedByBan.orderEnding.missing.includes('Tâm hồn thuần khiết'), true);
+
+  // 4. Dark & Personal S-Endings evaluate properly at TILE.VOID_RIFT
+  const darkAvail = evaluateVoidRiftRequirements({
+    ...baseEmpty,
+    vaelisDefeated: true,
+    demonicPactAffinity: 2,
+  });
+  assert.equal(darkAvail.darkEnding.ready, true);
+  assert.equal(darkAvail.normalEnding.ready, true);
+
+  const nunAvail = evaluateVoidRiftRequirements({
+    ...baseEmpty,
+    classId: 'forsaken_nun',
+    corruption: 5,
+    child13Rescued: true,
+    child13InParty: true,
+    readBookIds: ['book_1', 'book_2', 'book_3'],
+  });
+  assert.equal(nunAvail.personalEnding.ready, true);
+  assert.equal(nunAvail.personalEnding.variant, 'nun');
+  assert.equal(nunAvail.personalEnding.action, 'ESCAPE_EXTERIOR_GATE');
+});
+
+test('Balancing Patch: diegetic corruption warning (18-24), blood_pact Lv3 conditional heal & fixed 15 HP cost, obliterate buff & shatter/lock, and 100% prologue skill ID audit', () => {
+  // 1. Prologue Skill ID Audit: 100% of opt.skills across all CHARACTER_INTRO_STEPS and class startingSkills exist in CONFIG.SKILLS
+  const validSkillIds = new Set(CONFIG.SKILLS.map((s) => s.id));
+  for (const cls of CONFIG.CLASSES) {
+    assert.equal(
+      validSkillIds.has(cls.startingSkill),
+      true,
+      `Class ${cls.id} startingSkill "${cls.startingSkill}" must exist in CONFIG.SKILLS`
+    );
+  }
+  let prologueSkillCount = 0;
+  for (const [clsId, steps] of Object.entries(CHARACTER_INTRO_STEPS)) {
+    for (const step of steps) {
+      for (const opt of step.options) {
+        if (opt.skills) {
+          for (const skId of opt.skills) {
+            prologueSkillCount++;
+            assert.equal(
+              validSkillIds.has(skId),
+              true,
+              `Prologue option ${clsId}/${opt.id} skill "${skId}" must exist in CONFIG.SKILLS`
+            );
+          }
+        }
+      }
+    }
+  }
+  assert.equal(prologueSkillCount >= 8, true);
+
+  // 2. Diegetic Corruption Warning triggers once in [18, 24] when Holy Mother is not banned
+  const wPlayer = createInitialPlayer('forsaken_nun');
+  assert.equal(wPlayer.corruptionWarningLogged, false);
+  wPlayer.corruption = 17;
+  const wLogs: string[] = [];
+  assert.equal(checkCorruptionDiegeticWarning(wPlayer, wLogs), null);
+  assert.equal(wLogs.length, 0);
+  assert.equal(wPlayer.corruptionWarningLogged, false);
+
+  wPlayer.corruption = 18;
+  const warn1 = checkCorruptionDiegeticWarning(wPlayer, wLogs);
+  assert.equal(warn1, CORRUPTION_DIEGETIC_WARNING_MSG);
+  assert.equal(wPlayer.corruptionWarningLogged, true);
+  assert.equal(wLogs.includes(CORRUPTION_DIEGETIC_WARNING_MSG), true);
+
+  // Does not fire a second time
+  wPlayer.corruption = 22;
+  assert.equal(checkCorruptionDiegeticWarning(wPlayer, wLogs), null);
+  assert.equal(wLogs.length, 1);
+
+  // Does not fire if already banned or >= 25
+  const bannedPlayer = createInitialPlayer('fallen_knight');
+  bannedPlayer.corruption = 20;
+  banHolyMother(bannedPlayer);
+  assert.equal(checkCorruptionDiegeticWarning(bannedPlayer), null);
+
+  const highCorPlayer = createInitialPlayer('fallen_knight');
+  highCorPlayer.corruption = 25;
+  assert.equal(checkCorruptionDiegeticWarning(highCorPlayer), null);
+
+  // 3. blood_pact: fixed 15 HP cost at Lv1/Lv2/Lv3; Lv3 does NOT heal if limb survives, heals +12 HP ONLY on sever or kill
+  const bpLow = createInitialPlayer('fallen_knight');
+  bpLow.skillLevels.blood_pact = 3;
+  bpLow.hp = 15;
+  bpLow.mind = 50;
+  const bpDummy = createMapEnemyInstance('e_bp_1', 'executioner_paladin', 4, 4);
+  const lowOut = executeSingleActorCombatAction(
+    bpLow,
+    bpDummy,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'blood_pact' },
+    new SeededRNG('BP-LOW')
+  );
+  assert.equal(bpLow.statuses.bloodPactLevel, 0);
+  assert.equal(lowOut.logs.some((l) => l.includes('quá thấp')), true);
+
+  // Lv3 costs exact 15 HP (not 10)
+  for (const lv of [1, 2, 3]) {
+    const pCost = createInitialPlayer('fallen_knight');
+    pCost.skillLevels.blood_pact = lv;
+    pCost.hp = 100;
+    pCost.mind = 50;
+    const enCost = createMapEnemyInstance(`e_bp_cost_${lv}`, 'executioner_paladin', 4, 4);
+    executeSingleActorCombatAction(
+      pCost,
+      enCost,
+      0,
+      'SKILL',
+      'torso',
+      { skillId: 'blood_pact' },
+      new SeededRNG(`BP-COST-${lv}`)
+    );
+    assert.equal(pCost.hp, 85, `blood_pact Lv${lv} must sacrifice exactly 15 HP`);
+    assert.equal(pCost.statuses.bloodPactLevel, lv);
+  }
+
+  // Lv3 attack on tanky surviving limb: NO HP heal!
+  const pNoHeal = createInitialPlayer('fallen_knight');
+  pNoHeal.hp = 80;
+  pNoHeal.maxHp = 135;
+  pNoHeal.statuses.bloodPactLevel = 3;
+  const enTank = createMapEnemyInstance('e_bp_tank', 'starved_hound', 4, 4);
+  enTank.stunTurns = 1;
+  const torsoTank = enTank.limbs.find((l) => l.id === 'torso')!;
+  torsoTank.hp = 9999;
+  torsoTank.maxHp = 9999;
+  const noHealOut = executeSingleActorCombatAction(
+    pNoHeal,
+    enTank,
+    0,
+    'ATTACK',
+    'torso',
+    undefined,
+    new SeededRNG('BP-NO-HEAL')
+  );
+  assert.equal((noHealOut.lastDealtDmg || 0) > 0, true, 'Attack must hit tanky torso');
+  assert.equal(pNoHeal.statuses.bloodPactLevel, 0);
+  assert.equal(pNoHeal.hp, 80, 'blood_pact Lv3 must NOT heal when target limb survives');
+  assert.equal(
+    noHealOut.logs.some((l) => l.includes('Huyết Ước hấp thụ máu tươi')),
+    false
+  );
+
+  // Lv3 attack that severs a limb (single-actor path): heals +12 HP with exact log
+  const pSeverHeal = createInitialPlayer('fallen_knight');
+  pSeverHeal.hp = 80;
+  pSeverHeal.maxHp = 135;
+  pSeverHeal.statuses.bloodPactLevel = 3;
+  const enSever = createMapEnemyInstance('e_bp_sever', 'executioner_paladin', 4, 4);
+  enSever.stunTurns = 1;
+  const armSever = enSever.limbs.find((l) => l.id !== 'torso' && l.id !== 'head')!;
+  armSever.hp = 10;
+  const severOut = executeSingleActorCombatAction(
+    pSeverHeal,
+    enSever,
+    0,
+    'ATTACK',
+    armSever.id,
+    undefined,
+    new SeededRNG('BP-SEVER')
+  );
+  assert.equal(severOut.severedAnyLimb, true);
+  assert.equal(pSeverHeal.hp, 92, 'blood_pact Lv3 must heal +12 HP when severing a limb');
+  assert.equal(
+    severOut.logs.some((l) => l.includes('Huyết Ước hấp thụ máu tươi từ vết cắt chí mạng, hồi +12 Sinh Lực!')),
+    true
+  );
+
+  // Lv3 attack via executePlayerWeaponAttack that kills enemy: heals +12 HP with exact log
+  const pKillHeal = createInitialPlayer('fallen_knight');
+  pKillHeal.hp = 80;
+  pKillHeal.maxHp = 135;
+  pKillHeal.statuses.bloodPactLevel = 3;
+  const enKill = createMapEnemyInstance('e_bp_kill', 'starved_hound', 4, 4);
+  enKill.stunTurns = 1;
+  const torsoKill = enKill.limbs.find((l) => l.id === 'torso')!;
+  torsoKill.hp = 10;
+  const killOut = executePlayerWeaponAttack(pKillHeal, enKill, 'torso', new SeededRNG('BP-KILL'));
+  assert.equal(killOut.enemyDefeated, true);
+  assert.equal(pKillHeal.hp, 92, 'blood_pact Lv3 must heal +12 HP when killing enemy');
+  assert.equal(
+    killOut.logs.some((l) => l.includes('Huyết Ước hấp thụ máu tươi từ vết cắt chí mạng, hồi +12 Sinh Lực!')),
+    true
+  );
+
+  // 4. obliterate buff: fallback true dmg 450 / 620 / 800, permanent limb.armor = 0 on survival, and 1-turn lock at Lv3
+  const expectedFallback: Record<number, number> = { 1: 450, 2: 620, 3: 800 };
+  for (const lv of [1, 2, 3]) {
+    const pOb = createInitialPlayer('forsaken_nun');
+    pOb.skillLevels.obliterate = lv;
+    pOb.mind = 100;
+    const enOb = createMapEnemyInstance(`e_ob_${lv}`, 'demon_lord_vaelis', 4, 4);
+    const armOb = enOb.limbs.find((l) => l.id !== 'torso' && l.id !== 'head')!;
+    armOb.hp = 2000;
+    armOb.maxHp = 2000;
+    armOb.armor = 50;
+
+    const obOut = executeSingleActorCombatAction(
+      pOb,
+      enOb,
+      0,
+      'SKILL',
+      armOb.id,
+      { skillId: 'obliterate' },
+      new SeededRNG(`OB-${lv}`)
+    );
+    assert.equal(obOut.lastDealtDmg, expectedFallback[lv]);
+    assert.equal(armOb.hp, 2000 - expectedFallback[lv]);
+    assert.equal(armOb.armor, 0, `obliterate Lv${lv} must permanently shatter limb armor to 0`);
+    assert.equal(
+      obOut.logs.some((l) =>
+        l.includes(
+          `[Xóa Sổ] giáng ${expectedFallback[lv]} sát thương chuẩn và nghiền nát hoàn toàn lớp giáp của [${armOb.name}]!`
+        )
+      ),
+      true
+    );
+    if (lv < 3) {
+      assert.equal(enOb.lockedLimbIds?.[armOb.id] || 0, 0);
+    } else {
+      assert.equal(enOb.lockedLimbIds?.[armOb.id], 1, 'obliterate Lv3 must lock surviving limb for 1 turn');
+    }
+  }
+
+  // Also verify executePlayerSkill path for obliterate Lv3 armor shatter & lock
+  const pObLegacy = createInitialPlayer('forsaken_nun');
+  pObLegacy.skillLevels.obliterate = 3;
+  pObLegacy.mind = 100;
+  const enObLegacy = createMapEnemyInstance('e_ob_legacy', 'demon_lord_vaelis', 4, 4);
+  enObLegacy.stunTurns = 1; // Prevent enemy turn from ticking down lock
+  const armObLegacy = enObLegacy.limbs.find((l) => l.id !== 'torso' && l.id !== 'head')!;
+  armObLegacy.hp = 2000;
+  armObLegacy.maxHp = 2000;
+  armObLegacy.armor = 40;
+  const obLegacyOut = executePlayerSkill(
+    pObLegacy,
+    enObLegacy,
+    'obliterate',
+    armObLegacy.id,
+    new SeededRNG('OB-LEGACY')
+  );
+  assert.equal(obLegacyOut.lastDealtDmg, 800);
+  assert.equal(armObLegacy.armor, 0);
+});
+
+test('Summon Rebalance: 0.7x/0.85x/1.05x undead damage scaling, ghoul flesh_rend nerf, pure-tank <30 Mind no free divineAegis, and 0-Mind 15% maxHp Soul Decay', () => {
+  // 1. Undead summon damage multiplier scales 0.7 (Lv1) -> 0.85 (Lv2) -> 1.05 (Lv3)
+  const necro = createInitialPlayer('forsaken_nun');
+  necro.skillLevels.necromancy = 1;
+  assert.equal(getUndeadSummonDmgMultiplier(necro), 0.7);
+  necro.skillLevels.necromancy = 2;
+  assert.equal(getUndeadSummonDmgMultiplier(necro), 0.85);
+  necro.skillLevels.necromancy = 3;
+  assert.equal(getUndeadSummonDmgMultiplier(necro), 1.05);
+
+  // Verify getAllyComputedStats and ghoul flesh_rend reflect 0.7x at Lv1
+  necro.skillLevels.necromancy = 1;
+  const corpse = createMapEnemyInstance('e_ghoul_src', 'fanatic_zealot', 3, 3);
+  corpse.defeated = true;
+  const castRes = castNecromancyOnCorpse(necro, corpse);
+  assert.equal(castRes.success, true);
+  const ghoul = necro.party[0];
+  assert.equal(ghoul.isUndeadSummon, true);
+  assert.equal(isPureTankSummon(ghoul), false);
+  ghoul.weaponId = 'broad_iron_sword'; // dmg [110, 145] -> avg 128 -> * 0.7 = 90
+  const expectedBaseAvg = Math.round((CONFIG.WEAPONS.broad_iron_sword.dmg[0] + CONFIG.WEAPONS.broad_iron_sword.dmg[1]) * 0.5);
+  assert.equal(getAllyComputedStats(ghoul, necro).physAtk, Math.round(expectedBaseAvg * 0.7));
+
+  // Verify ghoul flesh_rend deals 200 * 0.7 = 140 dmg and 90 * 0.7 = 63 bleed at Lv1
+  const enTarget = createMapEnemyInstance('e_ghoul_tgt', 'starved_hound', 4, 4);
+  const torso = enTarget.limbs.find((l) => l.id === 'torso')!;
+  torso.hp = 1000;
+  torso.maxHp = 1000;
+  torso.armor = 0;
+  ghoul.mind = 50;
+  const rendOut = executeSingleActorCombatAction(
+    necro,
+    enTarget,
+    1,
+    'SKILL',
+    'torso',
+    { skillId: 'flesh_rend' },
+    new SeededRNG('SUMMON-REND-LV1')
+  );
+  assert.equal(rendOut.lastDealtDmg, 140);
+  assert.equal(enTarget.bleedPerTurn, 63);
+
+  // 2. Pure-tank summons (summon_wraith / summon_child_12) with Mind < 30 ONLY self-guard, NEVER pump free divineAegisTurns
+  const tankMaster = createInitialPlayer('forsaken_nun');
+  tankMaster.skillLevels.necromancy = 2;
+  tankMaster.questFlags.child12Resolved = true;
+  tankMaster.statuses.divineAegisTurns = 0;
+  tankMaster.statuses.divineAegisLevel = 0;
+  const c12Res = castNecromancyOnChild12(tankMaster);
+  assert.equal(c12Res.success, true);
+  const wraithCorpse = createMapEnemyInstance('e_wraith_src', 'rotting_priest', 3, 3);
+  wraithCorpse.defeated = true;
+  const wraithRes = castNecromancyOnCorpse(tankMaster, wraithCorpse);
+  assert.equal(wraithRes.success, true);
+
+  const child12 = tankMaster.party[0];
+  const wraith = tankMaster.party[1];
+  assert.equal(isPureTankSummon(child12), true);
+  assert.equal(isPureTankSummon(wraith), true);
+
+  for (let idx = 0; idx < 2; idx++) {
+    const tank = tankMaster.party[idx];
+    tank.mind = 10;
+    tank.guarding = false;
+    tank.divineAegisTurns = 0;
+    tankMaster.statuses.divineAegisTurns = 0;
+    tankMaster.statuses.divineAegisLevel = 0;
+
+    const dummy = createMapEnemyInstance(`e_tank_panic_${idx}`, 'fanatic_zealot', 4, 4);
+    const out = executeSingleActorCombatAction(
+      tankMaster,
+      dummy,
+      idx + 1,
+      'ATTACK',
+      'torso',
+      undefined,
+      new SeededRNG(`TANK-PANIC-${idx}`)
+    );
+    assert.equal(tank.guarding, true);
+    assert.equal(tank.divineAegisTurns || 0, 0, 'Panicking pure tank must NOT grant self divineAegisTurns');
+    assert.equal(tankMaster.statuses.divineAegisTurns, 0, 'Panicking pure tank must NOT grant player divineAegisTurns');
+    assert.equal(tankMaster.statuses.divineAegisLevel, 0);
+    assert.equal(
+      out.logs.some((l) =>
+        l.includes(
+          `[BẢN NĂNG HỘ VỆ] [${tank.name}] co mình vào thế thủ bản năng nhưng không đủ tâm lực để dựng khiên hộ thể cho đồng đội!`
+        )
+      ),
+      true
+    );
+  }
+
+  // 3. Undead summon at 0 Mind suffers Soul Decay (-15% maxHp) at end of round, and reclaims gear on death
+  const decayPlayer = createInitialPlayer('forsaken_nun');
+  decayPlayer.skillLevels.necromancy = 1;
+  const decaySrc = createMapEnemyInstance('e_decay_src', 'fanatic_zealot', 3, 3);
+  decaySrc.defeated = true;
+  castNecromancyOnCorpse(decayPlayer, decaySrc);
+  const decaySummon = decayPlayer.party[0];
+  decaySummon.maxHp = 100;
+  decaySummon.hp = 100;
+  decaySummon.mind = 0;
+  decaySummon.weaponId = 'broad_iron_sword';
+
+  const stunnedEnemy = createMapEnemyInstance('e_decay_foe', 'starved_hound', 4, 4);
+  stunnedEnemy.stunTurns = 2; // No enemy damage so we isolate Soul Decay
+  const round1 = resolveEnemyCombatRound(decayPlayer, stunnedEnemy, new SeededRNG('SOUL-DECAY-1'));
+  assert.equal(decaySummon.hp, 85, 'Undead summon at 0 Mind must lose 15% maxHp (15 HP)');
+  assert.equal(
+    round1.logs.some((l) =>
+      l.includes(
+        `[PHÂN RÃ LINH HỒN] Mất sạch Lý Trí, thân xác [${decaySummon.name}] rạn vỡ và tan rã dần (-15 Sinh Lực)!`
+      )
+    ),
+    true
+  );
+
+  // Fatal Soul Decay: hp drops to 0 -> gear reclaimed & summon pruned from party
+  decaySummon.hp = 10;
+  decaySummon.mind = 0;
+  stunnedEnemy.stunTurns = 2;
+  const round2 = resolveEnemyCombatRound(decayPlayer, stunnedEnemy, new SeededRNG('SOUL-DECAY-2'));
+  assert.equal(decayPlayer.party.length, 0, 'Summon killed by Soul Decay must be removed from party');
+  assert.equal(decayPlayer.unlockedWeapons.includes('broad_iron_sword'), true, 'Gear must be reclaimed on Soul Decay death');
+  assert.equal(
+    round2.logs.some((l) => l.includes('[PHÂN RÃ LINH HỒN]')),
+    true
+  );
+});
+
+test('Master Bugfix & Balance Patch: Vaelis HP/conduit, void_chimera drop, Lv3 skills, Floor 1/3 spawns & chase/stealth AI, CombatEngine shake & ITEM VFX', () => {
+  // 1. Vaelis HP upgrade (>9000), void_chimera guaranteedWeaponDrop, CONFIG.CLASSES sync
+  const vaelis = createMapEnemyInstance('e_vaelis_check', 'demon_lord_vaelis', 5, 5);
+  assert.equal(getEnemyMaxTotalHp(vaelis) > 9000, true, 'Vaelis total limb HP must exceed 9000');
+  assert.equal(CONFIG.ENEMIES.demon_lord_vaelis.totalHpDisplay, 10550);
+  assert.equal(CONFIG.ENEMIES.void_chimera.guaranteedWeaponDrop, 'cursed_void_bone_scythe');
+  assert.equal(CONFIG.WEAPONS.cursed_void_bone_scythe.bossOnly, true);
+
+  const knightCls = CONFIG.CLASSES.find((c) => c.id === 'fallen_knight')!;
+  const nunCls = CONFIG.CLASSES.find((c) => c.id === 'forsaken_nun')!;
+  const hunterCls = CONFIG.CLASSES.find((c) => c.id === 'night_hunter')!;
+  assert.equal(knightCls.hp, 135);
+  assert.equal(knightCls.mind, 85);
+  assert.equal(nunCls.hp, 90);
+  assert.equal(nunCls.mind, 135);
+  assert.equal(hunterCls.hp, 105);
+  assert.equal(hunterCls.mind, 105);
+
+  // Vaelis void_conduit heals +280 HP/turn
+  const pConduit = createInitialPlayer('fallen_knight');
+  pConduit.hp = 135;
+  vaelis.limbs.find((l) => l.id === 'torso')!.hp = 4000;
+  vaelis.stunTurns = 0;
+  const conduitRound = resolveEnemyCombatRound(pConduit, vaelis, new SeededRNG('VAELIS-CONDUIT'));
+  assert.equal(
+    conduitRound.logs.some((l) => l.includes('+280 Sinh Lực')),
+    true,
+    'void_conduit must heal +280 HP per turn'
+  );
+
+  // 2. Lv3 skill effects: flesh_rend Lv3 shreds 40% target limb armor; void_bite Lv3 cancels telegraphing
+  const pSkills = createInitialPlayer('forsaken_nun');
+  pSkills.mind = 135;
+  pSkills.skillLevels.flesh_rend = 3;
+  pSkills.skillLevels.void_bite = 3;
+  const armoredFoe = createMapEnemyInstance('e_armor_shred', 'dullahan_knight', 5, 5);
+  const torsoLimb = armoredFoe.limbs.find((l) => l.id === 'torso')!;
+  const torsoBefore = torsoLimb.armor ?? 0;
+  executeSingleActorCombatAction(
+    pSkills,
+    armoredFoe,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'flesh_rend' },
+    new SeededRNG('FLESH-REND-LV3')
+  );
+  const torsoAfter = armoredFoe.limbs.find((l) => l.id === 'torso')!.armor ?? 0;
+  assert.equal(Math.abs(torsoAfter - torsoBefore * 0.6) < 0.001, true);
+
+  armoredFoe.telegraphing = true;
+  armoredFoe.telegraphCoinFlip = true;
+  executeSingleActorCombatAction(
+    pSkills,
+    armoredFoe,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'void_bite' },
+    new SeededRNG('VOID-BITE-LV3')
+  );
+  assert.equal(armoredFoe.telegraphing, false, 'void_bite Lv3 must cancel telegraphing');
+  assert.equal(armoredFoe.telegraphCoinFlip, false, 'void_bite Lv3 must cancel telegraphCoinFlip');
+
+  // 3. Floor 1 spawns black_bone_skeleton & armored_ghoul; Floor 3 spawns dimensional_viper
+  const world = generateWorld('MASTER-PATCH-SEED-1');
+  const floor1Ids = new Set<string>();
+  const floor3Ids = new Set<string>();
+  for (const room of Object.values(world.rooms)) {
+    if (room.floor === 1) {
+      for (const e of room.enemies) floor1Ids.add(e.templateId);
+    }
+    if (room.floor === 3) {
+      for (const e of room.enemies) floor3Ids.add(e.templateId);
+    }
+  }
+  assert.equal(floor1Ids.has('black_bone_skeleton'), true, 'Floor 1 must spawn black_bone_skeleton');
+  assert.equal(floor1Ids.has('armored_ghoul'), true, 'Floor 1 must spawn armored_ghoul');
+  assert.equal(floor3Ids.has('dimensional_viper'), true, 'Floor 3 must spawn dimensional_viper');
+
+  // 4. Chase AI: stealthActive immediately breaks chase -> patrol; loseSightTimerMs > 0 pursues lastSeenX/lastSeenY
+  const w = 12;
+  const h = 10;
+  const grid: TILE[][] = Array.from({ length: h }, (_, y) =>
+    Array.from({ length: w }, (_, x) =>
+      x === 0 || y === 0 || x === w - 1 || y === h - 1 ? TILE.WALL : TILE.FLOOR
+    )
+  );
+  // Put a wall pillar to block LOS between enemy (8,5) and player (2,5)
+  grid[5][5] = TILE.WALL;
+  const pursuer = createMapEnemyInstance('e_pursuer', 'fanatic_zealot', 8, 5, { facing: 'left' });
+  pursuer.aiState = 'chase';
+  pursuer.lastSeenX = 6;
+  pursuer.lastSeenY = 5;
+  pursuer.loseSightTimerMs = 1500;
+
+  const testRoom: RoomData = {
+    id: 'CHASE_AI_TEST',
+    floor: 1,
+    roomIndex: 1,
+    name: 'Test',
+    sensoryLine: '...',
+    template: 'JAGGED_RUIN',
+    width: w,
+    height: h,
+    grid,
+    spawnX: 2,
+    spawnY: 5,
+    secretX: 0,
+    secretY: 0,
+    secretChamberCoords: [],
+    enemies: [pursuer],
+    decoys: [],
+    corpses: [],
+    lootedCoords: [],
+    shortcutOpened: false,
+    secretWallBlown: false,
+  };
+
+  // Without stealth: enemy loses LOS behind wall, pursues lastSeenX=6,y=5 and decrements loseSightTimerMs by 500
+  const chaseStep = advanceRoomEnemiesOneTurn(testRoom, { x: 2, y: 5 }, null, false);
+  const chasedEnemy = chaseStep.enemies[0];
+  assert.equal(chasedEnemy.aiState, 'chase');
+  assert.equal(chasedEnemy.x, 7, 'Pursuer with loseSightTimerMs > 0 must step toward lastSeenX');
+  assert.equal(chasedEnemy.loseSightTimerMs, 1000);
+
+  // With stealthActive = true: enemy immediately loses sight and reverts to patrol
+  const stealthRoom: RoomData = {
+    ...testRoom,
+    enemies: [{ ...chasedEnemy, aiState: 'chase', loseSightTimerMs: 1500 }],
+  };
+  const stealthStep = advanceRoomEnemiesOneTurn(stealthRoom, { x: 2, y: 5 }, null, true);
+  assert.equal(
+    stealthStep.enemies[0].aiState,
+    'patrol',
+    'stealthActive must revert chasing enemy to patrol immediately'
+  );
+  assert.equal(stealthStep.enemies[0].loseSightTimerMs, 0);
+
+  // 5. CombatEngine shakeAmplitude reset on timer expiry & damaging ITEM sets enemyHitDelayTimerMs = 80
+  const engine = new CombatEngine();
+  engine.triggerScreenShake(25, 100);
+  assert.equal(engine.shakeAmplitude, 25);
+  engine.update(60);
+  engine.update(60);
+  assert.equal(engine.shakeTimerMs, 0);
+  assert.equal(engine.shakeAmplitude, 0, 'shakeAmplitude must reset to 0 when shakeTimerMs expires');
+
+  const pVfx = createInitialPlayer('night_hunter');
+  pVfx.inventory.brown_vial = 2;
+  const eVfx = createMapEnemyInstance('e_vfx', 'fanatic_zealot', 4, 4);
+  engine.resetStageEffects();
+  engine.executeTurn(pVfx, eVfx, 'VFX-ITEM', 'ITEM', 'torso', { itemId: 'brown_vial' });
+  assert.equal(engine.enemyHitDelayTimerMs, 80, 'Damaging ITEM must set enemyHitDelayTimerMs = 80');
+});
+
+test('Combat.ts Deep Bugfix: guarding resets after round, Vaelis drops 1 void_core + lucky_coin, black_wax_crown, aegis_of_order, vaelis_signet & black_straw_effigy', () => {
+  // 1. player.statuses.guarding & ally.guarding reset to false at end of resolveEnemyCombatRound
+  const pGuard = createInitialPlayer('fallen_knight');
+  const ally = createRecruitedAlly('fallen_knight');
+  pGuard.party.push(ally);
+  pGuard.statuses.guarding = true;
+  ally.guarding = true;
+  const foeGuard = createMapEnemyInstance('e_guard_reset', 'starved_hound', 4, 4);
+  foeGuard.stunTurns = 2;
+  resolveEnemyCombatRound(pGuard, foeGuard, new SeededRNG('GUARD-RESET'));
+  assert.equal(pGuard.statuses.guarding, false, 'player.statuses.guarding must reset to false at end of round');
+  assert.equal(ally.guarding, false, 'ally.guarding must reset to false at end of round');
+
+  // 2. Defeating demon_lord_vaelis drops exactly 1 void_core, +2 lucky_coin, and black_wax_crown adds +1 Corruption +2 Mind/round
+  const pBoss = createInitialPlayer('fallen_knight');
+  pBoss.inventory.void_core = 0;
+  pBoss.inventory.lucky_coin = 0;
+  pBoss.unlockedGear.push('black_wax_crown');
+  pBoss.equippedHead = 'black_wax_crown';
+  pBoss.mind = 50;
+  pBoss.corruption = 0;
+
+  // Test +2 Mind/round from black_wax_crown
+  const stunnedFoe = createMapEnemyInstance('e_crown_mind', 'starved_hound', 4, 4);
+  stunnedFoe.stunTurns = 2;
+  resolveEnemyCombatRound(pBoss, stunnedFoe, new SeededRNG('CROWN-MIND'));
+  assert.equal(pBoss.mind, 52, 'black_wax_crown must restore +2 Mind at end of round');
+
+  // Kill Vaelis via single actor weapon attack on torso with 1 HP left (unlock torso by severing throne_claw_left)
+  const vaelisKill = createMapEnemyInstance('e_vaelis_kill', 'demon_lord_vaelis', 5, 5);
+  const vaelisClaw = vaelisKill.limbs.find((l) => l.id === 'throne_claw_left');
+  if (vaelisClaw) vaelisClaw.hp = 0;
+  vaelisKill.limbs.find((l) => l.id === 'torso')!.hp = 1;
+  pBoss.mind = 85;
+  const killOut = executeSingleActorCombatAction(
+    pBoss,
+    vaelisKill,
+    0,
+    'ATTACK',
+    'torso',
+    undefined,
+    new SeededRNG('VAELIS-KILL')
+  );
+  assert.equal(killOut.enemyDefeated, true);
+  assert.equal(pBoss.inventory.void_core, 1, 'Defeating Vaelis must grant strictly 1 void_core (no duplicate)');
+  assert.equal(pBoss.inventory.lucky_coin, 2, 'Defeating Vaelis must grant dropLuckyCoins (+2 Thẻ Bài Bạc)');
+  assert.equal(
+    killOut.logs.some((l) => l.includes('Nhặt được +2 Thẻ Bài Bạc.')),
+    true
+  );
+  assert.equal(pBoss.corruption, 1, 'black_wax_crown must add +1 Corruption after victory');
+
+  // 3. aegis_of_order multiplies holy_light damage by 1.3x & oil detonation resets oilCovered + oilTurns
+  const pHolyBase = createInitialPlayer('forsaken_nun');
+  pHolyBase.mind = 135;
+  pHolyBase.skillLevels.holy_light = 1;
+  pHolyBase.equippedShield = null;
+  const foeHoly1 = createMapEnemyInstance('e_holy_1', 'fanatic_zealot', 4, 4);
+  foeHoly1.oilCovered = true;
+  foeHoly1.oilTurns = 3;
+  const resBase = executeSingleActorCombatAction(
+    pHolyBase,
+    foeHoly1,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'holy_light' },
+    new SeededRNG('HOLY-SAME')
+  );
+  assert.equal(foeHoly1.oilCovered, false, 'Oil detonation must reset oilCovered to false');
+  assert.equal(foeHoly1.oilTurns, 0, 'Oil detonation must reset oilTurns to 0');
+
+  const pHolyAegis = createInitialPlayer('forsaken_nun');
+  pHolyAegis.mind = 135;
+  pHolyAegis.skillLevels.holy_light = 1;
+  pHolyAegis.unlockedShields.push('aegis_of_order');
+  pHolyAegis.equippedShield = 'aegis_of_order';
+  const foeHoly2 = createMapEnemyInstance('e_holy_2', 'fanatic_zealot', 4, 4);
+  foeHoly2.oilCovered = true;
+  foeHoly2.oilTurns = 3;
+  const resAegis = executeSingleActorCombatAction(
+    pHolyAegis,
+    foeHoly2,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'holy_light' },
+    new SeededRNG('HOLY-SAME')
+  );
+  assert.equal(
+    (resAegis.lastDealtDmg || 0) > (resBase.lastDealtDmg || 0),
+    true,
+    'aegis_of_order must boost holy_light damage by +30%'
+  );
+
+  // 4. vaelis_signet reduces incoming damage when player HP < 30%
+  const pNoSignet = createInitialPlayer('fallen_knight');
+  pNoSignet.hp = 30; // < 30% of 135
+  pNoSignet.equippedAccessory = null;
+  const foeSignet1 = createMapEnemyInstance('e_sig_1', 'fanatic_zealot', 4, 4);
+  const sigOut1 = resolveEnemyCombatRound(pNoSignet, foeSignet1, new SeededRNG('SIGNET-SEED'));
+
+  const pSignet = createInitialPlayer('fallen_knight');
+  pSignet.hp = 30;
+  pSignet.unlockedGear.push('vaelis_signet');
+  pSignet.equippedAccessory = 'vaelis_signet';
+  const foeSignet2 = createMapEnemyInstance('e_sig_2', 'fanatic_zealot', 4, 4);
+  const sigOut2 = resolveEnemyCombatRound(pSignet, foeSignet2, new SeededRNG('SIGNET-SEED'));
+  assert.equal(
+    (sigOut2.lastTakenDmg || 0) < (sigOut1.lastTakenDmg || 0),
+    true,
+    'vaelis_signet must grant +20% damage reduction when HP < 30%'
+  );
+
+  // 5. black_straw_effigy self-destructs to block 1 parasite or infected infliction
+  let effigyTriggered = false;
+  for (let i = 0; i < 60; i++) {
+    const pEff = createInitialPlayer('fallen_knight');
+    pEff.hp = 135;
+    pEff.unlockedGear.push('black_straw_effigy');
+    pEff.equippedAccessory = 'black_straw_effigy';
+    const tentacleFoe = createMapEnemyInstance(`e_eff_${i}`, 'void_tentacle_cluster', 4, 4);
+    const out = resolveEnemyCombatRound(pEff, tentacleFoe, new SeededRNG(`EFFIGY-${i}`));
+    if (out.logs.some((l) => l.includes('[Hình Nhân Rơm Đen] bốc cháy thành tro, gánh thay lời nguyền cho bạn!'))) {
+      effigyTriggered = true;
+      assert.equal(pEff.equippedAccessory, null, 'black_straw_effigy must be unequipped after self-destruct');
+      assert.equal(pEff.unlockedGear.includes('black_straw_effigy'), false, 'black_straw_effigy must be removed from unlockedGear');
+      assert.equal(pEff.statuses.parasite, false, 'Blocked parasite must not be applied');
+      const anyInfected = Object.values(pEff.limbs.infected).some(Boolean);
+      assert.equal(anyInfected, false, 'Blocked infection must not be applied');
+      break;
+    }
+  }
+  assert.equal(effigyTriggered, true, 'black_straw_effigy must trigger and block parasite/infection');
+});
+
+
+
+
+
+
 
 
 

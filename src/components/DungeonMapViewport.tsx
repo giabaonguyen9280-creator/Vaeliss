@@ -1,13 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { CONFIG } from '../game/config';
-import { PlayerState, PartyAlly } from '../game/combat';
+import { PlayerState, PartyAlly, buildAltarKey } from '../game/combat';
 import {
   getHerbTypeAtCoord,
   hasLineOfSight,
   herbTypeToVariant,
   isWalkableTile,
   MapEnemyInstance,
-  NPC_TILE_SET,
   RoomData,
   TILE,
 } from '../game/mapGen';
@@ -231,12 +230,40 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
 
 
 
+  const renderStateRef = useRef({
+    room,
+    player,
+    playerPos,
+    trailCoords,
+    animTick,
+    riftElixirCollected,
+    filmGrainEnabled,
+  });
+  renderStateRef.current = {
+    room,
+    player,
+    playerPos,
+    trailCoords,
+    animTick,
+    riftElixirCollected,
+    filmGrainEnabled,
+  };
+
   // Smooth Delta-Time Render Loop with Offscreen Static Layer + Camera Translation + Bresenham LOS
   useEffect(() => {
     let rafId = 0;
     let lastTime = performance.now();
 
     const renderFrame = (now: number) => {
+      const {
+        room,
+        player,
+        playerPos,
+        trailCoords,
+        animTick,
+        riftElixirCollected,
+        filmGrainEnabled,
+      } = renderStateRef.current;
       const dt = Math.min(0.064, Math.max(0.001, (now - lastTime) / 1000));
       lastTime = now;
 
@@ -543,6 +570,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 const circleMeta = room.ritualCircles?.[cKey];
                 const deityType = circleMeta?.deityType || 'uninscribed';
                 const isLooted =
+                  (player.usedAltarKeys || []).includes(buildAltarKey(room.id, x, y)) ||
                   Boolean(circleMeta?.used) ||
                   (deityType !== 'uninscribed' && room.lootedCoords.includes(cKey));
                 drawMultiTileLandmark(
@@ -589,6 +617,35 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             ctx.textAlign = 'center';
             ctx.fillText(`Mồi (${decoy.turnsLeft})`, dpx, decoy.y * tileH + 10);
             ctx.restore();
+          }
+
+          // 1D. Slain Corpses & Floor Blood Pools (drawn below all standing entities so characters never get obscured)
+          const corpseList = [
+            ...(room.corpses || []),
+            ...room.enemies.filter((e) => e.defeated),
+          ];
+          for (const corpseInst of corpseList) {
+            if (!visibleCoords.has(`${corpseInst.x},${corpseInst.y}`) && !corpseInst.isFloorBoss) {
+              continue;
+            }
+            const px = corpseInst.x * tileW;
+            const py = corpseInst.y * tileH;
+            ctx.fillStyle = 'rgba(135, 20, 20, 0.82)';
+            ctx.beginPath();
+            ctx.ellipse(px + tileW / 2, py + tileH * 0.56, 19, 11, 0, 0, Math.PI * 2);
+            ctx.fill();
+            const isNearPlayer =
+              Math.abs(corpseInst.x - playerPos.x) + Math.abs(corpseInst.y - playerPos.y) <= 1;
+            const canRaise =
+              (player.skillLevels?.necromancy || 0) >= 1 &&
+              !corpseInst.corpseRaised &&
+              player.party.length < 3;
+            if (!isNearPlayer && (!corpseInst.corpseDevoured || !corpseInst.corpseLooted || canRaise)) {
+              ctx.fillStyle = !corpseInst.corpseLooted || canRaise ? '#fde047' : '#fca5a5';
+              ctx.font = 'bold 9px "Noto Serif", serif';
+              ctx.textAlign = 'center';
+              ctx.fillText('Xác Quái', px + tileW / 2, py + tileH * 0.56 + 3);
+            }
           }
 
           // 2. Depth-Sorted Entities Pass (Multi-Tile Landmarks + NPC Set-Dressing + NPCs + Party + Player + Enemies)
@@ -691,6 +748,25 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
           }
 
+          const buildLimbSeveredSet = (limbs?: {
+            leftArm: boolean;
+            rightArm: boolean;
+            leftLeg: boolean;
+            rightLeg: boolean;
+          }): Set<string> => {
+            const severed = new Set<string>();
+            if (!limbs) return severed;
+            if (!limbs.leftArm) severed.add('left_arm');
+            if (!limbs.rightArm) severed.add('right_arm');
+            if (!limbs.leftLeg && !limbs.rightLeg) {
+              severed.add('legs');
+            } else {
+              if (!limbs.leftLeg) severed.add('left_leg');
+              if (!limbs.rightLeg) severed.add('right_leg');
+            }
+            return severed;
+          };
+
           // Parked Dismissed Companions waiting near Hexen Altar
           const parkedCompanions = getParkedCompanionSpots(room, player);
           parkedCompanions.forEach(({ ally, x: cxPos, y: cyPos }, pIdx) => {
@@ -698,11 +774,12 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               footY: cyPos,
               draw: () => {
                 const px = cxPos * tileW;
+                const footCenterY = (cyPos + 0.85) * tileH;
                 const allyBob = Math.sin(now * 0.0018 + (pIdx + 3) * 1.1) * 1.4;
-                const py = (cyPos - 1) * tileH + allyBob;
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                const py = footCenterY - tileH * 1.88 + allyBob;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
                 ctx.beginPath();
-                ctx.ellipse(px + tileW / 2, cyPos * tileH + tileH - 5, tileW * 0.34, 6, 0, 0, Math.PI * 2);
+                ctx.ellipse(px + tileW / 2, footCenterY, tileW * 0.34, 6, 0, 0, Math.PI * 2);
                 ctx.fill();
                 drawPixelSprite(
                   ctx,
@@ -711,7 +788,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   py,
                   tileW,
                   tileH * 2,
-                  new Set(),
+                  buildLimbSeveredSet(ally.limbs),
                   false,
                   false,
                   false,
@@ -737,11 +814,12 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               footY: coord.y,
               draw: () => {
                 const px = coord.x * tileW;
+                const footCenterY = (coord.y + 0.85) * tileH;
                 const allyBob = Math.sin(now * 0.0018 + (idx + 1) * 1.4) * 1.6;
-                const py = (coord.y - 1) * tileH + allyBob;
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                const py = footCenterY - tileH * 1.88 + allyBob;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
                 ctx.beginPath();
-                ctx.ellipse(px + tileW / 2, coord.y * tileH + tileH - 5, tileW * 0.34, 6, 0, 0, Math.PI * 2);
+                ctx.ellipse(px + tileW / 2, footCenterY, tileW * 0.34, 6, 0, 0, Math.PI * 2);
                 ctx.fill();
                 drawPixelSprite(
                   ctx,
@@ -750,7 +828,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   py,
                   tileW,
                   tileH * 2,
-                  new Set(),
+                  buildLimbSeveredSet(ally.limbs),
                   false,
                   false,
                   false,
@@ -767,13 +845,14 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             footY: visualPosRef.current.y,
             draw: () => {
               const px = visualPosRef.current.x * tileW;
+              const footCenterY = (visualPosRef.current.y + 0.85) * tileH;
               const playerBob = Math.sin(now * 0.0018) * 1.8;
-              const py = (visualPosRef.current.y - 1) * tileH + playerBob;
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+              const py = footCenterY - tileH * 1.88 + playerBob;
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
               ctx.beginPath();
               ctx.ellipse(
                 px + tileW / 2,
-                visualPosRef.current.y * tileH + tileH - 5,
+                footCenterY,
                 tileW * 0.37,
                 6.5,
                 0,
@@ -782,12 +861,6 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               );
               ctx.fill();
 
-              const severed = new Set<string>();
-              if (!player.limbs.leftArm) severed.add('left_arm');
-              if (!player.limbs.rightArm) severed.add('right_arm');
-              if (!player.limbs.leftLeg) severed.add('left_leg');
-              if (!player.limbs.rightLeg) severed.add('legs');
-
               drawPixelSprite(
                 ctx,
                 player.classId,
@@ -795,7 +868,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 py,
                 tileW,
                 tileH * 2,
-                severed,
+                buildLimbSeveredSet(player.limbs),
                 false,
                 false,
                 false,
@@ -805,40 +878,6 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               );
             },
           });
-
-          // Slain Corpses (removed from active enemies into room.corpses for Looting, Necromancy & Devouring)
-          const corpseList = [
-            ...(room.corpses || []),
-            ...room.enemies.filter((e) => e.defeated),
-          ];
-          for (const corpseInst of corpseList) {
-            if (!visibleCoords.has(`${corpseInst.x},${corpseInst.y}`) && !corpseInst.isFloorBoss) {
-              continue;
-            }
-            entities.push({
-              footY: corpseInst.y,
-              draw: () => {
-                const px = corpseInst.x * tileW;
-                const py = corpseInst.y * tileH;
-                ctx.fillStyle = 'rgba(125, 18, 18, 0.76)';
-                ctx.beginPath();
-                ctx.ellipse(px + tileW / 2, py + tileH / 2, 19, 11, 0, 0, Math.PI * 2);
-                ctx.fill();
-                const isNearPlayer =
-                  Math.abs(corpseInst.x - playerPos.x) + Math.abs(corpseInst.y - playerPos.y) <= 1;
-                const canRaise =
-                  (player.skillLevels?.necromancy || 0) >= 1 &&
-                  !corpseInst.corpseRaised &&
-                  player.party.length < 3;
-                if (!isNearPlayer && (!corpseInst.corpseDevoured || !corpseInst.corpseLooted || canRaise)) {
-                  ctx.fillStyle = !corpseInst.corpseLooted || canRaise ? '#fde047' : '#fca5a5';
-                  ctx.font = 'bold 9px "Noto Serif", serif';
-                  ctx.textAlign = 'center';
-                  ctx.fillText('Xác Quái', px + tileW / 2, py + tileH / 2 + 3);
-                }
-              },
-            });
-          }
 
           // Active Living Enemies
           for (const enemyInst of room.enemies) {
@@ -1022,10 +1061,10 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   (pl) => Math.hypot(x - pl.x, y - pl.y) <= 2.2
                 );
                 ctx.fillStyle = nearStaticLight
-                  ? 'rgba(14, 8, 24, 0.52)'
+                  ? 'rgba(14, 8, 24, 0.38)'
                   : room.isExterior
-                  ? 'rgba(6, 8, 10, 0.72)'
-                  : 'rgba(3, 2, 6, 0.94)';
+                  ? 'rgba(6, 8, 12, 0.52)'
+                  : 'rgba(4, 3, 8, 0.78)';
                 ctx.fillRect(x * tileW, y * tileH, tileW, tileH);
               }
             }
@@ -1071,7 +1110,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           // 3A. Continuous Pale Light-Gray Drifting Mist Layers across the full viewport & world
           ctx.save();
           const mistSec = now * 0.001;
-          const mistStrength = room.isExterior ? 1.15 : room.floor === 3 ? 1.05 : 1.0;
+          const mistStrength = room.isExterior ? 0.68 : room.floor === 3 ? 0.62 : 0.55;
           const mistSpanW = Math.max(worldPxW, viewW);
           const mistSpanH = Math.max(worldPxH, viewH);
           const mistOriginX = Math.min(0, camX);
@@ -1178,23 +1217,23 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               lightRadiusPx
             );
             if (!isTorchLit) {
-              torchGrad.addColorStop(0, 'rgba(30, 24, 38, 0.18)');
-              torchGrad.addColorStop(0.45, 'rgba(6, 4, 10, 0.72)');
-              torchGrad.addColorStop(0.78, 'rgba(3, 2, 5, 0.94)');
-              torchGrad.addColorStop(1, 'rgba(2, 1, 4, 0.985)');
+              torchGrad.addColorStop(0, 'rgba(30, 24, 38, 0.08)');
+              torchGrad.addColorStop(0.45, 'rgba(6, 4, 10, 0.56)');
+              torchGrad.addColorStop(0.78, 'rgba(3, 2, 5, 0.82)');
+              torchGrad.addColorStop(1, 'rgba(2, 1, 4, 0.90)');
             } else if (room.floor === 3) {
-              torchGrad.addColorStop(0, isTorchLow ? 'rgba(216, 180, 254, 0.09)' : 'rgba(255, 206, 138, 0.14)');
-              torchGrad.addColorStop(0.42, 'rgba(20, 10, 34, 0.46)');
-              torchGrad.addColorStop(0.8, 'rgba(7, 4, 14, 0.88)');
-              torchGrad.addColorStop(1, 'rgba(3, 2, 6, 0.97)');
+              torchGrad.addColorStop(0, isTorchLow ? 'rgba(216, 180, 254, 0.05)' : 'rgba(255, 206, 138, 0.07)');
+              torchGrad.addColorStop(0.48, 'rgba(20, 10, 34, 0.24)');
+              torchGrad.addColorStop(0.82, 'rgba(7, 4, 14, 0.68)');
+              torchGrad.addColorStop(1, 'rgba(3, 2, 6, 0.84)');
             } else {
               torchGrad.addColorStop(
                 0,
-                isTorchLow ? 'rgba(245, 158, 11, 0.09)' : 'rgba(255, 198, 115, 0.16)'
+                isTorchLow ? 'rgba(245, 158, 11, 0.05)' : 'rgba(255, 198, 115, 0.08)'
               );
-              torchGrad.addColorStop(0.36, isTorchLow ? 'rgba(18, 10, 10, 0.52)' : 'rgba(16, 11, 12, 0.36)');
-              torchGrad.addColorStop(0.76, 'rgba(5, 4, 8, 0.86)');
-              torchGrad.addColorStop(1, 'rgba(3, 2, 5, 0.96)');
+              torchGrad.addColorStop(0.45, isTorchLow ? 'rgba(18, 10, 10, 0.30)' : 'rgba(16, 11, 12, 0.16)');
+              torchGrad.addColorStop(0.80, 'rgba(5, 4, 8, 0.66)');
+              torchGrad.addColorStop(1, 'rgba(3, 2, 5, 0.82)');
             }
             ctx.save();
             ctx.fillStyle = torchGrad;
@@ -1229,7 +1268,6 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             [0, 1],
             [0, -1],
           ];
-          let drewPrompt = false;
           for (const [dx, dy] of searchOffsets) {
             if (Math.abs(dx) + Math.abs(dy) > 1) continue;
             const ix = playerPos.x + dx;
@@ -1291,15 +1329,22 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             else if (t === TILE.RITUAL_CIRCLE) {
               const cMeta = room.ritualCircles?.[cKey];
               const dType = cMeta?.deityType || 'uninscribed';
-              if (!cMeta?.used && (dType === 'uninscribed' || !room.lootedCoords.includes(cKey))) {
+              const altarKey = buildAltarKey(room.id, ix, iy);
+              const isUsed =
+                (player.usedAltarKeys || []).includes(altarKey) ||
+                Boolean(cMeta?.used) ||
+                (dType !== 'uninscribed' && room.lootedCoords.includes(cKey));
+              if (isUsed) {
+                promptLabel = '[F] Đài Đá Nguội Lạnh';
+              } else {
                 promptLabel =
                   dType === 'holy_mother'
-                    ? '[F] Đàn Thánh Mẫu'
+                    ? '[F] Tế Đàn Thánh Mẫu'
                     : dType === 'demon_lord'
-                    ? '[F] Đàn Huyết Tế'
+                    ? '[F] Huyết Trận'
                     : dType === 'void_god'
-                    ? '[F] Đàn Hư Vô'
-                    : '[F] Vòng Tròn Cổ';
+                    ? '[F] Bệ Thờ Hư Vô'
+                    : '[F] Đài Đá Trống';
               }
             }
             else if (t === TILE.CORPSE_LOOT && !room.lootedCoords.includes(cKey))
@@ -1320,7 +1365,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               ctx.lineWidth = 2.5;
               ctx.strokeRect(px + 2, py + 2, tileW - 4, tileH - 4);
 
-              const tagW = 176;
+              ctx.font = 'bold 12px "Noto Serif", serif';
+              const tagW = Math.max(120, Math.ceil(ctx.measureText(promptLabel).width) + 22);
               const tagH = 22;
               const tagX = Math.max(4, Math.min(worldPxW - tagW - 4, px + tileW / 2 - tagW / 2));
               const tagY = Math.max(4, py - 24);
@@ -1331,11 +1377,9 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               ctx.strokeRect(tagX, tagY, tagW, tagH);
 
               ctx.fillStyle = '#fef08a';
-              ctx.font = 'bold 12px "Noto Serif", serif';
               ctx.textAlign = 'center';
               ctx.fillText(promptLabel, tagX + tagW / 2, tagY + 15);
               ctx.restore();
-              drewPrompt = true;
               break;
             }
           }
@@ -1378,7 +1422,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
 
     rafId = requestAnimationFrame(renderFrame);
     return () => cancelAnimationFrame(rafId);
-  }, [room, player, playerPos, trailCoords, animTick, riftElixirCollected, filmGrainEnabled]);
+  }, []);
 
   return (
     <div ref={containerRef} className="relative w-full h-full flex-1 min-h-0 overflow-hidden">
