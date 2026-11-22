@@ -1489,7 +1489,7 @@ export function drawPixelSprite(
   // =========================================================================
   if (spriteKey === 'npc_smith') {
     // 1. Kẻ Đúc Kiếm Không Đầu (Tầng 1): Hulking headless giant, charred apron, 4 massive arms + Iron Anvil
-    // Anvil in foreground base
+    // 1. Anvil in foreground base
     ctx.fillStyle = '#1e293b';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2 * scale;
@@ -1504,8 +1504,26 @@ export function drawPixelSprite(
     ctx.fill();
     ctx.stroke();
 
-    // Hulking Torso & Charred Leather Apron with molten iron droplets
+    // 2. 4 Massive Arms (drawn BEFORE torso so torso covers shoulder seams)
+    ctx.strokeStyle = '#6b4c3b';
+    ctx.lineWidth = 9 * scale;
+    // Lower arms gripping anvil
+    ctx.beginPath();
+    ctx.moveTo(cx - 28 * scale, destH * 0.48);
+    ctx.lineTo(cx - 22 * scale, destH * 0.66);
+    ctx.moveTo(cx + 28 * scale, destH * 0.48);
+    ctx.lineTo(cx + 22 * scale, destH * 0.66);
+    // Upper arms raised with Sledgehammer & Tongs
+    ctx.moveTo(cx - 28 * scale, destH * 0.34);
+    ctx.lineTo(cx - 40 * scale, destH * 0.20 + leftArmBobY);
+    ctx.moveTo(cx + 28 * scale, destH * 0.34);
+    ctx.lineTo(cx + 40 * scale, destH * 0.20 + rightArmBobY);
+    ctx.stroke();
+
+    // 3. Hulking Torso & Charred Leather Apron with molten iron droplets
     ctx.fillStyle = '#5c4033';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2 * scale;
     ctx.beginPath();
     ctx.ellipse(cx, destH * 0.46 + torsoBreathY, 34 * scale, 26 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1523,30 +1541,7 @@ export function drawPixelSprite(
       ctx.fill();
     }
 
-    // Flat Scarred Neck Stump (NO HEAD)
-    ctx.fillStyle = '#3b1c1a';
-    ctx.beginPath();
-    ctx.ellipse(cx, destH * 0.23 + torsoBreathY, 13 * scale, 5 * scale, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // 4 Massive Arms: Upper 2 holding Sledgehammer & Tongs, Lower 2 gripping Anvil
-    ctx.strokeStyle = '#6b4c3b';
-    ctx.lineWidth = 9 * scale;
-    // Lower arms gripping anvil
-    ctx.beginPath();
-    ctx.moveTo(cx - 28 * scale, destH * 0.48);
-    ctx.lineTo(cx - 22 * scale, destH * 0.66);
-    ctx.moveTo(cx + 28 * scale, destH * 0.48);
-    ctx.lineTo(cx + 22 * scale, destH * 0.66);
-    // Upper arms raised with Sledgehammer & Tongs
-    ctx.moveTo(cx - 28 * scale, destH * 0.34);
-    ctx.lineTo(cx - 40 * scale, destH * 0.20 + leftArmBobY);
-    ctx.moveTo(cx + 28 * scale, destH * 0.34);
-    ctx.lineTo(cx + 40 * scale, destH * 0.20 + rightArmBobY);
-    ctx.stroke();
-
-    // Heavy Blacksmith Hammer in Upper Right Hand (handle -> hammer head -> gripping hand on top)
+    // 4. Heavy Blacksmith Hammer in Upper Right Hand (handle -> hammer head -> gripping hand on top)
     ctx.strokeStyle = '#5c3a21';
     ctx.lineWidth = 3.4 * scale;
     ctx.beginPath();
@@ -1559,6 +1554,15 @@ export function drawPixelSprite(
     ctx.fillRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 11 * scale);
     ctx.strokeRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 11 * scale);
     drawGrippingHand(ctx, cx + 40 * scale, destH * 0.20 + rightArmBobY, scale, '#6b4c3b', 0.15);
+
+    // 5. Flat Scarred Neck Stump (NO HEAD)
+    ctx.fillStyle = '#3b1c1a';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2 * scale;
+    ctx.beginPath();
+    ctx.ellipse(cx, destH * 0.23 + torsoBreathY, 13 * scale, 5 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
     return;
   }
@@ -1913,8 +1917,20 @@ export function drawPixelSprite(
     ctx.strokeRect(cx - 14 * scale, destH * 0.80, 9 * scale, destH * 0.10);
     ctx.strokeRect(cx + 5 * scale, destH * 0.80, 9 * scale, destH * 0.10);
 
-    // Coat Torso & Leather Cross-Belt
+    // 2. Left Arm (drawn BEFORE coat torso so torso hides shoulder seam)
+    const lanX = cx - 26 * scale + leftArmSwayX;
+    const lanY = destH * 0.56 + leftArmBobY;
+    ctx.strokeStyle = '#2b2530';
+    ctx.lineWidth = 6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 15 * scale, destH * 0.36 + torsoBreathY);
+    ctx.lineTo(lanX, lanY - 4 * scale);
+    ctx.stroke();
+
+    // 3. Coat Torso & Leather Cross-Belt
     ctx.fillStyle = '#332d3b';
+    ctx.strokeStyle = '#070509';
+    ctx.lineWidth = 2 * scale;
     ctx.fillRect(cx - 16 * scale, destH * 0.32 + torsoBreathY, 32 * scale, 36 * scale);
     ctx.strokeRect(cx - 16 * scale, destH * 0.32 + torsoBreathY, 32 * scale, 36 * scale);
     ctx.fillStyle = '#452815';
@@ -1929,15 +1945,7 @@ export function drawPixelSprite(
     ctx.fillStyle = '#facc15';
     ctx.fillRect(cx + 11 * scale, destH * 0.57 + torsoBreathY, 4 * scale, 2 * scale);
 
-    // Left Arm -> Glowing Storm Lantern -> Gloved Hand on top of bail
-    const lanX = cx - 26 * scale + leftArmSwayX;
-    const lanY = destH * 0.56 + leftArmBobY;
-    ctx.strokeStyle = '#2b2530';
-    ctx.lineWidth = 6 * scale;
-    ctx.beginPath();
-    ctx.moveTo(cx - 15 * scale, destH * 0.36 + torsoBreathY);
-    ctx.lineTo(lanX, lanY - 4 * scale);
-    ctx.stroke();
+    // 4. Glowing Storm Lantern -> Gloved Hand on top of bail
     const lanGlow = ctx.createRadialGradient(lanX, lanY + 4 * scale, 1 * scale, lanX, lanY + 4 * scale, 16 * scale);
     lanGlow.addColorStop(0, 'rgba(251, 191, 36, 0.72)');
     lanGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
@@ -2732,7 +2740,66 @@ export function drawPixelSprite(
       ctx.translate(-cx, -destH * 0.60);
     }
 
-    // 4. torso: Thân Thể Tử Thi Giáp Đen Nứt Toác + Xích Sắt & Đại Kiếm Đâm Xuyên (nx: 0.50, ny: 0.44)
+    // 4a. Arms drawn BEFORE torso so shoulder armor & crimson mantle cleanly cover joints
+    // throne_claw_left: Tay Ngai Vuốt Sắt khổng lồ bên trái (nx: 0.24, ny: 0.45)
+    if (!severedLimbs.has('throne_claw_left')) {
+      const clawGrad = ctx.createLinearGradient(cx - 56 * scale, destH * 0.34, cx - 22 * scale, destH * 0.62);
+      clawGrad.addColorStop(0, '#64748b');
+      clawGrad.addColorStop(0.5, '#334155');
+      clawGrad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = clawGrad;
+      ctx.strokeStyle = outlineDark;
+      ctx.lineWidth = 2.8 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 28 * scale, destH * 0.33);
+      ctx.lineTo(cx - 53 * scale, destH * 0.45);
+      ctx.lineTo(cx - 46 * scale, destH * 0.62);
+      ctx.lineTo(cx - 24 * scale, destH * 0.52);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Rim light on top shoulder ridge
+      ctx.strokeStyle = rimLightCol;
+      ctx.lineWidth = 1.4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 28 * scale, destH * 0.33);
+      ctx.lineTo(cx - 52 * scale, destH * 0.45);
+      ctx.stroke();
+      // Three razor iron claws
+      ctx.fillStyle = '#e2e8f0';
+      ctx.strokeStyle = outlineDark;
+      ctx.lineWidth = 1.6 * scale;
+      for (const cyOff of [0.42, 0.48, 0.54]) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 47 * scale, destH * cyOff);
+        ctx.lineTo(cx - 63 * scale, destH * (cyOff + 0.05));
+        ctx.lineTo(cx - 46 * scale, destH * (cyOff + 0.04));
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // throne_ensor_right: Tay Ngai phải (arm drawn before torso)
+    if (!severedLimbs.has('throne_ensor_right')) {
+      ctx.strokeStyle = outlineDark;
+      ctx.lineWidth = 9.5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 28 * scale, destH * 0.34);
+      ctx.lineTo(cx + 48 * scale, destH * 0.44);
+      ctx.stroke();
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 6 * scale;
+      ctx.stroke();
+      ctx.strokeStyle = rimLightCol;
+      ctx.lineWidth = 1.4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 28 * scale, destH * 0.32);
+      ctx.lineTo(cx + 48 * scale, destH * 0.42);
+      ctx.stroke();
+    }
+
+    // 4b. torso: Thân Thể Tử Thi Giáp Đen Nứt Toác + Xích Sắt (nx: 0.50, ny: 0.44)
     const armorGrad = ctx.createLinearGradient(cx - 32 * scale, destH * 0.26, cx + 32 * scale, destH * 0.62);
     armorGrad.addColorStop(0, flashWhite ? '#e2e8f0' : '#3f4856');
     armorGrad.addColorStop(0.42, flashWhite ? '#94a3b8' : '#1b202b');
@@ -2816,6 +2883,25 @@ export function drawPixelSprite(
     drawPinChain(cx - 42 * scale, destH * 0.30, cx + 26 * scale, destH * 0.56);
     drawPinChain(cx + 42 * scale, destH * 0.30, cx - 26 * scale, destH * 0.56);
 
+    // 5. void_conduit: Cột Sống / Ống Dẫn Huyết Tủy nối đỉnh ngai vàng vào gáy Vaelis (nx: 0.50, ny: 0.08)
+    if (!severedLimbs.has('void_conduit')) {
+      const pulse = 0.65 + 0.35 * Math.sin(animPhase * 2);
+      for (const ox of [-11, 0, 11]) {
+        ctx.strokeStyle = outlineDark;
+        ctx.lineWidth = 6.2 * scale;
+        ctx.beginPath();
+        ctx.moveTo(cx + ox * 1.6 * scale, destH * 0.04);
+        ctx.quadraticCurveTo(cx + ox * scale, destH * 0.14, cx + ox * 0.5 * scale, destH * 0.24);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(220, 38, 38, ${pulse})`;
+        ctx.lineWidth = 3.2 * scale;
+        ctx.stroke();
+      }
+    } else {
+      drawBlackBloodSplash(cx, destH * 0.09, 10 * scale);
+    }
+
+    // 6 & 7. Held Weapons/Props & Severed Shoulder Stumps (drawn AFTER torso & arms)
     // Colossal Blood-Stained Greatsword — disappears completely once Vaelis's left weapon arm (`throne_claw_left`) is severed
     if (!severedLimbs.has('throne_claw_left')) {
       const swGrad = ctx.createLinearGradient(cx - 5 * scale, destH * 0.36, cx + 5 * scale, destH * 0.90);
@@ -2845,86 +2931,12 @@ export function drawPixelSprite(
       ctx.moveTo(cx, destH * 0.48);
       ctx.lineTo(cx, destH * 0.86);
       ctx.stroke();
-    }
-
-    // 5. void_conduit: Cột Sống / Ống Dẫn Huyết Tủy nối đỉnh ngai vàng vào gáy Vaelis (nx: 0.50, ny: 0.08)
-    if (!severedLimbs.has('void_conduit')) {
-      const pulse = 0.65 + 0.35 * Math.sin(animPhase * 2);
-      for (const ox of [-11, 0, 11]) {
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 6.2 * scale;
-        ctx.beginPath();
-        ctx.moveTo(cx + ox * 1.6 * scale, destH * 0.04);
-        ctx.quadraticCurveTo(cx + ox * scale, destH * 0.14, cx + ox * 0.5 * scale, destH * 0.24);
-        ctx.stroke();
-        ctx.strokeStyle = `rgba(220, 38, 38, ${pulse})`;
-        ctx.lineWidth = 3.2 * scale;
-        ctx.stroke();
-      }
-    } else {
-      drawBlackBloodSplash(cx, destH * 0.09, 10 * scale);
-    }
-
-    // 6. throne_claw_left: Tay Ngai Vuốt Sắt khổng lồ bên trái (nx: 0.24, ny: 0.45)
-    if (!severedLimbs.has('throne_claw_left')) {
-      const clawGrad = ctx.createLinearGradient(cx - 56 * scale, destH * 0.34, cx - 22 * scale, destH * 0.62);
-      clawGrad.addColorStop(0, '#64748b');
-      clawGrad.addColorStop(0.5, '#334155');
-      clawGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = clawGrad;
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 2.8 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 28 * scale, destH * 0.33);
-      ctx.lineTo(cx - 53 * scale, destH * 0.45);
-      ctx.lineTo(cx - 46 * scale, destH * 0.62);
-      ctx.lineTo(cx - 24 * scale, destH * 0.52);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      // Rim light on top shoulder ridge
-      ctx.strokeStyle = rimLightCol;
-      ctx.lineWidth = 1.4 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 28 * scale, destH * 0.33);
-      ctx.lineTo(cx - 52 * scale, destH * 0.45);
-      ctx.stroke();
-      // Three razor iron claws
-      ctx.fillStyle = '#e2e8f0';
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 1.6 * scale;
-      for (const cyOff of [0.42, 0.48, 0.54]) {
-        ctx.beginPath();
-        ctx.moveTo(cx - 47 * scale, destH * cyOff);
-        ctx.lineTo(cx - 63 * scale, destH * (cyOff + 0.05));
-        ctx.lineTo(cx - 46 * scale, destH * (cyOff + 0.04));
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
     } else {
       drawArmoredSeveredStump(ctx, cx - 32 * scale, destH * 0.40, 11 * scale, scale);
     }
 
-    // 7. throne_ensor_right: Tay Ngai Lư Hương Huyết Hỏa bên phải (nx: 0.76, ny: 0.45)
+    // Hanging Blood-Fire Censer swinging gently & Gauntlet gripping chain on top layer
     if (!severedLimbs.has('throne_ensor_right')) {
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 9.5 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 28 * scale, destH * 0.34);
-      ctx.lineTo(cx + 48 * scale, destH * 0.44);
-      ctx.stroke();
-      ctx.strokeStyle = '#475569';
-      ctx.lineWidth = 6 * scale;
-      ctx.stroke();
-      ctx.strokeStyle = rimLightCol;
-      ctx.lineWidth = 1.4 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 28 * scale, destH * 0.32);
-      ctx.lineTo(cx + 48 * scale, destH * 0.42);
-      ctx.stroke();
-
-      // Hanging Blood-Fire Censer swinging gently
       const censerX = cx + (50 + Math.sin(animPhase * 1.2) * 5) * scale;
       const censerY = destH * 0.59;
       ctx.strokeStyle = '#d4af37';
@@ -3050,7 +3062,31 @@ export function drawPixelSprite(
       ctx.translate(-cx, -destH * 0.62);
     }
 
-    // torso: Thân Bọc Thép & tạp dề đồ tể đẫm máu
+    // 2. Arms (drawn BEFORE torso so chest armor covers shoulder joints)
+    if (!severedLimbs.has('left_arm')) {
+      ctx.save();
+      ctx.translate(leftArmSwayX, leftArmBobY);
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 9 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 30 * scale, destH * 0.32);
+      ctx.lineTo(cx - 40 * scale, destH * 0.52);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (!severedLimbs.has('right_arm')) {
+      ctx.save();
+      ctx.translate(rightArmSwayX, rightArmBobY);
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 9 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 30 * scale, destH * 0.32);
+      ctx.lineTo(cx + 38 * scale, destH * 0.50);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 3. torso: Thân Bọc Thép & tạp dề đồ tể đẫm máu
     ctx.save();
     ctx.translate(0, torsoBreathY);
     ctx.fillStyle = '#475569';
@@ -3069,16 +3105,10 @@ export function drawPixelSprite(
     ctx.strokeRect(cx - 20 * scale, destH * 0.34, 40 * scale, 28 * scale);
     ctx.restore();
 
-    // left_arm: Xích Móc Sắt (cẳng tay -> xích móc -> bàn tay nắm trên cùng)
+    // 4. Weapons / Held Props & Gripping Hands (drawn AFTER arms & torso)
     if (!severedLimbs.has('left_arm')) {
       ctx.save();
       ctx.translate(leftArmSwayX, leftArmBobY);
-      ctx.strokeStyle = '#78350f';
-      ctx.lineWidth = 9 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 30 * scale, destH * 0.32);
-      ctx.lineTo(cx - 40 * scale, destH * 0.52);
-      ctx.stroke();
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 2.8 * scale;
       ctx.beginPath();
@@ -3092,16 +3122,9 @@ export function drawPixelSprite(
       drawArmoredSeveredStump(ctx, cx - 30 * scale, destH * 0.36, 9 * scale, scale);
     }
 
-    // right_arm: Đại Phủ Chặt Đầu (cẳng tay -> đại phủ -> bàn tay nắm trên cùng)
     if (!severedLimbs.has('right_arm')) {
       ctx.save();
       ctx.translate(rightArmSwayX, rightArmBobY);
-      ctx.strokeStyle = '#78350f';
-      ctx.lineWidth = 9 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 30 * scale, destH * 0.32);
-      ctx.lineTo(cx + 38 * scale, destH * 0.50);
-      ctx.stroke();
       drawDetailedWeapon(ctx, 'butcher_kaelgor', 'right', cx + 38 * scale, destH * 0.50, scale, isTelegraphing);
       drawGrippingHand(ctx, cx + 38 * scale, destH * 0.50, scale, '#78350f', 0.25);
       ctx.restore();
@@ -3162,7 +3185,20 @@ export function drawPixelSprite(
       ctx.translate(-cx, -destH * 0.62);
     }
 
-    // torso: Thân Giáp đen nặng
+    // 2. Right Arm forearm (drawn BEFORE torso so chest armor covers shoulder seam)
+    if (!severedLimbs.has('right_arm')) {
+      ctx.save();
+      ctx.translate(rightArmSwayX, rightArmBobY);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 8 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 26 * scale, destH * 0.32);
+      ctx.lineTo(cx + 38 * scale, destH * 0.50);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 3. torso: Thân Giáp đen nặng
     ctx.save();
     ctx.translate(0, torsoBreathY);
     ctx.fillStyle = '#1e293b';
@@ -3175,16 +3211,10 @@ export function drawPixelSprite(
     ctx.strokeRect(cx - 18 * scale, destH * 0.34, 36 * scale, 22 * scale);
     ctx.restore();
 
-    // right_arm: Trọng Kiếm Đen (cẳng tay -> trọng kiếm -> găng giáp nắm trên cùng)
+    // 4. Weapons / Shields & Gripping Hands (drawn AFTER arms & torso)
     if (!severedLimbs.has('right_arm')) {
       ctx.save();
       ctx.translate(rightArmSwayX, rightArmBobY);
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 8 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 26 * scale, destH * 0.32);
-      ctx.lineTo(cx + 38 * scale, destH * 0.50);
-      ctx.stroke();
       drawDetailedWeapon(ctx, 'dullahan_knight', 'right', cx + 38 * scale, destH * 0.50, scale, isTelegraphing);
       drawGrippingHand(ctx, cx + 38 * scale, destH * 0.50, scale, '#334155', 0.25);
       ctx.restore();
@@ -3285,7 +3315,25 @@ export function drawPixelSprite(
       ctx.translate(-cx, -destH * 0.62);
     }
 
-    // torso: Lễ phục huyết tế đỏ sẫm
+    // 2. Left & Right Arms (drawn BEFORE torso so robe covers shoulder seams)
+    if (!severedLimbs.has('left_arm')) {
+      ctx.strokeStyle = '#d6b89c';
+      ctx.lineWidth = 5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 20 * scale, destH * 0.34);
+      ctx.lineTo(cx - 36 * scale, destH * 0.48 + leftArmBobY);
+      ctx.stroke();
+    }
+    if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#d6b89c';
+      ctx.lineWidth = 5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 20 * scale, destH * 0.34);
+      ctx.lineTo(cx + 36 * scale, destH * 0.48 + rightArmBobY);
+      ctx.stroke();
+    }
+
+    // 3. torso: Lễ phục huyết tế đỏ sẫm
     ctx.save();
     ctx.translate(0, torsoBreathY);
     ctx.fillStyle = '#7f1d1d';
@@ -3301,14 +3349,8 @@ export function drawPixelSprite(
     ctx.stroke();
     ctx.restore();
 
-    // left_arm: Cụm Tim Huyết Tinh phát sáng
+    // 4. Held Props & Staff (drawn AFTER arms & torso)
     if (!severedLimbs.has('left_arm')) {
-      ctx.strokeStyle = '#d6b89c';
-      ctx.lineWidth = 5 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 20 * scale, destH * 0.34);
-      ctx.lineTo(cx - 36 * scale, destH * 0.48 + leftArmBobY);
-      ctx.stroke();
       ctx.fillStyle = '#ef4444';
       ctx.strokeStyle = '#070509';
       ctx.lineWidth = 2 * scale;
@@ -3322,14 +3364,7 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 22 * scale, destH * 0.36, 8 * scale);
     }
 
-    // right_arm: Trượng Xương (cẳng tay -> trượng xương -> bàn tay nắm trên cùng)
     if (!severedLimbs.has('right_arm')) {
-      ctx.strokeStyle = '#d6b89c';
-      ctx.lineWidth = 5 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 20 * scale, destH * 0.34);
-      ctx.lineTo(cx + 36 * scale, destH * 0.48 + rightArmBobY);
-      ctx.stroke();
       ctx.strokeStyle = '#e7e5e4';
       ctx.lineWidth = 3.2 * scale;
       ctx.beginPath();
@@ -3401,7 +3436,31 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx, destH * 0.74, 11 * scale);
     }
 
-    // torso: Thân Ghép Xác khổng lồ khâu chỉ sắt
+    // 2. Left & Right Arms (drawn BEFORE torso so torso covers shoulder seams)
+    if (!severedLimbs.has('left_arm')) {
+      ctx.fillStyle = '#e7e5e4';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 32 * scale, destH * 0.38);
+      ctx.lineTo(cx - 56 * scale, destH * 0.52 + leftArmBobY);
+      ctx.lineTo(cx - 42 * scale, destH * 0.66 + leftArmBobY);
+      ctx.lineTo(cx - 26 * scale, destH * 0.50);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (!severedLimbs.has('right_arm')) {
+      ctx.fillStyle = '#991b1b';
+      ctx.strokeStyle = '#070509';
+      ctx.lineWidth = 2.4 * scale;
+      ctx.beginPath();
+      ctx.ellipse(cx + 42 * scale, destH * 0.50 + rightArmBobY, 15 * scale, 20 * scale, 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 3. torso: Thân Ghép Xác khổng lồ khâu chỉ sắt
     ctx.save();
     ctx.translate(0, torsoBreathY);
     ctx.fillStyle = '#7f1d1d';
@@ -3419,33 +3478,11 @@ export function drawPixelSprite(
     ctx.stroke();
     ctx.restore();
 
-    // left_arm: Càng Xương Khổng Lồ Trái
-    if (!severedLimbs.has('left_arm')) {
-      ctx.fillStyle = '#e7e5e4';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.4 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 32 * scale, destH * 0.38);
-      ctx.lineTo(cx - 56 * scale, destH * 0.52 + leftArmBobY);
-      ctx.lineTo(cx - 42 * scale, destH * 0.66 + leftArmBobY);
-      ctx.lineTo(cx - 26 * scale, destH * 0.50);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    } else {
+    // 4. Severed Arm Stumps (drawn AFTER torso so they remain visible on shoulder seams)
+    if (severedLimbs.has('left_arm')) {
       drawArterialStump(ctx, cx - 32 * scale, destH * 0.44, 9 * scale);
     }
-
-    // right_arm: Cánh Tay Búa Thịt Phải
-    if (!severedLimbs.has('right_arm')) {
-      ctx.fillStyle = '#991b1b';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.4 * scale;
-      ctx.beginPath();
-      ctx.ellipse(cx + 42 * scale, destH * 0.50 + rightArmBobY, 15 * scale, 20 * scale, 0.25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    } else {
+    if (severedLimbs.has('right_arm')) {
       drawArterialStump(ctx, cx + 32 * scale, destH * 0.44, 9 * scale);
     }
 
@@ -3509,7 +3546,35 @@ export function drawPixelSprite(
       ctx.translate(-cx, -destH * 0.65);
     }
 
-    // torso: Lễ phục giáo hoàng sáp nến nóng 3 sắc độ + vệt máu khô & khuôn mặt trẻ em (nx: 0.50, ny: 0.45)
+    // 2. Left & Right Twin Arms (drawn BEFORE torso so wax robe covers shoulder seams)
+    if (!severedLimbs.has('left_arm')) {
+      ctx.strokeStyle = outlineDark;
+      ctx.lineWidth = 8 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 28 * scale, destH * 0.32);
+      ctx.lineTo(cx - 44 * scale, destH * 0.40 + leftArmBobY);
+      ctx.moveTo(cx - 28 * scale, destH * 0.42);
+      ctx.lineTo(cx - 44 * scale, destH * 0.52 + leftArmBobY);
+      ctx.stroke();
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 4.6 * scale;
+      ctx.stroke();
+    }
+    if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = outlineDark;
+      ctx.lineWidth = 8 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 28 * scale, destH * 0.32);
+      ctx.lineTo(cx + 44 * scale, destH * 0.40 + rightArmBobY);
+      ctx.moveTo(cx + 28 * scale, destH * 0.42);
+      ctx.lineTo(cx + 44 * scale, destH * 0.52 + rightArmBobY);
+      ctx.stroke();
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 4.6 * scale;
+      ctx.stroke();
+    }
+
+    // 3. torso: Lễ phục giáo hoàng sáp nến nóng 3 sắc độ + vệt máu khô & khuôn mặt trẻ em (nx: 0.50, ny: 0.45)
     ctx.save();
     ctx.translate(0, torsoBreathY);
     const waxGrad = ctx.createLinearGradient(cx - 36 * scale, destH * 0.27, cx + 36 * scale, destH * 0.65);
@@ -3561,20 +3626,8 @@ export function drawPixelSprite(
     }
     ctx.restore();
 
-    // left_arm: 2 cánh tay trái ôm Kinh Văn Da Người đóng đinh đồng (nx: 0.24, ny: 0.44)
+    // 4. Held Tome, Bell Staff, Gripping Hands & Severed Stumps (drawn AFTER arms & torso)
     if (!severedLimbs.has('left_arm')) {
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 8 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 28 * scale, destH * 0.32);
-      ctx.lineTo(cx - 44 * scale, destH * 0.40 + leftArmBobY);
-      ctx.moveTo(cx - 28 * scale, destH * 0.42);
-      ctx.lineTo(cx - 44 * scale, destH * 0.52 + leftArmBobY);
-      ctx.stroke();
-      ctx.strokeStyle = '#f1f5f9';
-      ctx.lineWidth = 4.6 * scale;
-      ctx.stroke();
-
       // Kinh Văn Da Người đóng đinh đồng
       const bookGrad = ctx.createLinearGradient(cx - 56 * scale, destH * 0.33, cx - 34 * scale, destH * 0.62);
       bookGrad.addColorStop(0, '#92400e');
@@ -3596,20 +3649,7 @@ export function drawPixelSprite(
       drawArmoredSeveredStump(ctx, cx - 30 * scale, destH * 0.42, 10 * scale, scale);
     }
 
-    // right_arm: 2 cánh tay phải cầm trượng gắn Chuông Đồng Đẫm Máu (nx: 0.76, ny: 0.44)
     if (!severedLimbs.has('right_arm')) {
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 8 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 28 * scale, destH * 0.32);
-      ctx.lineTo(cx + 44 * scale, destH * 0.40 + rightArmBobY);
-      ctx.moveTo(cx + 28 * scale, destH * 0.42);
-      ctx.lineTo(cx + 44 * scale, destH * 0.52 + rightArmBobY);
-      ctx.stroke();
-      ctx.strokeStyle = '#f1f5f9';
-      ctx.lineWidth = 4.6 * scale;
-      ctx.stroke();
-
       // Staff with Bloodstained Bronze Bell
       ctx.strokeStyle = outlineDark;
       ctx.lineWidth = 6 * scale;
@@ -3707,7 +3747,26 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx, destH * 0.76, 11 * scale);
     }
 
-    // torso: Nữ tu già nua bị trói chặt vào bánh xe gỗ (nx: 0.50, ny: 0.46)
+    // 2. Left & Right Arms (drawn BEFORE torso so nun habit covers shoulder seams)
+    if (!severedLimbs.has('left_arm')) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 18 * scale, destH * 0.34);
+      ctx.lineTo(cx - 32 * scale, destH * 0.44);
+      ctx.lineTo(cx - 16 * scale, destH * 0.52);
+      ctx.stroke();
+    }
+    if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 5 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 18 * scale, destH * 0.34);
+      ctx.lineTo(cx + 28 * scale, destH * 0.48);
+      ctx.stroke();
+    }
+
+    // 3. torso: Nữ tu già nua bị trói chặt vào bánh xe gỗ (nx: 0.50, ny: 0.46)
     ctx.fillStyle = '#1e1b4b';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2.4 * scale;
@@ -3720,27 +3779,11 @@ export function drawPixelSprite(
     ctx.fill();
     ctx.stroke();
 
-    // left_arm: Hai tay bị bẻ ngược ra sau khâu liền vào lưng (nx: 0.27, ny: 0.42)
-    if (!severedLimbs.has('left_arm')) {
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 5 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 18 * scale, destH * 0.34);
-      ctx.lineTo(cx - 32 * scale, destH * 0.44);
-      ctx.lineTo(cx - 16 * scale, destH * 0.52);
-      ctx.stroke();
-    } else {
+    // 4. Held Weapon, Gripping Hand & Severed Stumps (drawn AFTER arms & torso)
+    if (severedLimbs.has('left_arm')) {
       drawArterialStump(ctx, cx - 22 * scale, destH * 0.42, 8 * scale);
     }
-
-    // right_arm: Tay phải điều khiển trượng sáp nóng (cẳng tay -> trượng -> bàn tay nắm trên cùng)
     if (!severedLimbs.has('right_arm')) {
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 5 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 18 * scale, destH * 0.34);
-      ctx.lineTo(cx + 28 * scale, destH * 0.48);
-      ctx.stroke();
       drawDetailedWeapon(ctx, 'grand_abbess', 'right', cx + 28 * scale, destH * 0.48, scale, isTelegraphing);
       drawGrippingHand(ctx, cx + 28 * scale, destH * 0.48, scale, '#cbd5e1', 0.2);
     } else {
@@ -3803,7 +3846,17 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx + 14 * scale, destH * 0.70, 9 * scale);
     }
 
-    // torso: Giáp bạch kim khổng lồ bị ăn mòn, qua các khe khớp trào ra bùn máu đen (nx: 0.50, ny: 0.44)
+    // 2. Right Arm forearm (drawn BEFORE torso so platinum chestplate covers shoulder seam)
+    if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 8 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 25 * scale, destH * 0.34 + rightArmBobY);
+      ctx.lineTo(cx + 36 * scale, destH * 0.46 + rightArmBobY);
+      ctx.stroke();
+    }
+
+    // 3. torso: Giáp bạch kim khổng lồ bị ăn mòn, qua các khe khớp trào ra bùn máu đen (nx: 0.50, ny: 0.44)
     ctx.fillStyle = '#e2e8f0';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2.5 * scale;
@@ -3814,7 +3867,7 @@ export function drawPixelSprite(
     ctx.fillRect(cx - 18 * scale, destH * 0.36 + torsoBreathY, 36 * scale, 5 * scale);
     ctx.fillRect(cx - 4 * scale, destH * 0.36 + torsoBreathY, 8 * scale, 22 * scale);
 
-    // left_arm: Cầm Khiên Tháp Bạch Kim khoét thủng ở giữa lộ con mắt khổng lồ đảo liên tục (nx: 0.24, ny: 0.46)
+    // 4. Held Eyeball Tower Shield, Square War Mace, Gripping Hand & Severed Stumps
     if (!severedLimbs.has('left_arm')) {
       ctx.fillStyle = '#cbd5e1';
       ctx.strokeStyle = '#070509';
@@ -3841,14 +3894,7 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 30 * scale, destH * 0.42, 9 * scale);
     }
 
-    // right_arm: Cầm Chùy Chiến Bạch Kim đầu vuông nặng trịch (cẳng tay -> chùy -> găng bạch kim trên cùng)
     if (!severedLimbs.has('right_arm')) {
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 8 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 25 * scale, destH * 0.34 + rightArmBobY);
-      ctx.lineTo(cx + 36 * scale, destH * 0.46 + rightArmBobY);
-      ctx.stroke();
       ctx.strokeStyle = '#64748b';
       ctx.lineWidth = 4 * scale;
       ctx.beginPath();
@@ -4054,7 +4100,25 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 10 * scale, destH * 0.58, 7 * scale);
       drawArterialStump(ctx, cx + 10 * scale, destH * 0.58, 7 * scale);
     }
-    // Charred black ribcage & spine
+    // 2. Left & Right Bone Arms (drawn BEFORE torso ribcage)
+    if (!severedLimbs.has('left_arm')) {
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx - 16 * scale, destH * 0.34);
+      ctx.lineTo(cx - 26 * scale, destH * 0.48);
+      ctx.stroke();
+    }
+    if (!severedLimbs.has('right_arm')) {
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 4.2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(cx + 16 * scale, destH * 0.34);
+      ctx.lineTo(cx + 24 * scale, destH * 0.48);
+      ctx.stroke();
+    }
+
+    // 3. Charred black ribcage & spine
     ctx.strokeStyle = '#18181b';
     ctx.lineWidth = 5 * scale;
     ctx.beginPath();
@@ -4069,14 +4133,9 @@ export function drawPixelSprite(
       ctx.lineTo(cx + 16 * scale, ry);
       ctx.stroke();
     }
-    // Left arm with shattered shield fragment
+
+    // 4. Held Shield / Weapon, Gripping Hand & Severed Stumps
     if (!severedLimbs.has('left_arm')) {
-      ctx.strokeStyle = '#18181b';
-      ctx.lineWidth = 4 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx - 16 * scale, destH * 0.34);
-      ctx.lineTo(cx - 26 * scale, destH * 0.48);
-      ctx.stroke();
       ctx.fillStyle = '#334155';
       ctx.strokeStyle = '#070509';
       ctx.lineWidth = 2 * scale;
@@ -4093,12 +4152,6 @@ export function drawPixelSprite(
       drawArterialStump(ctx, cx - 18 * scale, destH * 0.36, 7 * scale);
     }
     if (!severedLimbs.has('right_arm')) {
-      ctx.strokeStyle = '#18181b';
-      ctx.lineWidth = 4.2 * scale;
-      ctx.beginPath();
-      ctx.moveTo(cx + 16 * scale, destH * 0.34);
-      ctx.lineTo(cx + 24 * scale, destH * 0.48);
-      ctx.stroke();
       drawDetailedWeapon(ctx, 'black_bone_skeleton', 'right', cx + 24 * scale, destH * 0.48, scale, isTelegraphing);
       drawGrippingHand(ctx, cx + 24 * scale, destH * 0.48, scale, '#27272a', 0.25);
     } else {
@@ -4132,12 +4185,18 @@ export function drawPixelSprite(
     ctx.fillStyle = '#44403c';
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2 * scale;
-    // Legs
+    // 1. Legs
     ctx.fillRect(cx - 12 * scale, destH * 0.58, 9 * scale, 28 * scale);
     ctx.strokeRect(cx - 12 * scale, destH * 0.58, 9 * scale, 28 * scale);
     ctx.fillRect(cx + 3 * scale, destH * 0.58, 9 * scale, 28 * scale);
     ctx.strokeRect(cx + 3 * scale, destH * 0.58, 9 * scale, 28 * scale);
-    // Torn prison tunic
+    // 2. Arms (drawn BEFORE tunic so tunic covers shoulder seams)
+    ctx.fillStyle = '#d6b89c';
+    ctx.fillRect(cx - 28 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    ctx.strokeRect(cx - 28 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    ctx.fillRect(cx + 20 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    ctx.strokeRect(cx + 20 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    // 3. Torn prison tunic
     ctx.fillStyle = '#57534e';
     ctx.beginPath();
     ctx.moveTo(cx - 20 * scale, destH * 0.30);
@@ -4147,12 +4206,7 @@ export function drawPixelSprite(
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    // Arms & Broken Iron Wrist Shackles (NO shield)
-    ctx.fillStyle = '#d6b89c';
-    ctx.fillRect(cx - 28 * scale, destH * 0.34, 8 * scale, 22 * scale);
-    ctx.strokeRect(cx - 28 * scale, destH * 0.34, 8 * scale, 22 * scale);
-    ctx.fillRect(cx + 20 * scale, destH * 0.34, 8 * scale, 22 * scale);
-    ctx.strokeRect(cx + 20 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    // 4. Broken Iron Wrist Shackles (NO shield)
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 2.6 * scale;
     ctx.strokeRect(cx - 29 * scale, destH * 0.50, 10 * scale, 4 * scale);
@@ -4163,7 +4217,7 @@ export function drawPixelSprite(
     ctx.moveTo(cx + 25 * scale, destH * 0.54);
     ctx.lineTo(cx + 30 * scale, destH * 0.66);
     ctx.stroke();
-    // Face + Tousled Black Hair (NO helmet)
+    // 5. Face + Tousled Black Hair (NO helmet)
     ctx.fillStyle = '#d6b89c';
     ctx.beginPath();
     ctx.arc(cx, destH * 0.21 + headBobY * 0.4, 11 * scale, 0, Math.PI * 2);
@@ -4185,16 +4239,16 @@ export function drawPixelSprite(
   }
 
   if (spriteKey === 'broken_knight') {
-    // Kỵ Sĩ Roland: Áo giáp xám sứt mẻ, mũ sắt không chỏm lông, râu rậm (đồng bộ cẳng tay -> kiếm -> găng tay trên cùng)
-    ctx.fillStyle = '#475569';
+    // Kỵ Sĩ Roland: Áo giáp xám sứt mẻ, mũ sắt không chỏm lông, râu rậm (chân -> cánh tay -> thân giáp -> kiếm/găng tay -> đầu)
     ctx.strokeStyle = '#070509';
     ctx.lineWidth = 2 * scale;
-    ctx.fillRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
-    ctx.strokeRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
+    // 1. Legs
+    ctx.fillStyle = '#475569';
     ctx.fillRect(cx - 14 * scale, destH * 0.62, 10 * scale, 26 * scale);
     ctx.strokeRect(cx - 14 * scale, destH * 0.62, 10 * scale, 26 * scale);
     ctx.fillRect(cx + 4 * scale, destH * 0.62, 10 * scale, 26 * scale);
     ctx.strokeRect(cx + 4 * scale, destH * 0.62, 10 * scale, 26 * scale);
+    // 2. Arms (drawn BEFORE torso armor)
     if (!severedLimbs.has('left_arm')) {
       ctx.fillStyle = '#475569';
       ctx.fillRect(cx - 26 * scale, destH * 0.34, 8 * scale, 22 * scale);
@@ -4204,6 +4258,13 @@ export function drawPixelSprite(
       ctx.fillStyle = '#475569';
       ctx.fillRect(cx + 18 * scale, destH * 0.34, 8 * scale, 22 * scale);
       ctx.strokeRect(cx + 18 * scale, destH * 0.34, 8 * scale, 22 * scale);
+    }
+    // 3. Torso armor
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
+    ctx.strokeRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
+    // 4. Held Weapon & Gripping Hand
+    if (!severedLimbs.has('right_arm')) {
       drawDetailedWeapon(ctx, 'broken_knight', 'right', cx + 22 * scale, destH * 0.55, scale, isTelegraphing);
       drawGrippingHand(ctx, cx + 22 * scale, destH * 0.55, scale, '#475569', 0.22);
     }
@@ -4389,10 +4450,47 @@ export function drawPixelSprite(
     ctx.translate(-cx, -destH * 0.60);
   }
 
-  // 3. TORSO (With 45% Grimdark Ink Shadow Block & Rot/Nails Details)
+  const tw = 24 * scale * torsoWidthMult * torsoExpandX;
+  const humanoidHandCol =
+    spriteKey === 'fallen_knight'
+      ? '#64748b'
+      : spriteKey === 'armored_ghoul'
+      ? '#475569'
+      : fleshMid;
+
+  // 2b. LEFT & RIGHT ARMS (drawn BEFORE torso & chest armor so shoulder joints stay cleanly tucked beneath torso/pauldrons)
+  if (!severedLimbs.has('left_arm')) {
+    ctx.save();
+    ctx.translate(leftArmSwayX, leftArmBobY);
+    ctx.fillStyle = fleshMid;
+    ctx.beginPath();
+    ctx.moveTo(cx - tw * 0.9, destH * 0.31);
+    ctx.bezierCurveTo(cx - 44 * scale, destH * 0.37, cx - 44 * scale, destH * 0.53, cx - 31 * scale, destH * 0.59);
+    ctx.lineTo(cx - 21 * scale, destH * 0.54);
+    ctx.bezierCurveTo(cx - 28 * scale, destH * 0.46, cx - 26 * scale, destH * 0.38, cx - tw * 0.8, destH * 0.34);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (!severedLimbs.has('right_arm')) {
+    ctx.save();
+    ctx.translate(rightArmSwayX, rightArmBobY);
+    ctx.fillStyle = fleshMid;
+    ctx.beginPath();
+    ctx.moveTo(cx + tw * 0.9, destH * 0.31);
+    ctx.bezierCurveTo(cx + 44 * scale, destH * 0.37, cx + 44 * scale, destH * 0.53, cx + 31 * scale, destH * 0.59);
+    ctx.lineTo(cx + 21 * scale, destH * 0.54);
+    ctx.bezierCurveTo(cx + 28 * scale, destH * 0.46, cx + 26 * scale, destH * 0.38, cx + tw * 0.8, destH * 0.34);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 3. TORSO / ARMOR / BELT (With 45% Grimdark Ink Shadow Block & Rot/Nails Details)
   ctx.save();
   ctx.translate(0, torsoBreathY);
-  const tw = 24 * scale * torsoWidthMult * torsoExpandX;
   const torsoGrad = ctx.createRadialGradient(cx, cy - 6 * scale, 4 * scale, cx, cy, 36 * scale);
   torsoGrad.addColorStop(0, fleshLight);
   torsoGrad.addColorStop(0.5, fleshMid);
@@ -4519,14 +4617,7 @@ export function drawPixelSprite(
   ctx.strokeRect(cx - tw * 0.78, destH * 0.55, tw * 1.56, 6 * scale);
   ctx.restore();
 
-  const humanoidHandCol =
-    spriteKey === 'fallen_knight'
-      ? '#64748b'
-      : spriteKey === 'armored_ghoul'
-      ? '#475569'
-      : fleshMid;
-
-  // 4. LEFT ARM (Forearm -> Weapon/Shield -> Gripping Hand strictly on top when not behind large shield)
+  // 4. WEAPONS / SHIELDS / HELD PROPS & SEVERED SHOULDER STUMPS (drawn AFTER arms & torso)
   if (!severedLimbs.has('left_arm')) {
     const isLeftLargeShield =
       spriteKey === 'executioner_paladin' ||
@@ -4536,15 +4627,6 @@ export function drawPixelSprite(
     const leftGripY = isLeftLargeShield ? destH * 0.54 : destH * 0.555;
     ctx.save();
     ctx.translate(leftArmSwayX, leftArmBobY);
-    ctx.fillStyle = fleshMid;
-    ctx.beginPath();
-    ctx.moveTo(cx - tw * 0.9, destH * 0.31);
-    ctx.bezierCurveTo(cx - 44 * scale, destH * 0.37, cx - 44 * scale, destH * 0.53, cx - 31 * scale, destH * 0.59);
-    ctx.lineTo(cx - 21 * scale, destH * 0.54);
-    ctx.bezierCurveTo(cx - 28 * scale, destH * 0.46, cx - 26 * scale, destH * 0.38, cx - tw * 0.8, destH * 0.34);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
     drawDetailedWeapon(ctx, spriteKey, 'left', leftGripX, leftGripY, scale, isTelegraphing);
     if (!isLeftLargeShield) {
       drawGrippingHand(ctx, leftGripX, leftGripY, scale, humanoidHandCol, -0.22);
@@ -4556,21 +4638,11 @@ export function drawPixelSprite(
     drawArterialStump(ctx, cx - tw * 0.9, destH * 0.36 + torsoBreathY, 8.5 * scale);
   }
 
-  // 5. RIGHT ARM (Forearm -> Weapon -> Gripping Hand strictly on top layer)
   if (!severedLimbs.has('right_arm')) {
     const rightGripX = cx + 28.5 * scale;
     const rightGripY = destH * 0.555;
     ctx.save();
     ctx.translate(rightArmSwayX, rightArmBobY);
-    ctx.fillStyle = fleshMid;
-    ctx.beginPath();
-    ctx.moveTo(cx + tw * 0.9, destH * 0.31);
-    ctx.bezierCurveTo(cx + 44 * scale, destH * 0.37, cx + 44 * scale, destH * 0.53, cx + 31 * scale, destH * 0.59);
-    ctx.lineTo(cx + 21 * scale, destH * 0.54);
-    ctx.bezierCurveTo(cx + 28 * scale, destH * 0.46, cx + 26 * scale, destH * 0.38, cx + tw * 0.8, destH * 0.34);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
     drawDetailedWeapon(ctx, spriteKey, 'right', rightGripX, rightGripY, scale, isTelegraphing);
     drawGrippingHand(ctx, rightGripX, rightGripY, scale, humanoidHandCol, 0.22);
     ctx.restore();
