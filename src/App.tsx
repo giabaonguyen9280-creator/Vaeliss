@@ -333,6 +333,22 @@ export default function App() {
   const [guideTab, setGuideTab] = useState<'lore' | 'move' | 'combat' | 'survival'>('lore');
   const [areaBannerText, setAreaBannerText] = useState<string>('Ngoại Vi Đại Giáo Đường Goethe');
   const [areaBannerKey, setAreaBannerKey] = useState<number>(1);
+  const [sensoryBarVisible, setSensoryBarVisible] = useState<boolean>(true);
+  const lastSensoryAreaKeyRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (screen !== 'playing') {
+      setSensoryBarVisible(false);
+      return;
+    }
+    if (lastSensoryAreaKeyRef.current === areaBannerKey) return;
+    lastSensoryAreaKeyRef.current = areaBannerKey;
+    setSensoryBarVisible(true);
+    const timer = window.setTimeout(() => {
+      setSensoryBarVisible(false);
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [areaBannerKey, screen]);
 
   // Trail coordinates so up to 3 recruited party members follow behind the player on the map
   const [trailCoords, setTrailCoords] = useState<Array<{ x: number; y: number }>>([
@@ -6211,9 +6227,11 @@ export default function App() {
               </div>
             )}
 
-            {/* Slim Bottom Sensory Line */}
+            {/* Slim Bottom Sensory Line (auto-hides 5s after entering an area, reappears on re-entry) */}
             <div
-              className="shrink-0 bg-[#0b090e]/95 border-t border-[#3b2f2d] px-3.5 py-1.5 text-xs sm:text-sm text-[#cfc0a9] italic flex items-center justify-between gap-2"
+              className={`absolute inset-x-0 bottom-0 z-20 bg-[#0b090e]/95 border-t border-[#3b2f2d] px-3.5 py-1.5 text-xs sm:text-sm text-[#cfc0a9] italic flex items-center justify-between gap-2 transition-opacity duration-500 ${
+                sensoryBarVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              }`}
               title={currentRoom.sensoryLine}
             >
               <span className="truncate">“{currentRoom.sensoryLine}”</span>

@@ -814,17 +814,16 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                                   return (
                                     <span key={st.label} className="text-[#cfc0a9] whitespace-nowrap">
                                       {st.label}:{' '}
-                                      {isComparingDifferent && d !== 0 ? (
+                                      <span className="font-bold text-[#dfd2b4]">
+                                        {st.valueText}
+                                      </span>
+                                      {isComparingDifferent && d !== 0 && (
                                         <span
-                                          className={`font-bold ${
+                                          className={`ml-1 font-bold ${
                                             d > 0 ? 'text-[#6ee7b7]' : 'text-[#f87171]'
                                           }`}
                                         >
-                                          {d > 0 ? `+${d}${suf}` : `${d}${suf}`}
-                                        </span>
-                                      ) : (
-                                        <span className="font-bold text-[#9ab08e]">
-                                          {st.valueText}
+                                          ({d > 0 ? `+${d}${suf}` : `${d}${suf}`})
                                         </span>
                                       )}
                                     </span>
