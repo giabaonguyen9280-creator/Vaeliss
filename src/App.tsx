@@ -147,14 +147,16 @@ export default function App() {
   const [activeEnemyUid, setActiveEnemyUid] = useState<string | null>(null);
   const [combatLogs, setCombatLogs] = useState<string[]>([]);
   const [selectedLimbId, setSelectedLimbId] = useState<string>('torso');
-  const [focusedLimbId, setFocusedLimbId] = useState<string | null>(null); // 2-step click confirmation
+  const selectedLimbIdRef = useRef<string>('torso');
+  selectedLimbIdRef.current = selectedLimbId;
   const [combatMenuMode, setCombatMenuMode] = useState<CombatMenuMode>('main');
   const [activeActorIdx, setActiveActorIdx] = useState<number>(0);
   const [combatFocusPhase, setCombatFocusPhase] = useState<
-    'action' | 'skills_menu' | 'items_menu' | 'limb'
+    'action' | 'skills_menu' | 'items_menu'
   >('action');
   const [combatActionCursor, setCombatActionCursor] = useState<number>(0);
   const [combatSubCursor, setCombatSubCursor] = useState<number>(0);
+  const [pendingAction, setPendingAction] = useState<'ATTACK' | 'SKILL' | null>(null);
   const [pendingSkillId, setPendingSkillId] = useState<string | null>(null);
 
   // Audio & Visual Preferences (persisted in localStorage)
@@ -885,13 +887,14 @@ export default function App() {
         )?.id ||
         enemyInst.limbs.find((l) => l.hp > 0)?.id ||
         'torso';
+      (document.activeElement as HTMLElement | null)?.blur?.();
       setSelectedLimbId(defaultLimb);
-      setFocusedLimbId(null);
       setCombatMenuMode('main');
       setActiveActorIdx(0);
       setCombatFocusPhase('action');
       setCombatActionCursor(0);
       setCombatSubCursor(0);
+      setPendingAction(null);
       setPendingSkillId(null);
       combatEngineRef.current.resetStageEffects();
 
@@ -1134,7 +1137,9 @@ export default function App() {
       setActiveEnemyUid(null);
       setActiveActorIdx(0);
       setCombatMenuMode('main');
-      setFocusedLimbId(null);
+      setCombatFocusPhase('action');
+      setPendingAction(null);
+      setPendingSkillId(null);
       setScreen(opts?.nextScreen || 'playing');
     },
     []
@@ -4541,9 +4546,9 @@ export default function App() {
           : eCur;
 
         syncCombatState(pCur, persistedInitEnemy, outcome.result.logs);
-        setFocusedLimbId(null);
         setCombatMenuMode('main');
         setCombatFocusPhase('action');
+        setPendingAction(null);
         setPendingSkillId(null);
 
         // Advance reticle early if limb severed during actor strike
@@ -4688,6 +4693,7 @@ export default function App() {
                   setActiveActorIdx(0);
                   setCombatActionCursor(0);
                   setCombatFocusPhase('action');
+                  setPendingAction(null);
                   setPendingSkillId(null);
                 }
               );
@@ -4703,6 +4709,7 @@ export default function App() {
           const nextAlly = nextControllableActor > 0 ? pCur.party[nextControllableActor - 1] || null : null;
           setCombatActionCursor(nextAlly && isPureTankSummon(nextAlly) ? 2 : 0);
           setCombatFocusPhase('action');
+          setPendingAction(null);
           setPendingSkillId(null);
         }
 
@@ -4856,18 +4863,112 @@ export default function App() {
         );
         if (aliveLimbs.length === 0) return;
 
+        const targetableLimbs = aliveLimbs.filter(
+          (l) => canTargetEnemyLimb(activeCombatEnemy, tpl, l.id).allowed
+        );
+        const cycleLimbs = targetableLimbs.length > 0 ? targetableLimbs : aliveLimbs;
+
+        // Early-return guard: lock ALL combat keyboard input to limb targeting while pendingAction is active
+        if (pendingAction !== null) {
+          e.preventDefault();
+          if (
+            ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(
+              key
+            )
+          ) {
+            sfx.playSfx('ui_move');
+            const len = cycleLimbs.length;
+            if (len <= 1) {
+              setSelectedLimbId(cycleLimbs[0].id);
+              return;
+            }
+            const curIdx = Math.max(0, cycleLimbs.findIndex((l) => l.id === selectedLimbId));
+            if (
+              key === 'tab' ||
+              key === 'a' ||
+              key === 'arrowleft' ||
+              key === 'd' ||
+              key === 'arrowright'
+            ) {
+              const delta = key === 'a' || key === 'arrowleft' ? -1 : 1;
+              const nextLimb = cycleLimbs[(curIdx + delta + len) % len];
+              setSelectedLimbId(nextLimb.id);
+              return;
+            }
+            const getCoords = (id: string, i: number) =>
+              reticleMap[id] || { nx: 0.25 + (i % 2) * 0.5, ny: 0.25 + Math.floor(i / 2) * 0.22 };
+            const curPos = getCoords(cycleLimbs[curIdx].id, curIdx);
+            const dirY = key === 'w' || key === 'arrowup' ? -1 : 1;
+
+            let bestLimb = cycleLimbs[curIdx];
+            let bestScore = Infinity;
+            cycleLimbs.forEach((cand, idx) => {
+              if (cand.id === cycleLimbs[curIdx].id) return;
+              const p = getCoords(cand.id, idx);
+              const dx = p.nx - curPos.nx;
+              const dy = p.ny - curPos.ny;
+              const primaryProj = dy * dirY;
+              const ortho = Math.abs(dx);
+              if (primaryProj > 0.02) {
+                const score = primaryProj + ortho * 1.6;
+                if (score < bestScore) {
+                  bestScore = score;
+                  bestLimb = cand;
+                }
+              }
+            });
+
+            if (bestLimb.id === cycleLimbs[curIdx].id) {
+              bestLimb = cycleLimbs[(curIdx + dirY + len) % len];
+            }
+
+            setSelectedLimbId(bestLimb.id);
+            return;
+          }
+
+          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
+            const targetLimbId = cycleLimbs.some((l) => l.id === selectedLimbId)
+              ? selectedLimbId
+              : cycleLimbs[0].id;
+            const targetCheck = canTargetEnemyLimb(activeCombatEnemy, tpl, targetLimbId);
+            if (!targetCheck.allowed) {
+              sfx.playSfx('ui_move');
+              setCombatLogs((prev) => [
+                `${targetCheck.reason || 'Bộ phận này đang bị che chắn!'}`,
+                ...prev.slice(0, 18),
+              ]);
+              return;
+            }
+            if (pendingAction === 'SKILL' && pendingSkillId) {
+              const skId = pendingSkillId;
+              setPendingAction(null);
+              setPendingSkillId(null);
+              runCombatTurn('SKILL', { limbId: targetLimbId, skillId: skId });
+            } else {
+              setPendingAction(null);
+              setPendingSkillId(null);
+              runCombatTurn('ATTACK', { limbId: targetLimbId });
+            }
+            return;
+          }
+
+          if (e.key === '1' || key === 'escape' || e.key === 'Backspace') {
+            sfx.playSfx('ui_move');
+            setPendingAction(null);
+            setPendingSkillId(null);
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+            return;
+          }
+
+          return; // block ALL other keys from leaking to the main command menu
+        }
+
         const snapLimbFocus = () => {
-          const curAlive = aliveLimbs.find((l) => l.id === selectedLimbId);
-          const nextLimb =
-            (curAlive && canTargetEnemyLimb(activeCombatEnemy, tpl, curAlive.id).allowed
-              ? curAlive
-              : null) ||
-            aliveLimbs.find((l) => canTargetEnemyLimb(activeCombatEnemy, tpl, l.id).allowed) ||
-            curAlive ||
-            aliveLimbs[0];
+          const curTargetable = cycleLimbs.find((l) => l.id === selectedLimbId);
+          const nextLimb = curTargetable || cycleLimbs[0];
           if (nextLimb) {
             setSelectedLimbId(nextLimb.id);
-            setFocusedLimbId(nextLimb.id);
           }
         };
 
@@ -4883,20 +4984,11 @@ export default function App() {
         );
         const maxActionIdx = activeActorIdx === 0 ? 5 : 3;
 
-        // ESC / Backspace cancels Step 2 or Sub-Menus cleanly back to Action Dock
+        // ESC / Backspace cancels Sub-Menus cleanly back to Action Dock
         if (key === 'escape' || e.key === 'Backspace') {
           e.preventDefault();
           sfx.playSfx('ui_move');
-          if (combatFocusPhase === 'limb') {
-            setFocusedLimbId(null);
-            if (pendingSkillId) {
-              setPendingSkillId(null);
-              setCombatMenuMode('skills');
-              setCombatFocusPhase('skills_menu');
-            } else {
-              setCombatFocusPhase('action');
-            }
-          } else if (combatFocusPhase === 'skills_menu' || combatFocusPhase === 'items_menu') {
+          if (combatFocusPhase === 'skills_menu' || combatFocusPhase === 'items_menu') {
             setCombatMenuMode('main');
             setCombatFocusPhase('action');
           }
@@ -4906,12 +4998,14 @@ export default function App() {
         // Number Hotkeys 1..6 for fast action selection
         if (e.key === '1' && !isPureTankKeyTurn) {
           e.preventDefault();
+          (document.activeElement as HTMLElement | null)?.blur?.();
           sfx.playSfx('ui_confirm');
           setCombatActionCursor(0);
           setPendingSkillId(null);
           setCombatMenuMode('main');
+          setCombatFocusPhase('action');
           snapLimbFocus();
-          setCombatFocusPhase('limb');
+          setPendingAction('ATTACK');
           return;
         }
         if (e.key === '2' && activeSkillIds.length > 0) {
@@ -4927,6 +5021,7 @@ export default function App() {
           e.preventDefault();
           setCombatActionCursor(2);
           setCombatMenuMode('main');
+          setCombatFocusPhase('action');
           runCombatTurn('GUARD');
           return;
         }
@@ -4943,6 +5038,7 @@ export default function App() {
           e.preventDefault();
           setCombatActionCursor(4);
           setCombatMenuMode('main');
+          setCombatFocusPhase('action');
           runCombatTurn('TALK');
           return;
         }
@@ -4950,6 +5046,7 @@ export default function App() {
           e.preventDefault();
           setCombatActionCursor(5);
           setCombatMenuMode('main');
+          setCombatFocusPhase('action');
           runCombatTurn('FLEE');
           return;
         }
@@ -4989,11 +5086,12 @@ export default function App() {
           if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
             e.preventDefault();
             if (combatActionCursor === 0 && !isPureTankKeyTurn) {
+              (document.activeElement as HTMLElement | null)?.blur?.();
               sfx.playSfx('ui_confirm');
               setPendingSkillId(null);
               setCombatMenuMode('main');
               snapLimbFocus();
-              setCombatFocusPhase('limb');
+              setPendingAction('ATTACK');
             } else if (combatActionCursor === 1) {
               if (activeSkillIds.length === 0) return;
               sfx.playSfx('ui_confirm');
@@ -5069,11 +5167,13 @@ export default function App() {
               setCombatFocusPhase('action');
               runCombatTurn('SKILL', { limbId: selectedLimbId, skillId: sk.id });
             } else {
+              (document.activeElement as HTMLElement | null)?.blur?.();
               sfx.playSfx('ui_confirm');
               setPendingSkillId(sk.id);
               setCombatMenuMode('main');
+              setCombatFocusPhase('action');
               snapLimbFocus();
-              setCombatFocusPhase('limb');
+              setPendingAction('SKILL');
             }
             return;
           }
@@ -5120,99 +5220,6 @@ export default function App() {
             return;
           }
           return;
-        }
-
-        // PHASE 2: Spatial Limb Reticle Navigation on Enemy Anatomy (A/D strictly wrap circularly; only ESC/Backspace cancels)
-        if (combatFocusPhase === 'limb') {
-          if (
-            key === 'w' ||
-            key === 's' ||
-            key === 'a' ||
-            key === 'd' ||
-            e.key === 'ArrowUp' ||
-            e.key === 'ArrowDown' ||
-            e.key === 'ArrowLeft' ||
-            e.key === 'ArrowRight' ||
-            e.key === 'Tab'
-          ) {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            const len = aliveLimbs.length;
-            if (len <= 1) {
-              setSelectedLimbId(aliveLimbs[0].id);
-              setFocusedLimbId(aliveLimbs[0].id);
-              return;
-            }
-            const curIdx = Math.max(0, aliveLimbs.findIndex((l) => l.id === selectedLimbId));
-            if (e.key === 'Tab') {
-              const nextLimb = aliveLimbs[(curIdx + 1) % len];
-              setSelectedLimbId(nextLimb.id);
-              setFocusedLimbId(nextLimb.id);
-              return;
-            }
-            // Safe circular left/right cycling for A/D so spamming A or D never escapes target selection
-            if (key === 'a' || e.key === 'ArrowLeft' || key === 'd' || e.key === 'ArrowRight') {
-              const delta = key === 'a' || e.key === 'ArrowLeft' ? -1 : 1;
-              const nextLimb = aliveLimbs[(curIdx + delta + len) % len];
-              setSelectedLimbId(nextLimb.id);
-              setFocusedLimbId(nextLimb.id);
-              return;
-            }
-            const getCoords = (id: string, i: number) =>
-              reticleMap[id] || { nx: 0.25 + (i % 2) * 0.5, ny: 0.25 + Math.floor(i / 2) * 0.22 };
-            const curPos = getCoords(aliveLimbs[curIdx].id, curIdx);
-            const dirY = key === 'w' || e.key === 'ArrowUp' ? -1 : 1;
-
-            let bestLimb = aliveLimbs[curIdx];
-            let bestScore = Infinity;
-            aliveLimbs.forEach((cand, idx) => {
-              if (cand.id === aliveLimbs[curIdx].id) return;
-              const p = getCoords(cand.id, idx);
-              const dx = p.nx - curPos.nx;
-              const dy = p.ny - curPos.ny;
-              const primaryProj = dy * dirY;
-              const ortho = Math.abs(dx);
-              if (primaryProj > 0.02) {
-                const score = primaryProj + ortho * 1.6;
-                if (score < bestScore) {
-                  bestScore = score;
-                  bestLimb = cand;
-                }
-              }
-            });
-
-            if (bestLimb.id === aliveLimbs[curIdx].id) {
-              bestLimb = aliveLimbs[(curIdx + dirY + len) % len];
-            }
-
-            setSelectedLimbId(bestLimb.id);
-            setFocusedLimbId(bestLimb.id);
-            return;
-          }
-
-          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
-            e.preventDefault();
-            const targetLimbId = aliveLimbs.some((l) => l.id === selectedLimbId)
-              ? selectedLimbId
-              : aliveLimbs[0].id;
-            const targetCheck = canTargetEnemyLimb(activeCombatEnemy, tpl, targetLimbId);
-            if (!targetCheck.allowed) {
-              sfx.playSfx('ui_move');
-              setCombatLogs((prev) => [
-                `${targetCheck.reason || 'Bộ phận này đang bị che chắn!'}`,
-                ...prev.slice(0, 18),
-              ]);
-              return;
-            }
-            if (pendingSkillId) {
-              const skId = pendingSkillId;
-              setPendingSkillId(null);
-              runCombatTurn('SKILL', { limbId: targetLimbId, skillId: skId });
-            } else {
-              runCombatTurn('ATTACK', { limbId: targetLimbId });
-            }
-            return;
-          }
         }
         return;
       }
@@ -5400,6 +5407,7 @@ export default function App() {
     combatFocusPhase,
     combatActionCursor,
     combatSubCursor,
+    pendingAction,
     pendingSkillId,
     titleSaveModalOpen,
     titleSettingsOpen,
@@ -5516,7 +5524,7 @@ export default function App() {
               combatSpriteUrl: tpl.combatSpriteUrl,
               limbs: pngLimbEntries,
               nowSec,
-              selectedLimbId: !activeCombatEnemy.defeated ? selectedLimbId : undefined,
+              selectedLimbId: !activeCombatEnemy.defeated ? selectedLimbIdRef.current : undefined,
               timeMs: now,
             }
           );
@@ -5638,7 +5646,6 @@ export default function App() {
     currentRoom.isExterior,
     player,
     activeActorIdx,
-    selectedLimbId,
   ]);
 
   const renderCoinTossModal = () => (
@@ -5764,21 +5771,23 @@ export default function App() {
         combatFocusPhase={combatFocusPhase}
         combatActionCursor={combatActionCursor}
         combatSubCursor={combatSubCursor}
+        pendingAction={pendingAction}
         pendingSkillId={pendingSkillId}
         coinTossNode={renderCoinTossModal()}
         onHoverLimb={(limbId) => {
           if (isResolvingTurn || activeCombatEnemy.defeated) return;
           setSelectedLimbId(limbId);
-          setFocusedLimbId(limbId);
         }}
         onClickLimb={(limbId) => {
           if (isResolvingTurn || activeCombatEnemy.defeated) return;
+          (document.activeElement as HTMLElement | null)?.blur?.();
           setSelectedLimbId(limbId);
-          setFocusedLimbId(limbId);
-          if (combatFocusPhase !== 'limb') {
+          if (pendingAction === null) {
             sfx.playSfx('ui_confirm');
             setCombatMenuMode('main');
-            setCombatFocusPhase('limb');
+            setCombatFocusPhase('action');
+            setPendingSkillId(null);
+            setPendingAction('ATTACK');
             return;
           }
           const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
@@ -5791,11 +5800,14 @@ export default function App() {
             ]);
             return;
           }
-          if (pendingSkillId) {
+          if (pendingAction === 'SKILL' && pendingSkillId) {
             const skId = pendingSkillId;
+            setPendingAction(null);
             setPendingSkillId(null);
             runCombatTurn('SKILL', { limbId, skillId: skId });
           } else {
+            setPendingAction(null);
+            setPendingSkillId(null);
             runCombatTurn('ATTACK', { limbId });
           }
         }}

@@ -17,7 +17,7 @@ import { CombatEngine } from '../game/combatEngine';
 import { ItemArtworkCanvas } from './CanvasWidgets';
 
 export type CombatMenuMode = 'main' | 'skills' | 'items';
-export type CombatFocusPhase = 'action' | 'skills_menu' | 'items_menu' | 'limb';
+export type CombatFocusPhase = 'action' | 'skills_menu' | 'items_menu';
 
 export interface CombatVfxState {
   category: WeaponCategory;
@@ -52,6 +52,7 @@ export interface CombatStageViewProps {
   combatFocusPhase: CombatFocusPhase;
   combatActionCursor: number;
   combatSubCursor: number;
+  pendingAction: 'ATTACK' | 'SKILL' | null;
   pendingSkillId: string | null;
   coinTossNode?: React.ReactNode;
   onHoverLimb?: (limbId: string) => void;
@@ -73,11 +74,13 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
   combatFocusPhase,
   combatActionCursor,
   combatSubCursor,
-  pendingSkillId,
+  pendingAction,
+  pendingSkillId: _pendingSkillId,
   coinTossNode,
   onHoverLimb,
   onClickLimb,
 }) => {
+  const [hoveredLimbId, setHoveredLimbId] = React.useState<string | null>(null);
   const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
   const reticleMap = getLimbReticlePositions(tpl.spriteKey);
   const activeAlly = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
@@ -186,7 +189,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
               />
             )}
 
-            {/* Compact On-Body Anatomical Target Reticles with Damage Preview Tooltip & Pixel-Art Debuff Badges */}
+            {/* Compact On-Body Anatomical Target Hitboxes & Pixel-Art Debuff Badges */}
             {!activeCombatEnemy.defeated &&
               activeCombatEnemy.limbs.map((limb, idx) => {
                 const pos = reticleMap[limb.id] || {
@@ -195,18 +198,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                 };
                 const isSevered =
                   limb.hp <= 0 || activeCombatEnemy.severedLimbs.includes(limb.id);
-                const isSelected = selectedLimbId === limb.id;
-                const isFocused = combatFocusPhase === 'limb' && isSelected && !isSevered;
-                const showExpanded = isFocused;
-                const targetable = canTargetEnemyLimb(activeCombatEnemy, tpl, limb.id).allowed;
-                const preview = combatEngine.getDamagePreview(
-                  player,
-                  activeCombatEnemy,
-                  tpl,
-                  limb
-                );
                 const badges = combatEngine.getLimbBadges(activeCombatEnemy, limb.id);
-                const tooltipOnLeft = pos.nx < 0.48;
 
                 return (
                   <div
@@ -216,9 +208,9 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                       top: `${pos.ny * 100}%`,
                       transform: 'translate(-50%, -50%)',
                     }}
-                    className={`pointer-events-none absolute ${showExpanded ? 'z-30' : 'z-20'}`}
+                    className="pointer-events-none absolute z-20"
                   >
-                    {/* Pixel-Art Debuff Status Badges with Remaining Turn Count right above the Reticle */}
+                    {/* Pixel-Art Debuff Status Badges with Remaining Turn Count right above the Limb */}
                     {!isSevered && badges.length > 0 && (
                       <div className="flex items-center justify-center gap-1 mb-0.5 pointer-events-none">
                         {badges.map((b) => (
@@ -248,42 +240,67 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                     ) : (
                       <button
                         type="button"
+                        tabIndex={-1}
                         aria-label={limb.name}
-                        onMouseEnter={() => onHoverLimb?.(limb.id)}
+                        onMouseEnter={() => {
+                          setHoveredLimbId(limb.id);
+                          onHoverLimb?.(limb.id);
+                        }}
+                        onMouseLeave={() =>
+                          setHoveredLimbId((cur) => (cur === limb.id ? null : cur))
+                        }
                         onClick={() => onClickLimb?.(limb.id)}
                         className="pointer-events-auto w-11 h-11 bg-transparent border-0 cursor-pointer focus:outline-none"
                       />
-                    )}
-
-                    {/* Merged Compact Limb Damage Tooltip (only when Focused / Selected) */}
-                    {showExpanded && !isSevered && (
-                      <div
-                        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${
-                          tooltipOnLeft ? 'right-full mr-2' : 'left-full ml-2'
-                        } df-card-active px-2.5 py-1.5 ring-1 ring-[#fbbf24] whitespace-nowrap space-y-0.5 shadow-[0_0_16px_rgba(0,0,0,0.9)]`}
-                      >
-                        <div className="text-xs font-bold text-[#e7dcc8]">
-                          ⌖ {limb.name}
-                          {!targetable && <span className="text-[#fca5a5] ml-1.5">[KHÓA]</span>}
-                        </div>
-                        <div className="flex items-center gap-2.5 text-[11px] font-mono">
-                          <span className="text-[#fca5a5]">
-                            {preview.minDmg}-{preview.maxDmg} ST
-                          </span>
-                          <span className="text-[#86efac]">{preview.hitPct}% Trúng</span>
-                          <span className="text-[#fde047]">{preview.critPct}% CM</span>
-                        </div>
-                        {preview.armorPoints > 0 && (
-                          <div className="text-[11px] font-mono text-[#94a3b8]">
-                            Giáp: {preview.armorPoints} (-{preview.armorReductionPct}%)
-                          </div>
-                        )}
-                      </div>
                     )}
                   </div>
                 );
               })}
           </div>
+
+          {/* Fixed Bottom-Right Limb Damage Preview Tooltip */}
+          {!activeCombatEnemy.defeated &&
+            (pendingAction !== null || hoveredLimbId !== null) &&
+            (() => {
+              const tooltipLimb =
+                (hoveredLimbId
+                  ? activeCombatEnemy.limbs.find((l) => l.id === hoveredLimbId)
+                  : null) || currentTargetLimb;
+              if (
+                !tooltipLimb ||
+                tooltipLimb.hp <= 0 ||
+                activeCombatEnemy.severedLimbs.includes(tooltipLimb.id)
+              ) {
+                return null;
+              }
+              const targetable = canTargetEnemyLimb(activeCombatEnemy, tpl, tooltipLimb.id).allowed;
+              const preview = combatEngine.getDamagePreview(
+                player,
+                activeCombatEnemy,
+                tpl,
+                tooltipLimb
+              );
+              return (
+                <div className="pointer-events-none absolute bottom-3 right-3 z-30 df-card-active px-2.5 py-1.5 ring-1 ring-[#fbbf24] whitespace-nowrap space-y-0.5 shadow-[0_0_16px_rgba(0,0,0,0.9)]">
+                  <div className="text-xs font-bold text-[#e7dcc8]">
+                    ⌖ {tooltipLimb.name}
+                    {!targetable && <span className="text-[#fca5a5] ml-1.5">[KHÓA]</span>}
+                  </div>
+                  <div className="flex items-center gap-2.5 text-[11px] font-mono">
+                    <span className="text-[#fca5a5]">
+                      {preview.minDmg}-{preview.maxDmg} ST
+                    </span>
+                    <span className="text-[#86efac]">{preview.hitPct}% Trúng</span>
+                    <span className="text-[#fde047]">{preview.critPct}% CM</span>
+                  </div>
+                  {preview.armorPoints > 0 && (
+                    <div className="text-[11px] font-mono text-[#94a3b8]">
+                      Giáp: {preview.armorPoints} (-{preview.armorReductionPct}%)
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
         </div>
 
         {/* Bottom Strip of Upper Stage: Recent Combat Log Line & Active Weapon Hint */}
@@ -315,7 +332,10 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                 className={`w-full py-0.5 px-2.5 text-left text-sm font-bold truncate ${
                   isPureTankTurn || isResolvingTurn
                     ? 'df-btn opacity-45'
-                    : combatFocusPhase === 'action' && combatActionCursor === 0
+                    : pendingAction === 'ATTACK' ||
+                      (pendingAction === null &&
+                        combatFocusPhase === 'action' &&
+                        combatActionCursor === 0)
                     ? 'df-btn-active ring-1 ring-[#fbbf24]'
                     : 'df-btn'
                 }`}
@@ -325,8 +345,11 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
               </div>
               <div
                 className={`w-full py-0.5 px-2.5 text-left text-sm font-bold ${
+                  pendingAction === 'SKILL' ||
                   combatMenuMode === 'skills' ||
-                  (combatFocusPhase === 'action' && combatActionCursor === 1)
+                  (pendingAction === null &&
+                    combatFocusPhase === 'action' &&
+                    combatActionCursor === 1)
                     ? 'df-btn-active ring-1 ring-[#fbbf24]'
                     : 'df-btn'
                 } ${activeSkillIds.length === 0 ? 'opacity-45' : ''}`}
@@ -336,7 +359,10 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
               </div>
               <div
                 className={`w-full py-0.5 px-2.5 text-left text-sm font-bold ${
-                  (combatFocusPhase === 'action' && combatActionCursor === 2) || isPureTankTurn
+                  (pendingAction === null &&
+                    combatFocusPhase === 'action' &&
+                    combatActionCursor === 2) ||
+                  isPureTankTurn
                     ? 'df-btn-active ring-1 ring-[#fbbf24]'
                     : 'df-btn'
                 } ${
@@ -351,7 +377,9 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
               <div
                 className={`w-full py-0.5 px-2.5 text-left text-sm font-bold ${
                   combatMenuMode === 'items' ||
-                  (combatFocusPhase === 'action' && combatActionCursor === 3)
+                  (pendingAction === null &&
+                    combatFocusPhase === 'action' &&
+                    combatActionCursor === 3)
                     ? 'df-btn-active ring-1 ring-[#fbbf24]'
                     : 'df-btn'
                 } ${usableCombatItems.length === 0 ? 'opacity-45' : ''}`}
@@ -363,7 +391,9 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                 <>
                   <div
                     className={`w-full py-0.5 px-2.5 text-left text-sm font-bold text-[#9ab08e] ${
-                      combatFocusPhase === 'action' && combatActionCursor === 4
+                      pendingAction === null &&
+                      combatFocusPhase === 'action' &&
+                      combatActionCursor === 4
                         ? 'df-btn-active ring-1 ring-[#fbbf24]'
                         : 'df-btn'
                     }`}
@@ -373,7 +403,9 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                   </div>
                   <div
                     className={`w-full py-0.5 px-2.5 text-left text-sm font-bold text-[#a3998f] ${
-                      combatFocusPhase === 'action' && combatActionCursor === 5
+                      pendingAction === null &&
+                      combatFocusPhase === 'action' &&
+                      combatActionCursor === 5
                         ? 'df-btn-active ring-1 ring-[#fbbf24]'
                         : 'df-btn'
                     }`}

@@ -1339,7 +1339,7 @@ export function drawPixelSprite(
       ctx.save();
       ctx.shadowColor = 'rgba(255, 215, 130, 0.95)';
       ctx.shadowBlur = 10 + pulse * 14;
-      ctx.filter = `brightness(${(1.08 + pulse * 0.32).toFixed(3)})`;
+      ctx.filter = `brightness(${(1.0 + pulse * 0.65).toFixed(3)})`;
       drawFn();
       ctx.shadowBlur = 0;
       ctx.filter = 'none';
