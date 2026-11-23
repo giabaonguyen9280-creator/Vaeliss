@@ -133,7 +133,7 @@ export const LoreModal: React.FC<LoreModalProps> = ({
                   >
                     <div className="flex items-center justify-between border-b-2 border-[#6e5233]/50 pb-2">
                       <div className="min-w-0">
-                        <div className="text-[11px] uppercase tracking-widest font-bold text-[#8b0000]">
+                        <div className="text-xs font-serif uppercase tracking-widest font-extrabold text-[#4a0404] drop-shadow-[0_1px_0_rgba(255,244,224,0.5)]">
                           Ấn Bản #{book.vol} • {book.floorHint}
                         </div>
                         <h3 className="text-xl font-bold text-[#1f1308] leading-tight">

@@ -809,6 +809,12 @@ export default function App() {
       usedAltarKeys: Array.isArray(data.player.usedAltarKeys)
         ? [...data.player.usedAltarKeys]
         : [],
+      unlockedRecipes: Array.isArray(data.player.unlockedRecipes)
+        ? [...data.player.unlockedRecipes]
+        : [],
+      dismissedCompanions: Array.isArray(data.player.dismissedCompanions)
+        ? [...data.player.dismissedCompanions]
+        : [],
       inventory: {
         ...data.player.inventory,
         energy_stone: data.player.inventory?.energy_stone ?? data.player.energyStones ?? 0,
@@ -1862,14 +1868,12 @@ export default function App() {
           choices.push({
             label: 'Lắng nghe bí thuật Giả Kim của lão',
             onSelect: () => {
+              const bookDef = CONFIG.ITEMS.recipe_book_forbidden;
+              const bookRecipes = bookDef?.unlockRecipes || [];
               setPlayer((prev) => ({
                 ...prev,
                 unlockedRecipes: Array.from(
-                  new Set([
-                    ...prev.unlockedRecipes,
-                    'recipe_void_acid',
-                    'recipe_stimulant_serum',
-                  ])
+                  new Set([...prev.unlockedRecipes, ...bookRecipes])
                 ),
                 inventory: {
                   ...prev.inventory,
@@ -1879,7 +1883,7 @@ export default function App() {
               }));
               setInteractionMenu(null);
               addLog(
-                'Lão Thần Y cười khàn, dúi vào tay bạn một bình [Thuốc Hồi Huyết] cùng những công thức Giả Kim Cấm.'
+                'Lão Thần Y cười khàn, dúi vào tay bạn một bình [Thuốc Hồi Huyết] cùng cuốn [Pha Chế Thuốc 3] (đã mở khóa công thức Giả Kim).'
               );
               setLogOverlayVisible(true);
             },
@@ -3086,6 +3090,10 @@ export default function App() {
           const foodQty = hasFood ? (rng.chance(0.3) ? 2 : 1) : 0;
           let equipRewardName = '';
 
+          const guaranteedBookId = room.guaranteedRecipeBooks?.[coordKey];
+          const guaranteedBookDef = guaranteedBookId ? CONFIG.ITEMS[guaranteedBookId] : undefined;
+          const guaranteedBookRecipes = guaranteedBookDef?.unlockRecipes || [];
+
           const applyRewards = (
             prev: PlayerState,
             updates: Partial<Pick<PlayerState, 'unlockedGear' | 'unlockedShields' | 'unlockedWeapons'>>,
@@ -3107,6 +3115,10 @@ export default function App() {
             return {
               ...prev,
               ...updates,
+              unlockedRecipes:
+                guaranteedBookRecipes.length > 0
+                  ? Array.from(new Set([...prev.unlockedRecipes, ...guaranteedBookRecipes]))
+                  : prev.unlockedRecipes,
               hp:
                 extraHealthDelta < 0
                   ? Math.max(1, prev.hp + extraHealthDelta)
@@ -3179,9 +3191,12 @@ export default function App() {
             foodQty > 0
               ? ` & +${foodQty} [${CONFIG.ITEMS[foodId]?.name || foodId}]`
               : '';
-          const coinPart = foundLuckyCoin? '& +1 [Thẻ Bài Bạc]': '';
+          const coinPart = foundLuckyCoin ? ' & +1 [Thẻ Bài Bạc]' : '';
+          const bookPart = guaranteedBookDef
+            ? ` & sách [${guaranteedBookDef.name}] (đã mở khóa công thức Giả Kim)`
+            : '';
           addLog(
-            `${prefixLog? `${prefixLog} `: ''} Mở nắp rương cổ: Thu được [${equipRewardName}], [${CONFIG.ITEMS[vialId]?.name || vialId}]${foodPart}${coinPart}.`
+            `${prefixLog ? `${prefixLog} ` : ''}Mở nắp rương cổ: Thu được [${equipRewardName}], [${CONFIG.ITEMS[vialId]?.name || vialId}]${foodPart}${coinPart}${bookPart}.`
           );
           setLogOverlayVisible(true);
         };
@@ -3231,8 +3246,51 @@ export default function App() {
         return;
       }
 
-      // BOOKSHELF: Grants AT MOST 1 item from Lore, Chiến Kỹ Scroll, Survival Scroll, or Alchemy Recipe Book; Lose = Cursed Book Trap.
+      // BOOKSHELF: Guaranteed Alchemy Books (Pha Chế Thuốc 1-3) unlock permanently on pickup; other shelves grant Lore / Scroll / Book.
       if (tile === TILE.BOOKSHELF && !room.lootedCoords.includes(coordKey)) {
+        const guaranteedBookId = room.guaranteedRecipeBooks?.[coordKey];
+        const guaranteedBookDef = guaranteedBookId ? CONFIG.ITEMS[guaranteedBookId] : undefined;
+        if (guaranteedBookId && guaranteedBookDef) {
+          const recIds = guaranteedBookDef.unlockRecipes || [];
+          const recNames = recIds
+            .map((rid) => CONFIG.RECIPES.find((r) => r.id === rid)?.name || rid)
+            .join(', ');
+          setInteractionMenu({
+            title: `KỆ SÁCH CỔ — [${guaranteedBookDef.name.toUpperCase()}]`,
+            description: `Nằm ngay ngắn trên ngăn gỗ mục là cuốn sách giả kim đóng bìa da: "${guaranteedBookDef.name}".`,
+            selectedIndex: 0,
+            choices: [
+              {
+                label: `Nhặt & Đọc [${guaranteedBookDef.name}]`,
+                onSelect: () => {
+                  setInteractionMenu(null);
+                  setWorld((prev) => ({
+                    ...prev,
+                    rooms: {
+                      ...prev.rooms,
+                      [room.id]: {
+                        ...room,
+                        lootedCoords: [...room.lootedCoords, coordKey],
+                      },
+                    },
+                  }));
+                  setPlayer((prev) => ({
+                    ...prev,
+                    unlockedRecipes: Array.from(new Set([...prev.unlockedRecipes, ...recIds])),
+                  }));
+                  sfx.playHealOrChime();
+                  addLog(
+                    `Đã đọc [${guaranteedBookDef.name}]! Mở khóa vĩnh viễn công thức Giả Kim: ${recNames}.`
+                  );
+                  setLogOverlayVisible(true);
+                },
+              },
+              { label: 'Rời đi', onSelect: closePrompt },
+            ],
+          });
+          return;
+        }
+
         const shelfRng = new SeededRNG(`${world.seed}_bookshelf_type_${room.id}_${coordKey}`);
         const isScrollShelf = shelfRng.chance(0.55);
 
@@ -3241,7 +3299,7 @@ export default function App() {
             ? 'KỆ SÁCH CỔ — NGĂN BÍ KÍP & CÔNG THỨC'
             : 'KỆ SÁCH CỔ — NGĂN BIÊN NIÊN SỬ',
           description: isScrollShelf
-            ? 'Giữa những tầng sách mục nát thấp thoáng cuộn da cổ xưa, Bí Kíp Sinh Tồn hoặc Sách Công Thức Giả Kim. Hãy Tung Đồng Xu Định Mệnh (hoặc dùng Chìa Khóa Vạn Năng) để lục tìm cẩn trọng.'
+            ? 'Giữa những tầng sách mục nát thấp thoáng cuộn da cổ xưa, Bí Kíp Sinh Tồn hoặc Sách Pha Chế Thuốc. Hãy Tung Đồng Xu Định Mệnh (hoặc dùng Chìa Khóa Vạn Năng) để lục tìm cẩn trọng.'
             : 'Kệ sách gỗ mục nát lưu giữ 1 trang Ghi Chép Biên Niên Sử cổ đại của Đại Giáo Đường Goethe.',
           selectedIndex: 0,
           choices: [
@@ -3272,17 +3330,12 @@ export default function App() {
                   );
                   const pickedBook =
                     uncollected.length > 0 ? rng.pick(uncollected) : rng.pick(CONFIG.BOOKS);
-                  const bonusRecipeId = pickedBook.unlockRecipeId;
 
                   setPlayer((prev) => ({
                     ...prev,
                     readBookIds: prev.readBookIds.includes(pickedBook.id)
                       ? prev.readBookIds
                       : [...prev.readBookIds, pickedBook.id],
-                    unlockedRecipes:
-                      bonusRecipeId && !prev.unlockedRecipes.includes(bonusRecipeId)
-                        ? [...prev.unlockedRecipes, bonusRecipeId]
-                        : prev.unlockedRecipes,
                   }));
                   setSelectedLoreBookId(pickedBook.id);
                   addLog(`Kệ Sách Ghi Chép: Tìm thấy trang "${pickedBook.title}"!`);
@@ -3322,17 +3375,34 @@ export default function App() {
 
                     if (rewardCandidates.length > 0 && rng.chance(0.75)) {
                       const pickedId = rng.pick(rewardCandidates);
-                      setPlayer((prev) => ({
-                        ...prev,
-                        inventory: {
-                          ...prev.inventory,
-                          [pickedId]: (prev.inventory[pickedId] || 0) + 1,
-                        },
-                      }));
-                      sfx.playHealOrChime();
-                      addLog(
-                        `Thu nhận được [${CONFIG.ITEMS[pickedId]?.name || pickedId}]. Hãy mở Túi [I] để đọc hoặc sử dụng!`
-                      );
+                      const pickedDef = CONFIG.ITEMS[pickedId];
+                      if (pickedDef?.unlockRecipes && pickedDef.unlockRecipes.length > 0) {
+                        const recNames = pickedDef.unlockRecipes
+                          .map((rid) => CONFIG.RECIPES.find((r) => r.id === rid)?.name || rid)
+                          .join(', ');
+                        setPlayer((prev) => ({
+                          ...prev,
+                          unlockedRecipes: Array.from(
+                            new Set([...prev.unlockedRecipes, ...(pickedDef.unlockRecipes || [])])
+                          ),
+                        }));
+                        sfx.playHealOrChime();
+                        addLog(
+                          `Tìm thấy sách [${pickedDef.name}]! Đã mở khóa vĩnh viễn công thức Giả Kim: ${recNames}.`
+                        );
+                      } else {
+                        setPlayer((prev) => ({
+                          ...prev,
+                          inventory: {
+                            ...prev.inventory,
+                            [pickedId]: (prev.inventory[pickedId] || 0) + 1,
+                          },
+                        }));
+                        sfx.playHealOrChime();
+                        addLog(
+                          `Thu nhận được [${pickedDef?.name || pickedId}]. Hãy mở Túi [I] để đọc hoặc sử dụng!`
+                        );
+                      }
                     } else {
                       const uncollectedLore = CONFIG.BOOKS.filter(
                         (b) => !player.readBookIds.includes(b.id)
@@ -3344,10 +3414,6 @@ export default function App() {
                           readBookIds: prev.readBookIds.includes(b.id)
                             ? prev.readBookIds
                             : [...prev.readBookIds, b.id],
-                          unlockedRecipes:
-                            b.unlockRecipeId && !prev.unlockedRecipes.includes(b.unlockRecipeId)
-                              ? [...prev.unlockedRecipes, b.unlockRecipeId]
-                              : prev.unlockedRecipes,
                         }));
                         setSelectedLoreBookId(b.id);
                         sfx.playHealOrChime();
@@ -3955,7 +4021,7 @@ export default function App() {
       }
     }
 
-    // Check parked dismissed companions waiting near Đài Cộng Hưởng (Manhattan <= 1)
+    // Check parked dismissed companions waiting on the map (Manhattan <= 1)
     const parkedSpots = getParkedCompanionSpots(room, player);
     for (const [dx, dy] of searchOffsets) {
       if (Math.abs(dx) + Math.abs(dy) > 1) continue;
@@ -3963,13 +4029,16 @@ export default function App() {
       const sy = playerPos.y + dy;
       const parked = parkedSpots.find((p) => p.x === sx && p.y === sy);
       if (parked) {
+        const partyFull = player.party.length >= 3;
         setInteractionMenu({
           title: `${parked.ally.name.toUpperCase()}`,
-          description: `${parked.ally.name} đang kiên nhẫn chờ bạn bên cạnh ánh sáng Đài Cộng Hưởng (Sinh Lực ${parked.ally.hp}/${parked.ally.maxHp}, Lý Trí ${parked.ally.mind}/${parked.ally.maxMind}).`,
+          description: `${parked.ally.name} đang đứng chờ bạn tại đây (Sinh Lực ${parked.ally.hp}/${parked.ally.maxHp}, Lý Trí ${parked.ally.mind}/${parked.ally.maxMind}, Đói ${parked.ally.hunger || 0}/100).${
+            partyFull ? ' Tổ đội hiện đã đủ 4 người.' : ''
+          }`,
           selectedIndex: 0,
           choices: [
             {
-              label: `Gọi [${parked.ally.name}] tái gia nhập đội hình`,
+              label: `Mời [${parked.ally.name}] tái gia nhập đội hình`,
               onSelect: () => {
                 setInteractionMenu(null);
                 const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
@@ -3982,7 +4051,7 @@ export default function App() {
                 setLogOverlayVisible(true);
               },
             },
-            { label: 'Để họ nghỉ ngơi tiếp', onSelect: closePrompt },
+            { label: 'Để họ chờ tiếp ở đây', onSelect: closePrompt },
           ],
         });
         return;

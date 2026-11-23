@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Shield } from 'lucide-react';
 import { CONFIG } from '../game/config';
 import { sfx } from '../game/audio';
@@ -16,7 +16,6 @@ import {
   canUnequipWeapon,
   canMemberEquipWeapon,
   leaveOrDismissPartyMember,
-  recallDismissedCompanion,
   canPlayerEquipGear,
   canPlayerEquipShield,
   canAllyEquipGear,
@@ -26,6 +25,7 @@ import {
   useEmergencyAmputationScroll,
   GEAR_ITEMS,
 } from '../game/combat';
+import { findSafeCompanionParkTile } from './DungeonMapViewport';
 import { ItemArtworkCanvas, PaperdollPreviewCanvas } from './CanvasWidgets';
 
 export type EquipSlotKey = 'weapon' | 'shield' | 'head' | 'body' | 'accessory';
@@ -131,6 +131,9 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   const curAccId = selectedAlly ? selectedAlly.equippedAccessory : player.equippedAccessory;
   const selectedMemberName = selectedAlly ? selectedAlly.name : player.name;
   const isSelectedUndead = Boolean(selectedAlly?.isUndeadSummon);
+  const [hoveredGear, setHoveredGear] = useState<{ slot: EquipSlotKey; id: string | null } | null>(
+    null
+  );
 
   const renderCompactSurvivalBars = () => {
     const hungerDanger = !isSelectedUndead && memberHunger >= 80;
@@ -431,38 +434,6 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
           </div>
         )}
 
-        {/* Compact Inline Recall Bar for Dismissed Companions */}
-        {invTab !== 'saw' && (player.dismissedCompanions || []).length > 0 && (
-          <div className="df-well px-2.5 py-1.5 flex flex-wrap items-center gap-2 border-[#c5a059]/45 text-[11px] shrink-0">
-            <span className="font-bold text-[#c5a059] uppercase">Đã rời nhóm:</span>
-            {(player.dismissedCompanions || []).map((dc) => (
-              <div key={dc.id} className="flex items-center gap-1.5 px-2 py-0.5 df-card">
-                <span className="font-bold text-[#dfd2b4]">{dc.name}</span>
-                <span className="font-mono text-[#9b8f82]">
-                  ({dc.hp}/{dc.maxHp})
-                </span>
-                <button
-                  type="button"
-                  disabled={player.party.length >= 3}
-                  onClick={() => {
-                    sfx.playHealOrChime();
-                    const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
-                    const res = recallDismissedCompanion(pCopy, dc.id);
-                    if (res.success) {
-                      setPlayer(pCopy);
-                    }
-                    setInvFeedback(res.message);
-                    onAddLog(res.message);
-                  }}
-                  className="df-btn-bronze px-1.5 py-0.5 text-[10px] font-bold cursor-pointer disabled:opacity-40"
-                >
-                  Gọi Lại
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* TAB 1: TRANG BỊ, 6 CHỈ SỐ & GIẢI PHẪU */}
         {invTab === 'equip' &&
           (() => {
@@ -509,10 +480,25 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                             onClick={() => {
                               sfx.playSfx('ui_confirm');
                               const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+                              const currentRoom = world.rooms[world.currentRoomId];
+                              const parkSpot = findSafeCompanionParkTile(
+                                currentRoom,
+                                playerPos,
+                                pCopy.dismissedCompanions || []
+                              );
+                              const parkLocation = currentRoom
+                                ? {
+                                    roomId: currentRoom.id,
+                                    floor: currentRoom.floor,
+                                    x: parkSpot.x,
+                                    y: parkSpot.y,
+                                  }
+                                : undefined;
                               const res = leaveOrDismissPartyMember(
                                 pCopy,
                                 safeInvIdx - 1,
-                                selectedAlly.isUndeadSummon ? 'dismiss' : 'leave'
+                                selectedAlly.isUndeadSummon ? 'dismiss' : 'leave',
+                                parkLocation
                               );
                               if (res.success) {
                                 setPlayer(pCopy);
@@ -547,6 +533,322 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* Compact Gear Inspector Panel (Fixed Height, Zero Layout Shift) */}
+                  {(() => {
+                    const defaultSlotId =
+                      selectedEquipSlot === 'weapon'
+                        ? curWpnId || null
+                        : selectedEquipSlot === 'shield'
+                        ? curShieldId
+                        : selectedEquipSlot === 'head'
+                        ? curHeadId
+                        : selectedEquipSlot === 'body'
+                        ? curBodyId
+                        : curAccId;
+                    const inspectTarget = hoveredGear ?? {
+                      slot: selectedEquipSlot,
+                      id: defaultSlotId,
+                    };
+                    const slotLabels: Record<EquipSlotKey, string> = {
+                      weapon: 'VŨ KHÍ',
+                      shield: 'KHIÊN',
+                      head: 'ĐẦU',
+                      body: 'THÂN',
+                      accessory: 'PHỤ KIỆN',
+                    };
+
+                    interface InspectorStatChip {
+                      label: string;
+                      valueText: string;
+                      diff?: number;
+                      diffSuffix?: string;
+                    }
+
+                    let title = '';
+                    const tags: string[] = [];
+                    const stats: InspectorStatChip[] = [];
+                    let specialLine = '';
+                    let flavorText = '';
+                    let isComparingDifferent = false;
+
+                    if (inspectTarget.id) {
+                      if (inspectTarget.slot === 'weapon' && CONFIG.WEAPONS[inspectTarget.id]) {
+                        const w = CONFIG.WEAPONS[inspectTarget.id];
+                        const curW = curWpnId ? CONFIG.WEAPONS[curWpnId] : undefined;
+                        const wForged =
+                          !selectedAlly && player.bloodForgedWeapons?.includes(w.id);
+                        const curForged =
+                          !selectedAlly &&
+                          Boolean(curW && player.bloodForgedWeapons?.includes(curW.id));
+                        const wMult = wForged ? 1.35 : 1;
+                        const curMult = curForged ? 1.35 : 1;
+                        const wAvg = Math.round(((w.dmg[0] + w.dmg[1]) * 0.5) * wMult);
+                        const curAvg = curW
+                          ? Math.round(((curW.dmg[0] + curW.dmg[1]) * 0.5) * curMult)
+                          : 0;
+                        isComparingDifferent = w.id !== curWpnId;
+                        title = w.name;
+                        tags.push(slotLabels.weapon);
+                        if (w.isTwoHanded || w.hands === 2) tags.push('2T');
+                        if (wForged) tags.push('HUYẾT RÈN');
+                        if (w.isCursed) tags.push('NGUYỀN');
+
+                        const minD = Math.round(w.dmg[0] * wMult);
+                        const maxD = Math.round(w.dmg[1] * wMult);
+                        stats.push({
+                          label: 'ST Vật Lý',
+                          valueText: `${minD}–${maxD}`,
+                          diff: isComparingDifferent ? wAvg - curAvg : 0,
+                        });
+                        const wCrit = Math.round(w.critChance * 100);
+                        const curCrit = curW ? Math.round(curW.critChance * 100) : 0;
+                        stats.push({
+                          label: 'Chí Mạng',
+                          valueText: `${wCrit}%`,
+                          diff: isComparingDifferent ? wCrit - curCrit : 0,
+                          diffSuffix: '%',
+                        });
+                        const wHit = Math.round(w.hitBonus * 100);
+                        const curHit = curW ? Math.round(curW.hitBonus * 100) : 0;
+                        if (wHit !== 0 || (isComparingDifferent && wHit !== curHit)) {
+                          stats.push({
+                            label: 'Chính Xác',
+                            valueText: `${wHit >= 0 ? '+' : ''}${wHit}%`,
+                            diff: isComparingDifferent ? wHit - curHit : 0,
+                            diffSuffix: '%',
+                          });
+                        }
+
+                        const specials: string[] = [];
+                        if (w.bleedDmg) specials.push(`Gây Chảy Máu (${w.bleedDmg}/lượt)`);
+                        if (w.burnDmg) specials.push(`Gây Thiêu Đốt (${w.burnDmg}/lượt)`);
+                        if (w.armorPen) specials.push(`Xuyên ${Math.round(w.armorPen * 100)}% Giáp`);
+                        if (w.limbBonusDmg)
+                          specials.push(`+${Math.round(w.limbBonusDmg * 100)}% ST chặt chi`);
+                        if (w.undeadDemonBonus)
+                          specials.push(`+${Math.round(w.undeadDemonBonus * 100)}% ST Quỷ/Xác Sống`);
+                        if (w.stunChance)
+                          specials.push(`${Math.round(w.stunChance * 100)}% Choáng`);
+                        if (w.ghostPiercing) specials.push('Xuyên Linh Thể');
+                        if (w.isCursed) specials.push('Khóa chặt vào tay & bào mòn Lý Trí');
+                        else if (wForged) specials.push('Huyết Rèn (+35% sát thương)');
+                        specialLine = specials.slice(0, 2).join(' • ');
+                        flavorText = w.desc;
+                      } else if (
+                        inspectTarget.slot === 'shield' &&
+                        CONFIG.SHIELDS[inspectTarget.id]
+                      ) {
+                        const s = CONFIG.SHIELDS[inspectTarget.id];
+                        const curS = curShieldId ? CONFIG.SHIELDS[curShieldId] : undefined;
+                        isComparingDifferent = s.id !== curShieldId;
+                        title = s.name;
+                        tags.push(slotLabels.shield);
+                        if (s.requiresZeroCorruption) tags.push('THUẦN KHIẾT');
+
+                        const sGuard = Math.round(s.guardReduction * 100);
+                        const curGuard = curS ? Math.round(curS.guardReduction * 100) : 0;
+                        stats.push({
+                          label: 'Chặn Thủ',
+                          valueText: `${sGuard}%`,
+                          diff: isComparingDifferent ? sGuard - curGuard : 0,
+                          diffSuffix: '%',
+                        });
+                        const sDef = s.defBonus || 0;
+                        const curDef = curS?.defBonus || 0;
+                        if (sDef !== 0 || (isComparingDifferent && sDef !== curDef)) {
+                          stats.push({
+                            label: 'Phòng Thủ',
+                            valueText: `+${sDef}`,
+                            diff: isComparingDifferent ? sDef - curDef : 0,
+                          });
+                        }
+                        const sThorns = s.thornsDmg || 0;
+                        const curThorns = curS?.thornsDmg || 0;
+                        if (sThorns > 0 || (isComparingDifferent && sThorns !== curThorns)) {
+                          stats.push({
+                            label: 'Phản Đòn',
+                            valueText: `${sThorns}`,
+                            diff: isComparingDifferent ? sThorns - curThorns : 0,
+                          });
+                        }
+
+                        const specials: string[] = [];
+                        if (s.preventLimbLoss) specials.push('Chặn đứt chi khi Thủ');
+                        if (s.slashReduction)
+                          specials.push(`Giảm ${Math.round(s.slashReduction * 100)}% ST Chém`);
+                        if (s.holyLightBoost)
+                          specials.push(`+${Math.round(s.holyLightBoost * 100)}% phép Thánh`);
+                        if (s.requiresZeroCorruption) specials.push('Yêu cầu 0% Tha Hóa');
+                        specialLine = specials.slice(0, 2).join(' • ');
+                        flavorText = s.desc;
+                      } else if (GEAR_ITEMS[inspectTarget.id]) {
+                        const g = GEAR_ITEMS[inspectTarget.id];
+                        const curGId =
+                          g.slot === 'head'
+                            ? curHeadId
+                            : g.slot === 'body'
+                            ? curBodyId
+                            : curAccId;
+                        const curG = curGId ? GEAR_ITEMS[curGId] : undefined;
+                        isComparingDifferent = g.id !== curGId;
+                        title = g.name;
+                        tags.push(slotLabels[g.slot]);
+                        if (g.weightClass === 'heavy') tags.push('GIÁP NẶNG');
+                        else if (g.weightClass === 'light') tags.push('GIÁP NHẸ');
+                        if (g.requiresZeroCorruption) tags.push('THUẦN KHIẾT');
+
+                        const pDef = Math.round(g.physDef * 100);
+                        const curPDef = curG ? Math.round(curG.physDef * 100) : 0;
+                        const mDef = Math.round(g.magDef * 100);
+                        const curMDef = curG ? Math.round(curG.magDef * 100) : 0;
+                        const mAtk = g.magAtk || 0;
+                        const curMAtk = curG?.magAtk || 0;
+                        const agi = g.agility || 0;
+                        const curAgi = curG?.agility || 0;
+                        const lck = g.luck || 0;
+                        const curLck = curG?.luck || 0;
+
+                        if (pDef !== 0 || (isComparingDifferent && pDef !== curPDef)) {
+                          stats.push({
+                            label: 'Kháng VL',
+                            valueText: `${pDef}%`,
+                            diff: isComparingDifferent ? pDef - curPDef : 0,
+                            diffSuffix: '%',
+                          });
+                        }
+                        if (mDef !== 0 || (isComparingDifferent && mDef !== curMDef)) {
+                          stats.push({
+                            label: 'Kháng Phép',
+                            valueText: `${mDef}%`,
+                            diff: isComparingDifferent ? mDef - curMDef : 0,
+                            diffSuffix: '%',
+                          });
+                        }
+                        if (mAtk !== 0 || (isComparingDifferent && mAtk !== curMAtk)) {
+                          stats.push({
+                            label: 'ST Phép',
+                            valueText: `+${mAtk}`,
+                            diff: isComparingDifferent ? mAtk - curMAtk : 0,
+                          });
+                        }
+                        if (agi !== 0 || (isComparingDifferent && agi !== curAgi)) {
+                          stats.push({
+                            label: 'Nhanh Nhẹn',
+                            valueText: `${agi >= 0 ? '+' : ''}${agi}`,
+                            diff: isComparingDifferent ? agi - curAgi : 0,
+                          });
+                        }
+                        if (
+                          stats.length < 3 &&
+                          (lck !== 0 || (isComparingDifferent && lck !== curLck))
+                        ) {
+                          stats.push({
+                            label: 'May Mắn',
+                            valueText: `+${lck}%`,
+                            diff: isComparingDifferent ? lck - curLck : 0,
+                            diffSuffix: '%',
+                          });
+                        }
+
+                        const specials: string[] = [];
+                        if (g.maxHpBonus) specials.push(`+${g.maxHpBonus} SL tối đa`);
+                        if (g.maxMindBonus) specials.push(`+${g.maxMindBonus} LT tối đa`);
+                        if (g.miasmaSanImmune) specials.push('Miễn giảm Lý Trí bởi chướng khí');
+                        if (g.coldMiasmaResist) specials.push('Kháng hơi lạnh & chướng khí');
+                        if (g.stealthVisionReduce) specials.push('Giảm tầm phát hiện của quái');
+                        if (g.bleedResistPct)
+                          specials.push(`Kháng Chảy Máu ${Math.round(g.bleedResistPct * 100)}%`);
+                        if (g.limbSeverResistPct)
+                          specials.push(
+                            `Kháng Đứt Chi ${Math.round(g.limbSeverResistPct * 100)}%`
+                          );
+                        if (g.blocksOneFatalStatus)
+                          specials.push('Chặn 1 lần Ký Sinh / Nhiễm Trùng chí mạng');
+                        if (g.coinTossBoost) specials.push('Tăng vận may khi tung xu');
+                        if (g.sanPerTurn) specials.push(`+${g.sanPerTurn} Lý Trí mỗi lượt`);
+                        if (g.corPerCombat) specials.push(`+${g.corPerCombat} Tha Hóa sau trận`);
+                        if (g.requiresZeroCorruption) specials.push('Yêu cầu 0% Tha Hóa');
+                        specialLine = specials.slice(0, 2).join(' • ');
+                        flavorText = g.desc;
+                      }
+                    }
+
+                    return (
+                      <div className="p-2.5 bg-[#0d0a10] border border-[#3a3a3a] h-[132px] shrink-0 overflow-hidden flex flex-col justify-between gap-1">
+                        {!title ? (
+                          <div className="flex-1 flex items-center justify-center text-[11px] italic text-[#9b8f82] text-center px-2">
+                            Chọn trang bị để xem chi tiết.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-1 min-w-0">
+                              {/* Line 1: Name + Tags */}
+                              <div className="flex items-center justify-between gap-1.5 min-w-0">
+                                <span className="text-[11px] font-bold text-[#dfd2b4] truncate">
+                                  {title}
+                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {tags.map((tg) => (
+                                    <span
+                                      key={tg}
+                                      className={`px-1 py-0.5 text-[9px] font-mono font-bold border leading-none ${
+                                        tg === 'NGUYỀN'
+                                          ? 'bg-[#2a0c10] border-[#8b0000] text-[#f87171]'
+                                          : tg === 'HUYẾT RÈN'
+                                          ? 'bg-[#2b140c] border-[#b45309] text-[#fbbf24]'
+                                          : 'bg-[#17131c] border-[#3a3a3a] text-[#c5a059]'
+                                      }`}
+                                    >
+                                      [{tg}]
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Line 2: Key Stats + Diffs */}
+                              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] font-mono">
+                                {stats.slice(0, 4).map((st) => {
+                                  const d = st.diff || 0;
+                                  const suf = st.diffSuffix || '';
+                                  return (
+                                    <span key={st.label} className="text-[#cfc0a9] whitespace-nowrap">
+                                      {st.label}:{' '}
+                                      {isComparingDifferent && d !== 0 ? (
+                                        <span
+                                          className={`font-bold ${
+                                            d > 0 ? 'text-[#6ee7b7]' : 'text-[#f87171]'
+                                          }`}
+                                        >
+                                          {d > 0 ? `+${d}${suf}` : `${d}${suf}`}
+                                        </span>
+                                      ) : (
+                                        <span className="font-bold text-[#9ab08e]">
+                                          {st.valueText}
+                                        </span>
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Line 3: Special Effect / Passive (if any) */}
+                              {specialLine && (
+                                <div className="text-[10px] text-[#d8b97c] truncate">
+                                  ✦ {specialLine}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Line 4-5: Flavor / Lore Text */}
+                            <p className="text-[10px] italic text-[#9b8f82] leading-snug line-clamp-2 border-t border-[#3a3a3a]/45 pt-1">
+                              {flavorText}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* 6 Stats in 2-Column Grid (3 rows) */}
                   <div className="space-y-1.5">
@@ -855,43 +1157,62 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                             (!selectedAlly && player.cursedLockedWeapon === curWpnId
                               ? ' [NGUYỀN]'
                               : ''),
-                          curWpnId || 'rotten_wood_shield',
+                          curWpnId || null,
                         ],
                         [
                           'shield',
                           'Khiên',
                           curShieldId ? CONFIG.SHIELDS[curShieldId]?.name || 'Trống' : 'Trống',
-                          curShieldId || 'rotten_wood_shield',
+                          curShieldId || null,
                         ],
                         [
                           'head',
                           'Đầu',
                           curHeadId ? GEAR_ITEMS[curHeadId]?.name : 'Trống',
-                          curHeadId || 'iron_penitent_helm',
+                          curHeadId || null,
                         ],
                         [
                           'body',
                           'Thân',
                           curBodyId ? GEAR_ITEMS[curBodyId]?.name : 'Trống',
-                          curBodyId || 'cathedral_chainmail',
+                          curBodyId || null,
                         ],
                         [
                           'accessory',
                           'P.Kiện',
                           curAccId ? GEAR_ITEMS[curAccId]?.name : 'Trống',
-                          curAccId || 'bone_rosary_ring',
+                          curAccId || null,
                         ],
-                      ] as Array<[EquipSlotKey, string, string, string]>
-                    ).map(([slotKey, slotLabel, equippedName, iconId]) => {
+                      ] as Array<[EquipSlotKey, string, string, string | null]>
+                    ).map(([slotKey, slotLabel, equippedName, realEquippedId]) => {
                       const isLimbSlotBroken =
                         (slotKey === 'weapon' && weaponSlotBroken) ||
                         (slotKey === 'shield' && shieldSlotBroken);
                       return (
                         <div
                           key={slotKey}
+                          role="button"
+                          tabIndex={0}
+                          onMouseEnter={() => {
+                            setHoveredGear({ slot: slotKey, id: realEquippedId });
+                            if (realEquippedId) setPreviewItemId(realEquippedId);
+                          }}
+                          onMouseLeave={() => setHoveredGear(null)}
+                          onFocus={() => {
+                            setHoveredGear({ slot: slotKey, id: realEquippedId });
+                            if (realEquippedId) setPreviewItemId(realEquippedId);
+                          }}
+                          onBlur={() => setHoveredGear(null)}
                           onClick={() => {
                             setSelectedEquipSlot(slotKey);
-                            setPreviewItemId(iconId);
+                            if (realEquippedId) setPreviewItemId(realEquippedId);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedEquipSlot(slotKey);
+                              if (realEquippedId) setPreviewItemId(realEquippedId);
+                            }
                           }}
                           className={`px-2.5 py-1.5 flex items-center justify-between cursor-pointer ${
                             selectedEquipSlot === slotKey ? 'df-card-active' : 'df-card'
@@ -950,7 +1271,16 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                               key={wId}
                               type="button"
                               disabled={isAllyLocked || !weaponLimbCheck.allowed}
-                              onMouseEnter={() => setPreviewItemId(wId)}
+                              onMouseEnter={() => {
+                                setPreviewItemId(wId);
+                                setHoveredGear({ slot: 'weapon', id: wId });
+                              }}
+                              onMouseLeave={() => setHoveredGear(null)}
+                              onFocus={() => {
+                                setPreviewItemId(wId);
+                                setHoveredGear({ slot: 'weapon', id: wId });
+                              }}
+                              onBlur={() => setHoveredGear(null)}
                               onClick={() => {
                                 setPreviewItemId(wId);
                                 if (!weaponLimbCheck.allowed) {
@@ -1022,7 +1352,16 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                               key={sId}
                               type="button"
                               disabled={isAllyLocked || shieldSlotBroken}
-                              onMouseEnter={() => setPreviewItemId(sId)}
+                              onMouseEnter={() => {
+                                setPreviewItemId(sId);
+                                setHoveredGear({ slot: 'shield', id: sId });
+                              }}
+                              onMouseLeave={() => setHoveredGear(null)}
+                              onFocus={() => {
+                                setPreviewItemId(sId);
+                                setHoveredGear({ slot: 'shield', id: sId });
+                              }}
+                              onBlur={() => setHoveredGear(null)}
                               onClick={() => {
                                 setPreviewItemId(sId);
                                 if (!check.allowed) {
@@ -1080,7 +1419,16 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                                 key={gId}
                                 type="button"
                                 disabled={isAllyLocked}
-                                onMouseEnter={() => setPreviewItemId(gId)}
+                                onMouseEnter={() => {
+                                  setPreviewItemId(gId);
+                                  setHoveredGear({ slot: selectedEquipSlot, id: gId });
+                                }}
+                                onMouseLeave={() => setHoveredGear(null)}
+                                onFocus={() => {
+                                  setPreviewItemId(gId);
+                                  setHoveredGear({ slot: selectedEquipSlot, id: gId });
+                                }}
+                                onBlur={() => setHoveredGear(null)}
                                 onClick={() => {
                                   setPreviewItemId(gId);
                                   if (!check.allowed) {
@@ -1478,83 +1826,97 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
           </div>
         )}
 
-        {/* TAB 3: GIẢ KIM (2-COLUMN COMPACT RECIPE CARDS) */}
-        {invTab === 'alchemy' && (
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
-            {invFeedback && (
-              <div className="px-2.5 py-1.5 df-well border-[#c5a059] text-[11px] text-[#dfd2b4]">
-                {invFeedback}
-              </div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {CONFIG.RECIPES.map((rec) => {
-                const isRecipeUnlocked =
-                  rec.id === 'recipe_herbal_salve' || player.unlockedRecipes.includes(rec.id);
-                const ingEntries = Object.entries(rec.ingredients);
-                const canCraft =
-                  isRecipeUnlocked &&
-                  ingEntries.every(([ingId, qty]) => (player.inventory[ingId] || 0) >= qty);
-                return (
-                  <div
-                    key={rec.id}
-                    onMouseEnter={() => setPreviewItemId(rec.resultItemId)}
-                    className={`p-2.5 df-card flex flex-col justify-between gap-2 text-xs ${
-                      isRecipeUnlocked ? '' : 'opacity-65'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <ItemArtworkCanvas itemOrWeaponId={rec.resultItemId} size={28} />
-                        <span className="font-bold text-[#dfd2b4] truncate">{rec.name}</span>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={!canCraft}
-                        onClick={() => {
-                          sfx.playHealOrChime();
-                          setPlayer((prev) => {
-                            const nextInv = { ...prev.inventory };
-                            for (const [ingId, qty] of ingEntries) {
-                              nextInv[ingId] = Math.max(0, (nextInv[ingId] || 0) - qty);
-                            }
-                            nextInv[rec.resultItemId] = (nextInv[rec.resultItemId] || 0) + 1;
-                            return { ...prev, inventory: nextInv };
-                          });
-                          const msg = `Điều chế thành công [${CONFIG.ITEMS[rec.resultItemId]?.name || rec.name}].`;
-                          setInvFeedback(msg);
-                          onAddLog(msg);
-                        }}
-                        className="df-btn-bronze px-2.5 py-1 disabled:opacity-35 text-[11px] font-bold cursor-pointer shrink-0"
-                      >
-                        {isRecipeUnlocked ? 'Pha Chế' : 'Khóa'}
-                      </button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1">
-                      {ingEntries.map(([ingId, qty]) => {
-                        const owned = player.inventory[ingId] || 0;
-                        const enough = owned >= qty;
-                        const ingName = CONFIG.ITEMS[ingId]?.name || ingId;
-                        return (
-                          <span
-                            key={ingId}
-                            className={`px-1.5 py-0.5 text-[10px] border font-mono ${
-                              enough
-                                ? 'bg-[#121914] border-[#4a6b48] text-[#9ab08e]'
-                                : 'bg-[#2a0c10] border-[#8b0000]/75 text-[#c96b6b]'
-                            }`}
-                          >
-                            {ingName} {owned}/{qty}
-                          </span>
-                        );
-                      })}
-                    </div>
+        {/* TAB 3: GIẢ KIM (ONLY UNLOCKED RECIPES; EMPTY STATE WHEN NONE UNLOCKED) */}
+        {invTab === 'alchemy' &&
+          (() => {
+            const unlockedRecipesList = CONFIG.RECIPES.filter((rec) =>
+              player.unlockedRecipes.includes(rec.id)
+            );
+            return (
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
+                {invFeedback && (
+                  <div className="px-2.5 py-1.5 df-well border-[#c5a059] text-[11px] text-[#dfd2b4]">
+                    {invFeedback}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                )}
+                {unlockedRecipesList.length === 0 ? (
+                  <div className="df-well p-6 text-center space-y-1.5">
+                    <p className="text-xs font-bold text-[#c5a059] uppercase tracking-wider">
+                      Chưa Có Công Thức Giả Kim
+                    </p>
+                    <p className="text-xs italic text-[#9b8f82]">
+                      Hãy tìm và đọc các cuốn sách Pha Chế Thuốc trên kệ sách hoặc trong rương cổ để
+                      mở khóa công thức điều chế.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {unlockedRecipesList.map((rec) => {
+                      const ingEntries = Object.entries(rec.ingredients);
+                      const canCraft = ingEntries.every(
+                        ([ingId, qty]) => (player.inventory[ingId] || 0) >= qty
+                      );
+                      return (
+                        <div
+                          key={rec.id}
+                          onMouseEnter={() => setPreviewItemId(rec.resultItemId)}
+                          className="p-2.5 df-card flex flex-col justify-between gap-2 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <ItemArtworkCanvas itemOrWeaponId={rec.resultItemId} size={28} />
+                              <span className="font-bold text-[#dfd2b4] truncate">{rec.name}</span>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!canCraft}
+                              onClick={() => {
+                                sfx.playHealOrChime();
+                                setPlayer((prev) => {
+                                  const nextInv = { ...prev.inventory };
+                                  for (const [ingId, qty] of ingEntries) {
+                                    nextInv[ingId] = Math.max(0, (nextInv[ingId] || 0) - qty);
+                                  }
+                                  nextInv[rec.resultItemId] = (nextInv[rec.resultItemId] || 0) + 1;
+                                  return { ...prev, inventory: nextInv };
+                                });
+                                const msg = `Điều chế thành công [${CONFIG.ITEMS[rec.resultItemId]?.name || rec.name}].`;
+                                setInvFeedback(msg);
+                                onAddLog(msg);
+                              }}
+                              className="df-btn-bronze px-2.5 py-1 disabled:opacity-35 text-[11px] font-bold cursor-pointer shrink-0"
+                            >
+                              Pha Chế
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1">
+                            {ingEntries.map(([ingId, qty]) => {
+                              const owned = player.inventory[ingId] || 0;
+                              const enough = owned >= qty;
+                              const ingName = CONFIG.ITEMS[ingId]?.name || ingId;
+                              return (
+                                <span
+                                  key={ingId}
+                                  className={`px-1.5 py-0.5 text-[10px] border font-mono ${
+                                    enough
+                                      ? 'bg-[#121914] border-[#4a6b48] text-[#9ab08e]'
+                                      : 'bg-[#2a0c10] border-[#8b0000]/75 text-[#c96b6b]'
+                                  }`}
+                                >
+                                  {ingName} {owned}/{qty}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
         {/* TAB 4: CƯA XƯƠNG & GIẢI PHẪU */}
         {invTab === 'saw' &&

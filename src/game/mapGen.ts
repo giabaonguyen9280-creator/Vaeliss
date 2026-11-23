@@ -129,6 +129,7 @@ export interface RoomData {
   decoys?: MapDecoy[];
   herbTypes?: Record<string, HerbType>;
   ritualCircles?: Record<string, { deityType: RitualDeityType; used?: boolean }>;
+  guaranteedRecipeBooks?: Record<string, string>;
   lootedCoords: string[];
   shortcutOpened: boolean;
   secretWallBlown: boolean;
@@ -1026,6 +1027,62 @@ export function generateWorld(seed: string): WorldMapState {
   }
 
   rooms.F2_EXTERIOR = buildExteriorCourtyardRoom(seed);
+
+  // Deterministically place the 3 Alchemy Books (Pha Chế Thuốc 1, 2, 3) into bookshelves/chests
+  const bookRng = new SeededRNG(`${seed}_alchemy_books_placement`);
+  const alchemyPlacements: Array<{ bookItemId: string; preferredRooms: string[] }> = [
+    { bookItemId: 'recipe_book_expedition', preferredRooms: ['F2_R0', 'F2_R1', 'F2_R2'] },
+    { bookItemId: 'recipe_book_cathedral', preferredRooms: ['F2_R2', 'F2_R3', 'F1_R0', 'F2_R1'] },
+    { bookItemId: 'recipe_book_forbidden', preferredRooms: ['F1_R1', 'F1_R2', 'F3_R0', 'F3_R1', 'F2_R3'] },
+  ];
+  for (const { bookItemId, preferredRooms } of alchemyPlacements) {
+    let placed = false;
+    for (const rId of preferredRooms) {
+      const targetRoom = rooms[rId];
+      if (!targetRoom) continue;
+      targetRoom.guaranteedRecipeBooks = targetRoom.guaranteedRecipeBooks || {};
+      const shelfSpots: string[] = [];
+      const chestSpots: string[] = [];
+      for (let y = 0; y < targetRoom.grid.length; y++) {
+        for (let x = 0; x < (targetRoom.grid[y]?.length || 0); x++) {
+          const k = `${x},${y}`;
+          if (targetRoom.guaranteedRecipeBooks[k]) continue;
+          const tile = targetRoom.grid[y][x];
+          if (tile === TILE.BOOKSHELF) shelfSpots.push(k);
+          else if (tile === TILE.CHEST) chestSpots.push(k);
+        }
+      }
+      const candidates = shelfSpots.length > 0 ? shelfSpots : chestSpots;
+      if (candidates.length > 0) {
+        const chosenKey = candidates[bookRng.int(0, candidates.length - 1)];
+        targetRoom.guaranteedRecipeBooks[chosenKey] = bookItemId;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      // Fallback: scan all dungeon rooms for any bookshelf or chest
+      for (const targetRoom of Object.values(rooms)) {
+        targetRoom.guaranteedRecipeBooks = targetRoom.guaranteedRecipeBooks || {};
+        let foundKey: string | null = null;
+        for (let y = 0; y < targetRoom.grid.length && !foundKey; y++) {
+          for (let x = 0; x < (targetRoom.grid[y]?.length || 0); x++) {
+            const k = `${x},${y}`;
+            if (targetRoom.guaranteedRecipeBooks[k]) continue;
+            const tile = targetRoom.grid[y][x];
+            if (tile === TILE.BOOKSHELF || tile === TILE.CHEST) {
+              foundKey = k;
+              break;
+            }
+          }
+        }
+        if (foundKey) {
+          targetRoom.guaranteedRecipeBooks[foundKey] = bookItemId;
+          break;
+        }
+      }
+    }
+  }
 
   return {
     seed,

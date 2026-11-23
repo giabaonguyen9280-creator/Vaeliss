@@ -1201,30 +1201,30 @@ export const CONFIG = {
     // === 3 SÁCH CÔNG THỨC GIẢ KIM ===
     recipe_book_expedition: {
       id: 'recipe_book_expedition',
-      name: 'Thảo Dược Chí Viễn Chinh (Sách Công Thức)',
+      name: 'Pha Chế Thuốc 1',
       category: 'relic',
       combatUsable: false,
       mapUsable: true,
-      unlockRecipes: ['recipe_herbal_salve', 'recipe_bandage_poultice'],
-      desc: 'Bấm [Đọc Sách] trong Túi Đồ để mở khóa công thức: Cao Thảo Dược & Cao Dán Cầm Máu Viễn Chinh.',
+      unlockRecipes: ['recipe_herbal_salve', 'recipe_sedative_draught'],
+      desc: 'Sách pha chế căn bản. Mở khóa vĩnh viễn công thức: Cao Thảo Dược & Thuốc An Thần Thảo Mộc.',
     },
     recipe_book_cathedral: {
       id: 'recipe_book_cathedral',
-      name: 'Sổ Tay Giả Kim Giáo Đường (Sách Công Thức)',
+      name: 'Pha Chế Thuốc 2',
       category: 'relic',
       combatUsable: false,
       mapUsable: true,
-      unlockRecipes: ['recipe_holy_elixir', 'recipe_sedative_draught'],
-      desc: 'Bấm [Đọc Sách] trong Túi Đồ để mở khóa công thức: Thánh Dược & Thuốc An Thần Thảo Mộc.',
+      unlockRecipes: ['recipe_holy_elixir', 'recipe_bandage_poultice'],
+      desc: 'Sổ tay bào chế của giáo đường. Mở khóa vĩnh viễn công thức: Thánh Dược & Cao Dán Cầm Máu Viễn Chinh.',
     },
     recipe_book_forbidden: {
       id: 'recipe_book_forbidden',
-      name: 'Bản Thảo Cấm Của Thần Y (Sách Công Thức)',
+      name: 'Pha Chế Thuốc 3',
       category: 'relic',
       combatUsable: false,
       mapUsable: true,
-      unlockRecipes: ['recipe_holy_fire_oil', 'recipe_void_acid', 'recipe_stimulant_serum'],
-      desc: 'Bấm [Đọc Sách] trong Túi Đồ để mở khóa công thức: Lọ Dầu Lửa Thánh, Lọ Axit Hư Vô & Huyết Thanh Kích Thích.',
+      unlockRecipes: ['recipe_holy_fire_oil', 'recipe_void_acid'],
+      desc: 'Bản thảo giả kim cấm. Mở khóa vĩnh viễn công thức: Lọ Dầu Lửa Thánh & Lọ Axit Hư Vô.',
     },
     // === VẬT PHẨM KHỞI ĐẦU & MŨI TÊN CỦA GÃ SĂN DI VẬT ===
     crumpled_hunter_note: {
@@ -1313,7 +1313,7 @@ export const CONFIG = {
     },
   } as Record<string, UtilityItemDef>,
 
-  // Crafting Recipes (Unlocked via Bookshelves / Default)
+  // Crafting Recipes (Unlocked via 3 Alchemy Books: Pha Chế Thuốc 1, 2, 3)
   RECIPES: [
     {
       id: 'recipe_herbal_salve',
@@ -1323,18 +1323,18 @@ export const CONFIG = {
       desc: '1 Thảo Dược Xanh + 1 Thảo Dược Đỏ (+70 Sinh Lực, Xóa Nhiễm Trùng).',
     },
     {
-      id: 'recipe_holy_elixir',
-      resultItemId: 'holy_elixir',
-      name: 'Thánh Dược',
-      ingredients: { red_herb: 1, holy_water: 1 },
-      desc: '1 Thảo Dược Đỏ + 1 Nước Thánh (+50 Sinh Lực, +35 Lý Trí).',
-    },
-    {
       id: 'recipe_sedative_draught',
       resultItemId: 'sedative_draught',
       name: 'Thuốc An Thần Thảo Mộc',
       ingredients: { calm_flower: 1, holy_water: 1 },
       desc: '1 Hoa Tĩnh Tâm + 1 Nước Thánh (+50 Lý Trí, Xóa Ảo Giác).',
+    },
+    {
+      id: 'recipe_holy_elixir',
+      resultItemId: 'holy_elixir',
+      name: 'Thánh Dược',
+      ingredients: { red_herb: 1, holy_water: 1 },
+      desc: '1 Thảo Dược Đỏ + 1 Nước Thánh (+50 Sinh Lực, +35 Lý Trí).',
     },
     {
       id: 'recipe_bandage_poultice',
@@ -1356,13 +1356,6 @@ export const CONFIG = {
       name: 'Lọ Axit Hư Vô',
       ingredients: { red_vial: 1, brown_vial: 1 },
       desc: '1 Lọ Đỏ + 1 Lọ Nâu (Xuyên giáp 70%).',
-    },
-    {
-      id: 'recipe_stimulant_serum',
-      resultItemId: 'stimulant_serum',
-      name: 'Huyết Thanh Kích Thích',
-      ingredients: { blue_vial: 1, blood_vial: 1 },
-      desc: '1 Thuốc Hồi Huyết + 1 Bình Máu (+35 Sinh Lực, +25 Lý Trí, +60% Sát thương).',
     },
   ] as RecipeDef[],
 
@@ -1533,7 +1526,6 @@ export const CONFIG = {
       vol: 2,
       title: 'Cuộn Da Dê II – Lời Khắc Bên Đài Cộng Hưởng',
       floorHint: 'Cuộn Da Dê Cổ • Tầng 2 & 3 – Đài Cộng Hưởng',
-      unlockRecipeId: 'recipe_herbal_salve',
       content:
         'Đừng cầu nguyện nếu chưa sẵn sàng trả máu. Đài đá này nối thẳng tới ba thế lực cổ xưa: Thánh Mẫu đòi sự trong sạch tuyệt đối, Huyết Quỷ thổi bùng cơn đói xác thịt và bào mòn nhân tính, còn Hư Vô gặm nhấm dần sự tỉnh táo để đổi lấy đôi mắt nhìn xuyên màn sương tầng đáy.\n\n*Ghi chú bên lề bằng mực nâu:* Dung dịch nâu thổi bay được tường đá nứt; còn axit đỏ hất thẳng vào mặt lũ quái sẽ làm chúng mù lòa và mục rữa lớp giáp.',
     },
@@ -1542,7 +1534,6 @@ export const CONFIG = {
       vol: 3,
       title: 'Cuộn Da Dê III – Khế Ước Máu Đen',
       floorHint: 'Cuộn Da Dê Cổ • Tầng 2 – Hầm Tế',
-      unlockRecipeId: 'recipe_holy_elixir',
       content:
         'Kẻ nào từng nếm thịt đồng loại, dựng xác chết dậy hay mở miệng đọc lời thề Huyết Quỷ đều mang trên người mùi tanh không thể rửa sạch. Một khi vết nhơ Tha Hóa đã ăn sâu vào cốt tủy, đừng mất công quỳ trước tượng Thánh Mẫu nữa — bà ta sẽ vĩnh viễn ngoảnh mặt, mặc xác ngươi thối rữa trong bóng tối.',
     },
@@ -1551,7 +1542,6 @@ export const CONFIG = {
       vol: 4,
       title: 'Cuộn Da Dê IV – Hạt Giống Dưới Đáy Vực',
       floorHint: 'Cuộn Da Dê Cổ • Tầng 3 – Hồ Hư Vô',
-      unlockRecipeId: 'recipe_holy_fire_oil',
       content:
         'Ghi vội bằng nét chữ run rẩy của Lão Thần Y trước khi mất tích: "Ta đã nhầm. Tiên Dược Nguyên Sơ dưới đáy Vực Sao không chỉ để giải độc hóa đá cho một kẻ phàm trần. Nó là giọt sương đánh thức mầm Thánh Thụ đang ngủ trong máu Thánh Tử Thứ 13. Nếu ai đó mang được cả Lõi Khóa, lọ Tiên Dược và đứa trẻ ấy tới trước Vết Rách... có lẽ thế giới này sẽ không phải quỳ trước vị thần nào nữa."',
     },
@@ -1561,7 +1551,6 @@ export const CONFIG = {
       vol: 5,
       title: 'Sổ Kiểm Kê Tế Lễ: Mười Ba Đứa Trẻ',
       floorHint: 'Tài Liệu Mật • Tầng 2 – Phòng Giả Kim',
-      unlockRecipeId: 'recipe_sedative_draught',
       content:
         'Mười ba đứa trẻ bị đưa xuống hầm kín trong đêm không trăng, không ghi tên, chỉ đánh số từ một đến mười ba. Giáo hội gọi chúng là cột trụ giữ Thánh Quang, nhưng ta đã thấy thứ chảy ra từ khóe mắt bức tượng Thánh Mẫu trên điện thờ. Đó không phải nước mắt. Đó là thứ dịch đen đặc quánh mùi sắt rỉ, và nó đang rỉ ra ngày một nhiều hơn.',
     },
@@ -1578,7 +1567,6 @@ export const CONFIG = {
       vol: 7,
       title: 'Ghi Chép Địa Chất Nơi Đáy Vực',
       floorHint: 'Tài Liệu Mật • Tầng 3 – Sảnh Bia Đá',
-      unlockRecipeId: 'recipe_void_acid',
       content:
         'Đại Giáo Đường Goethe không được xây trên đất lành — nó được dựng đè lên một hố thiên thạch cổ đại. Những đường rãnh khắc trên bia đá dưới đáy vực không phải kinh cầu; chúng là đinh sắt đóng chặt vết nứt không gian vào đúng một điểm neo duy nhất. Nếu điểm neo vỡ, cả bầu trời đêm sẽ đổ ập xuống.',
     },
@@ -1611,7 +1599,6 @@ export const CONFIG = {
       vol: 11,
       title: 'Hồ Sơ Thí Nghiệm Số 09: Cành Cây Thịt',
       floorHint: 'Nhật Ký Mật • Tầng 3 – Phòng Thí Nghiệm Vực Sao',
-      unlockRecipeId: 'recipe_stimulant_serum',
       content:
         'Ngày thứ mười bốn, xương sườn vật chủ số 09 tự tách đôi, mọc lên một thân cây trắng bệch treo đầy những quả tim còn đập. Nó dùng bộ rễ xương máu trói chân con mồi trước khi nuốt chửng. Chặt đứt đám rễ đó ngay từ đầu, hoặc ném thẳng thuốc nổ nâu hay thịt thối vào tán tim thịt lúc nó há miệng.',
     },

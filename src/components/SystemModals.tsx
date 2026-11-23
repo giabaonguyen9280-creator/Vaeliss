@@ -200,20 +200,20 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'lore' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#c5a059]">3 Tầng Thung Lũng:</b> Lâu Đài Hắc Ám (T1) → Đại Giáo
-            Đường (T2) → Vực Sao (T3).
+            • <b className="text-[#c5a059]">Ba Tầng Thung Lũng:</b> Từ Lâu Đài Hắc Ám, qua Đại Giáo
+            Đường đổ nát, xuống tới đáy Vực Sao không ánh sáng.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Cổ Thư [L]:</b> Lục tìm trang da dê trên kệ sách để ghép
-            nối sự thật và bí mật kết cục.
+            • <b className="text-[#c5a059]">Cổ Thư [L]:</b> Những trang da dê còn sót lại trên kệ
+            sách lưu giữ mảnh ký ức của những kẻ đi trước.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Đài Cộng Hưởng:</b> Dùng Đá Linh Hồn học kỹ năng, cường
-            hóa nội tại và mở Cổng Hư Vô.
+            • <b className="text-[#c5a059]">Đài Cộng Hưởng:</b> Bệ đá cổ nơi các nghi thức khắc ấn
+            và đánh đổi linh hồn diễn ra.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Tổ Đội (Tối đa 4):</b> Chiêu mộ người sống sót hoặc
-            triệu hồi xác sống; đồng hành 0 SL sẽ tử vong vĩnh viễn.
+            • <b className="text-[#c5a059]">Đồng Hành:</b> Bạn có thể đi cùng những kẻ sống sót trên
+            đường; ai ngã xuống sẽ vĩnh viễn nằm lại bóng tối.
           </li>
         </ul>
       )}
@@ -221,20 +221,20 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'move' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#c5a059]">WASD / Mũi tên:</b> Di chuyển từng ô; mỗi bước tăng nhẹ
-            Độ Đói và kích hoạt Độc/Chảy máu.
+            • <b className="text-[#c5a059]">WASD / Mũi tên:</b> Di chuyển từng bước qua hành lang
+            và sảnh đá.
           </li>
           <li>
-            • <b className="text-[#c5a059]">[F] / Enter / Space:</b> Tương tác Rương, Kệ Sách, Đài
-            Cộng Hưởng, NPC, xác quái.
+            • <b className="text-[#c5a059]">F / Enter / Space:</b> Tương tác với rương, kệ sách, đài
+            đá, người sống sót và xác quái.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Nổ Tường Nứt [F]:</b> Đứng sát tường rạn và dùng{' '}
-            <b>Lọ Nâu</b> mở lối bí mật.
+            • <b className="text-[#c5a059]">I / L / ESC:</b> Mở Túi Đồ, đọc Cổ Thư hoặc đóng bảng
+            đang mở.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Giường Đá Lưu:</b> Tung xu hồi phục &amp; lưu game (
-            <b>Thẻ Bài Bạc</b> tung 2 xu; <b>Lý Trí &lt; 30</b> mất quyền chọn xu).
+            • <b className="text-[#c5a059]">Giường Đá:</b> Chỗ ngả lưng hiếm hoi để nghỉ sức và ghi
+            lại dấu vết hành trình.
           </li>
         </ul>
       )}
@@ -242,20 +242,20 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'combat' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#c5a059]">100% Bàn Phím:</b> <b>[W/S]</b> chọn lệnh/chi,{' '}
-            <b>[Enter/F]</b> xác nhận, <b>[ESC]</b> quay lại; phím tắt <b>[1..5]</b>.
+            • <b className="text-[#c5a059]">Điều Khiển:</b> Dùng <b>W/S</b> hoặc chuột chọn lệnh và
+            bộ phận, <b>Enter / F</b> xác nhận, <b>ESC</b> quay lại; phím tắt <b>1..5</b>.
           </li>
           <li>
-            • <b className="text-[#c96b6b]">Chặt Tay Vũ Khí:</b> Phá tay cầm vũ khí trước để vô hiệu
-            hóa đòn sát thương lớn.
+            • <b className="text-[#c96b6b]">Nhắm Bộ Phận:</b> Kẻ địch gồm nhiều chi riêng biệt — hãy
+            quan sát đòn thế để chọn mục tiêu phù hợp.
           </li>
           <li>
-            • <b className="text-[#9ab08e]">Chặt Chân → Đầu 95%:</b> Quái mất chân sẽ quỵ ngã, đẩy
-            tỉ lệ đánh trúng Đầu lên 95%.
+            • <b className="text-[#9ab08e]">Thế Thủ:</b> Thu mình chống đỡ trước những đòn đánh nặng
+            nề khi quái vật tụ lực.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Thủ &amp; Vũ Khí Nguyền:</b> Dùng <b>[Thủ]</b> khi Boss
-            tụ lực đỏ; vũ khí Nguyền khóa tay và phản chủ khi Lý Trí &lt; 40.
+            • <b className="text-[#c5a059]">Rút Lui &amp; Khí Cụ:</b> Không phải cuộc chạm trán nào
+            cũng đáng để đổi bằng máu thịt.
           </li>
         </ul>
       )}
@@ -263,20 +263,20 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'survival' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#eab308]">Đói &amp; Lý Trí:</b> Đói ≥ 50 giảm 25% ST, ≥ 90 mất Né
-            &amp; Chí mạng; Lý Trí &lt; 30 gây Hoảng Loạn.
+            • <b className="text-[#eab308]">Cơn Đói &amp; Lý Trí:</b> Bóng tối và đói khát âm thầm
+            bào mòn thân xác lẫn tinh thần; hãy giữ lương thực và ánh đuốc bên mình.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Lọ Nâu / Lọ Đỏ:</b> Nâu nổ tường &amp; 650–850 ST; Đỏ
-            gây Mù 3 lượt (-70% trúng) và phá 50% Giáp.
+            • <b className="text-[#c96b6b]">Thương Tích:</b> Chảy máu, độc tố hay nhiễm trùng đều có
+            thể đoạt mạng nếu để kéo dài.
           </li>
           <li>
-            • <b className="text-[#a3b2c4]">Hồi Huyết / Giải Độc:</b> Hồi 50% Sinh Lực; Giải Độc xóa
-            Độc, Nhiễm Trùng và Ký Sinh.
+            • <b className="text-[#a3b2c4]">Dược Thảo &amp; Dụng Cụ:</b> Băng gạc, thảo mộc, bình
+            thuốc và công cụ thô sơ đều ẩn chứa công dụng riêng chờ bạn tự thử nghiệm.
           </li>
           <li>
-            • <b className="text-[#a889b8]">An Thần / Cưa Xương:</b> An Thần trốn thoát 100%; Cưa
-            Xương cắt bỏ chi nhiễm trùng cứu mạng.
+            • <b className="text-[#a889b8]">Sách Pha Chế:</b> Tìm những cuốn sách giả kim trong hầm
+            ngục để tự điều chế thuốc từ nguyên liệu nhặt được.
           </li>
         </ul>
       )}

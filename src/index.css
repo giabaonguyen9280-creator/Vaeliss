@@ -643,6 +643,21 @@
   will-change: transform, opacity;
 }
 
+/* Fear & Hunger-style smooth white pulse on targeted enemy limb (~0.75s sine wave) */
+@keyframes limbTargetPulse {
+  0%, 100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(2.15);
+  }
+}
+
+.limb-target-pulse {
+  animation: limbTargetPulse 0.75s ease-in-out infinite;
+  will-change: filter;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .df-card-active,
   .df-btn-active,
@@ -655,6 +670,7 @@
   .inline-silver-float,
   .ending-pan-bg,
   .combat-log-slide-in,
+  .limb-target-pulse,
   .vfx-sword::before,
   .vfx-heavy-axe::before,
   .vfx-heavy-axe::after,

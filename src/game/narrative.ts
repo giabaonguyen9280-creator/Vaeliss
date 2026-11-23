@@ -165,8 +165,7 @@ export const CHARACTER_INTRO_STEPS: Record<'fallen_knight' | 'forsaken_nun' | 'n
           label: 'B. Bào chế thảo dược tại bệnh xá',
           contextHint: 'Ghi nhớ từng vị thuốc đắng dùng để cầm máu cho các tu sĩ.',
           outcomeFlavor: 'Bạn mang theo cuốn sổ ghi chép bào chế quen thuộc cùng vài nhành cỏ đỏ và vải băng sạch.',
-          effectText: 'Nhận [Thảo Dược Chí Viễn Chinh] • 2 Cỏ Huyết Dụ • 2 Băng Gạc',
-          recipes: ['recipe_herbal_salve', 'recipe_bandage_poultice'],
+          effectText: 'Nhận [Pha Chế Thuốc 1] • 2 Cỏ Huyết Dụ • 2 Băng Gạc',
           items: { recipe_book_expedition: 1, red_herb: 2, bandage: 2 },
         },
         {

@@ -32,6 +32,48 @@ interface DungeonMapViewportProps {
   onEnemyCollidePlayer?: (enemy: MapEnemyInstance) => void;
 }
 
+export function findSafeCompanionParkTile(
+  room: RoomData | undefined,
+  origin: { x: number; y: number },
+  existingDismissed: PartyAlly[] = []
+): { x: number; y: number } {
+  if (!room) return { x: origin.x, y: origin.y };
+  const roomH = room.height || room.grid.length;
+  const roomW = room.width || room.grid[0]?.length || 0;
+  const occupied = new Set<string>();
+  for (const e of room.enemies) {
+    if (!e.defeated) occupied.add(`${e.x},${e.y}`);
+  }
+  for (const dc of existingDismissed) {
+    if (dc.hp > 0 && dc.parkedLocation?.roomId === room.id) {
+      occupied.add(`${dc.parkedLocation.x},${dc.parkedLocation.y}`);
+    }
+  }
+  const offsets: Array<[number, number]> = [
+    [-1, 0],
+    [1, 0],
+    [0, 1],
+    [0, -1],
+    [-1, 1],
+    [1, 1],
+    [-1, -1],
+    [1, -1],
+    [0, 0],
+  ];
+  for (const [dx, dy] of offsets) {
+    const nx = origin.x + dx;
+    const ny = origin.y + dy;
+    if (nx <= 0 || nx >= roomW - 1 || ny <= 0 || ny >= roomH - 1) continue;
+    const key = `${nx},${ny}`;
+    if (occupied.has(key)) continue;
+    const tile = room.grid[ny]?.[nx];
+    if (!isWalkableTile(tile, room.shortcutOpened)) continue;
+    if (tile === TILE.FLOOR_TRAP || tile === TILE.MIASMA_VENT) continue;
+    return { x: nx, y: ny };
+  }
+  return { x: origin.x, y: origin.y };
+}
+
 export function getParkedCompanionSpots(
   room: RoomData,
   player: PlayerState
@@ -40,6 +82,32 @@ export function getParkedCompanionSpots(
   if (dismissed.length === 0) return [];
   const roomH = room.height || room.grid.length;
   const roomW = room.width || room.grid[0]?.length || 0;
+  const spots: Array<{ ally: PartyAlly; x: number; y: number }> = [];
+  const usedKeys = new Set<string>();
+
+  // 1. Render dismissed companions pinned to their exact parkedLocation in this room
+  const legacyUnpinned: PartyAlly[] = [];
+  for (const ally of dismissed) {
+    if (ally.parkedLocation) {
+      if (ally.parkedLocation.roomId !== room.id) continue;
+      const sx = Math.max(1, Math.min(roomW - 2, ally.parkedLocation.x));
+      const sy = Math.max(1, Math.min(roomH - 2, ally.parkedLocation.y));
+      const key = `${sx},${sy}`;
+      if (!usedKeys.has(key) && isWalkableTile(room.grid[sy]?.[sx], room.shortcutOpened)) {
+        usedKeys.add(key);
+        spots.push({ ally, x: sx, y: sy });
+      } else {
+        const fallback = findSafeCompanionParkTile(room, { x: sx, y: sy }, []);
+        usedKeys.add(`${fallback.x},${fallback.y}`);
+        spots.push({ ally, x: fallback.x, y: fallback.y });
+      }
+    } else {
+      legacyUnpinned.push(ally);
+    }
+  }
+
+  // 2. Legacy fallback for older saves without parkedLocation: place near HEXEN_ALTAR
+  if (legacyUnpinned.length === 0) return spots;
   let altarX = -1;
   let altarY = -1;
   for (let y = 0; y < roomH && altarX === -1; y++) {
@@ -51,7 +119,7 @@ export function getParkedCompanionSpots(
       }
     }
   }
-  if (altarX === -1) return [];
+  if (altarX === -1) return spots;
 
   const candidateOffsets: Array<[number, number]> = [
     [-2, 0],
@@ -67,9 +135,7 @@ export function getParkedCompanionSpots(
     [-2, -1],
     [2, -1],
   ];
-  const spots: Array<{ ally: PartyAlly; x: number; y: number }> = [];
-  const usedKeys = new Set<string>();
-  for (const ally of dismissed) {
+  for (const ally of legacyUnpinned) {
     for (const [ox, oy] of candidateOffsets) {
       const sx = altarX + ox;
       const sy = altarY + oy;
@@ -90,8 +156,10 @@ export function getParkedCompanionSpots(
 
 function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): boolean {
   const lifecycle = player.npcLifecycle || {};
+  const parkedIds = new Set((player.dismissedCompanions || []).filter((a) => a.hp > 0).map((a) => a.id));
   if (tile === TILE.NPC_RECRUIT_KNIGHT) {
     if (lifecycle.npc_recruit_knight === 'recruited' || lifecycle.npc_recruit_knight === 'dead') return false;
+    if (parkedIds.has('fallen_knight')) return false;
     return (
       (lifecycle.npc_recruit_knight === 'map' || !looted) &&
       player.classId !== 'fallen_knight' &&
@@ -100,6 +168,7 @@ function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): bool
   }
   if (tile === TILE.NPC_RECRUIT_NUN) {
     if (lifecycle.npc_recruit_nun === 'recruited' || lifecycle.npc_recruit_nun === 'dead') return false;
+    if (parkedIds.has('forsaken_nun')) return false;
     return (
       (lifecycle.npc_recruit_nun === 'map' || !looted) &&
       player.classId !== 'forsaken_nun' &&
@@ -108,6 +177,7 @@ function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): bool
   }
   if (tile === TILE.NPC_RECRUIT_HUNTER) {
     if (lifecycle.npc_recruit_hunter === 'recruited' || lifecycle.npc_recruit_hunter === 'dead') return false;
+    if (parkedIds.has('night_hunter')) return false;
     return (
       (lifecycle.npc_recruit_hunter === 'map' || !looted) &&
       player.classId !== 'night_hunter' &&
@@ -116,10 +186,12 @@ function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): bool
   }
   if (tile === TILE.NPC_PRISONER) {
     if (lifecycle.npc_prisoner === 'recruited' || lifecycle.npc_prisoner === 'dead') return false;
+    if (parkedIds.has('ally_kael')) return false;
     return !player.npcFlags.prisonerRecruited && !player.party.some((a) => a.id === 'ally_kael');
   }
   if (tile === TILE.NPC_BROKEN_KNIGHT) {
     if (lifecycle.npc_broken_knight === 'recruited' || lifecycle.npc_broken_knight === 'dead') return false;
+    if (parkedIds.has('broken_knight')) return false;
     return !player.party.some((a) => a.id === 'broken_knight');
   }
   return true;

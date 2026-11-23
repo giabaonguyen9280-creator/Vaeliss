@@ -29,6 +29,34 @@ interface CachedCombatImage {
 const combatImageCache = new Map<string, CachedCombatImage>();
 let sharedPngMaskCanvas: HTMLCanvasElement | null = null;
 let sharedPngMaskCtx: CanvasRenderingContext2D | null = null;
+let sharedLimbPulseCanvas: HTMLCanvasElement | null = null;
+let sharedLimbPulseCtx: CanvasRenderingContext2D | null = null;
+
+function computeLimbTargetPulseAlpha(timeMs: number): number {
+  const wave = 0.5 - 0.5 * Math.cos((timeMs / 750) * Math.PI * 2);
+  return Math.max(0, Math.min(0.55, wave * 0.55));
+}
+
+function getPooledLimbPulseBuffer(w: number, h: number): {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+} | null {
+  if (typeof document === 'undefined') return null;
+  const cw = Math.max(16, Math.ceil(w));
+  const ch = Math.max(16, Math.ceil(h));
+  if (!sharedLimbPulseCanvas) {
+    sharedLimbPulseCanvas = document.createElement('canvas');
+    sharedLimbPulseCtx = sharedLimbPulseCanvas.getContext('2d');
+  }
+  if (!sharedLimbPulseCanvas || !sharedLimbPulseCtx) return null;
+  if (sharedLimbPulseCanvas.width !== cw || sharedLimbPulseCanvas.height !== ch) {
+    sharedLimbPulseCanvas.width = cw;
+    sharedLimbPulseCanvas.height = ch;
+  }
+  sharedLimbPulseCtx.setTransform(1, 0, 0, 1, 0, 0);
+  sharedLimbPulseCtx.clearRect(0, 0, cw, ch);
+  return { canvas: sharedLimbPulseCanvas, ctx: sharedLimbPulseCtx };
+}
 
 const FALLBACK_PNG_LIMB_BOXES: Record<string, LimbMaskBox> = {
   head: { x: 0.34, y: 0.04, w: 0.32, h: 0.24 },
@@ -275,7 +303,9 @@ export function drawCombatPngSprite(
   isOilCovered: boolean = false,
   isBlinded: boolean = false,
   isTelegraphing: boolean = false,
-  nowSec: number = 0
+  nowSec: number = 0,
+  selectedLimbId?: string,
+  timeMs?: number
 ): boolean {
   const buf = getPooledMaskBuffer(destW, destH);
   if (!buf) return false;
@@ -342,6 +372,34 @@ export function drawCombatPngSprite(
     bufCtx.fillStyle = 'rgba(110, 62, 16, 0.34)';
     bufCtx.fillRect(0, 0, destW, destH);
     bufCtx.restore();
+  }
+
+  if (selectedLimbId && !severedLimbs.has(selectedLimbId)) {
+    const targetLimbEntry = limbs?.find((l) => l.id === selectedLimbId);
+    const isTargetCut =
+      Boolean(targetLimbEntry?.severed) ||
+      (typeof targetLimbEntry?.hp === 'number' && targetLimbEntry.hp <= 0);
+    if (!isTargetCut) {
+      const targetBox =
+        targetLimbEntry?.maskBox ||
+        FALLBACK_PNG_LIMB_BOXES[selectedLimbId] ||
+        (selectedLimbId === 'torso' ? { x: 0.24, y: 0.24, w: 0.52, h: 0.44 } : undefined);
+      if (targetBox) {
+        const pulseAlpha = computeLimbTargetPulseAlpha(timeMs ?? nowSec * 1000);
+        if (pulseAlpha > 0.005) {
+          bufCtx.save();
+          bufCtx.globalCompositeOperation = 'source-atop';
+          bufCtx.fillStyle = `rgba(255, 250, 235, ${pulseAlpha.toFixed(3)})`;
+          bufCtx.fillRect(
+            drawX + targetBox.x * drawW,
+            drawY + targetBox.y * drawH,
+            targetBox.w * drawW,
+            targetBox.h * drawH
+          );
+          bufCtx.restore();
+        }
+      }
+    }
   }
 
   if (flashWhite) {
@@ -1313,7 +1371,9 @@ export function drawPixelSprite(
         isOilCovered,
         isBlinded,
         isTelegraphing,
-        combatPngOptions.nowSec ?? animPhase
+        combatPngOptions.nowSec ?? animPhase,
+        combatPngOptions.selectedLimbId,
+        combatPngOptions.timeMs
       );
       if (rendered) return;
     }
@@ -1332,21 +1392,46 @@ export function drawPixelSprite(
   const outlineDark = '#050505';
   const selectedLimbId = combatPngOptions?.selectedLimbId;
   const timeMs = combatPngOptions?.timeMs ?? animPhase * 1000;
+  const limbPulseAlpha = selectedLimbId ? computeLimbTargetPulseAlpha(timeMs) : 0;
   const withLimbHighlight = (limbId: string, drawFn: () => void) => {
     const isSelected = Boolean(selectedLimbId && limbId === selectedLimbId && !severedLimbs.has(limbId));
-    if (isSelected) {
-      const pulse = 0.5 + 0.5 * Math.sin(timeMs / 160);
-      ctx.save();
-      ctx.shadowColor = 'rgba(255, 215, 130, 0.95)';
-      ctx.shadowBlur = 10 + pulse * 14;
-      ctx.filter = `brightness(${(1.0 + pulse * 0.65).toFixed(3)})`;
+    if (!isSelected || limbPulseAlpha <= 0.005) {
       drawFn();
-      ctx.shadowBlur = 0;
-      ctx.filter = 'none';
-      ctx.restore();
-    } else {
-      drawFn();
+      return;
     }
+    const origCtx = ctx;
+    const canvasW = origCtx.canvas?.width || Math.ceil(destX + destW);
+    const canvasH = origCtx.canvas?.height || Math.ceil(destY + destH);
+    const buf = getPooledLimbPulseBuffer(canvasW, canvasH);
+    if (!buf) {
+      drawFn();
+      return;
+    }
+    const { canvas: offCanvas, ctx: offCtx } = buf;
+    offCtx.save();
+    offCtx.setTransform(origCtx.getTransform());
+    offCtx.imageSmoothingEnabled = origCtx.imageSmoothingEnabled;
+    ctx = offCtx;
+    try {
+      drawFn();
+    } finally {
+      ctx = origCtx;
+      offCtx.restore();
+    }
+
+    // Apply smooth Fear & Hunger-style white pulse strictly to the targeted limb's opaque pixels
+    offCtx.save();
+    offCtx.setTransform(1, 0, 0, 1, 0, 0);
+    offCtx.globalCompositeOperation = 'source-atop';
+    offCtx.fillStyle = `rgba(255, 250, 235, ${limbPulseAlpha.toFixed(3)})`;
+    offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+    offCtx.restore();
+
+    // Composite isolated pulsing limb back onto the main canvas
+    origCtx.save();
+    origCtx.setTransform(1, 0, 0, 1, 0, 0);
+    origCtx.drawImage(offCanvas, 0, 0);
+    origCtx.restore();
   };
 
   // Subtle floor-tinted atmospheric back-glow separating dark gothic silhouette from stage backdrop

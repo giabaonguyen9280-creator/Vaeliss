@@ -42,6 +42,12 @@ export interface PartyAlly {
     poisoned: boolean;
     parasite: boolean;
   };
+  parkedLocation?: {
+    roomId: string;
+    floor: 1 | 2 | 3;
+    x: number;
+    y: number;
+  };
 }
 
 export interface ArmorGearDef {
@@ -724,7 +730,7 @@ export function createInitialPlayer(classId: string, customName?: string): Playe
     skillLevels: {
       [cls.startingSkill]: 1,
     },
-    unlockedRecipes: ['recipe_herbal_salve'],
+    unlockedRecipes: [],
     readBookIds: [], // Start with 0 books read until looted from bookshelves!
     party: [],
     dismissedCompanions: [],
@@ -1958,25 +1964,31 @@ export function pruneDeadCompanions(player: PlayerState, logs?: string[]): Party
 export function leaveOrDismissPartyMember(
   player: PlayerState,
   partyIdx: number,
-  mode: 'leave' | 'dismiss' | 'dead'
+  mode: 'leave' | 'dismiss' | 'dead',
+  parkLocation?: { roomId: string; floor: 1 | 2 | 3; x: number; y: number }
 ): { success: boolean; message: string } {
   const ally = player.party[partyIdx];
   if (!ally) return { success: false, message: 'Không tìm thấy thành viên tổ đội.' };
 
   const returnedNames: string[] = [];
+  const shouldStripGear = mode !== 'leave' || Boolean(ally.isUndeadSummon);
   if (ally.weaponId && ally.weaponId !== 'bite_headbutt' && CONFIG.WEAPONS[ally.weaponId]) {
     if (!player.unlockedWeapons.includes(ally.weaponId)) {
       player.unlockedWeapons.push(ally.weaponId);
     }
-    returnedNames.push(CONFIG.WEAPONS[ally.weaponId].name);
-    ally.weaponId = '';
+    if (shouldStripGear) {
+      returnedNames.push(CONFIG.WEAPONS[ally.weaponId].name);
+      ally.weaponId = '';
+    }
   }
   if (ally.equippedShield && CONFIG.SHIELDS[ally.equippedShield]) {
     if (!player.unlockedShields.includes(ally.equippedShield)) {
       player.unlockedShields.push(ally.equippedShield);
     }
-    returnedNames.push(CONFIG.SHIELDS[ally.equippedShield].name);
-    ally.equippedShield = null;
+    if (shouldStripGear) {
+      returnedNames.push(CONFIG.SHIELDS[ally.equippedShield].name);
+      ally.equippedShield = null;
+    }
   }
   for (const slot of ['equippedHead', 'equippedBody', 'equippedAccessory'] as const) {
     const gId = ally[slot];
@@ -1984,8 +1996,10 @@ export function leaveOrDismissPartyMember(
       if (!player.unlockedGear.includes(gId)) {
         player.unlockedGear.push(gId);
       }
-      returnedNames.push(GEAR_ITEMS[gId].name);
-      ally[slot] = null;
+      if (shouldStripGear) {
+        returnedNames.push(GEAR_ITEMS[gId].name);
+        ally[slot] = null;
+      }
     }
   }
 
@@ -2002,6 +2016,9 @@ export function leaveOrDismissPartyMember(
       }
       if (ally.hp > 0) {
         const snapshot: PartyAlly = JSON.parse(JSON.stringify(ally));
+        if (parkLocation) {
+          snapshot.parkedLocation = { ...parkLocation };
+        }
         player.dismissedCompanions = (player.dismissedCompanions || []).filter((c) => c.id !== ally.id);
         player.dismissedCompanions.push(snapshot);
       }
@@ -2021,7 +2038,7 @@ export function leaveOrDismissPartyMember(
         ? `Đã giải tán [${ally.name}] trở về tro bụi.${gearNotice}`
         : mode === 'dead'
         ? `[${ally.name}] đã vĩnh viễn ngã xuống.${gearNotice}`
-        : `[${ally.name}] đã rời nhóm (giữ nguyên thương tích) và chờ tại khu vực Đài Cộng Hưởng / vị trí cũ.${gearNotice}`,
+        : `[${ally.name}] đã rời nhóm và đứng chờ tại khu vực này (giữ nguyên thể trạng & trang bị). Quay lại bấm [F] để mời họ tái gia nhập.`,
   };
 }
 
@@ -2039,6 +2056,7 @@ export function recallDismissedCompanion(
   }
   const [restored] = pool.splice(idx, 1);
   player.dismissedCompanions = pool;
+  delete restored.parkedLocation;
   if (!restored.weaponId) {
     restored.weaponId = 'bite_headbutt';
   }

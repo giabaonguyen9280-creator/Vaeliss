@@ -1061,20 +1061,50 @@ test('Tactical items (ancient_ash, poison_powder, poison_herb, lamp_oil), 2 floo
   }
   assert.equal(trapCount, 2);
 
-  // Companion recall preserves wounds & returns companion to party
+  // Companion leave preserves wounds, hunger, gear & parkedLocation, and map recall restores full state
   const kael = createRecruitedAlly('ally_kael');
   kael.hp = 68;
   kael.mind = 55;
+  kael.hunger = 42;
+  kael.equippedBody = 'legion_brigandine';
   kael.limbs.leftArm = false;
   p.party = [kael];
-  const leaveOut = leaveOrDismissPartyMember(p, 0, 'leave');
+  const leaveOut = leaveOrDismissPartyMember(p, 0, 'leave', {
+    roomId: 'F2_R1',
+    floor: 2,
+    x: 6,
+    y: 5,
+  });
   assert.equal(leaveOut.success, true);
   assert.equal((p.dismissedCompanions || []).length, 1);
+  assert.deepEqual(p.dismissedCompanions?.[0].parkedLocation, {
+    roomId: 'F2_R1',
+    floor: 2,
+    x: 6,
+    y: 5,
+  });
+  assert.equal(p.dismissedCompanions?.[0].equippedBody, 'legion_brigandine');
   const recallOut = recallDismissedCompanion(p, 'ally_kael');
   assert.equal(recallOut.success, true);
   assert.equal(p.party.length, 1);
   assert.equal(p.party[0].hp, 68);
+  assert.equal(p.party[0].hunger, 42);
+  assert.equal(p.party[0].equippedBody, 'legion_brigandine');
   assert.equal(p.party[0].limbs.leftArm, false);
+  assert.equal(p.party[0].parkedLocation, undefined);
+
+  // Alchemy recipes start hidden (empty) and all 3 Pha Chế Thuốc books are placed in dungeon rooms
+  assert.deepEqual(createInitialPlayer('fallen_knight').unlockedRecipes, []);
+  assert.equal(CONFIG.RECIPES.length, 6);
+  const placedBooks = new Set<string>();
+  for (const room of Object.values(world.rooms)) {
+    for (const bookId of Object.values(room.guaranteedRecipeBooks || {})) {
+      placedBooks.add(bookId);
+    }
+  }
+  assert.equal(placedBooks.has('recipe_book_expedition'), true);
+  assert.equal(placedBooks.has('recipe_book_cathedral'), true);
+  assert.equal(placedBooks.has('recipe_book_forbidden'), true);
 
   // >= 2 severed limbs triggers 1.5x (+50%) sanity drain speed
   assert.equal(getAmputationSanityMultiplier(p), 1);
