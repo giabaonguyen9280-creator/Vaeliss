@@ -664,11 +664,13 @@ export interface SmugglerHaggleOutcome {
 
 export const SMUGGLER_VALUABLE_IDS = new Set<string>([
   'lucky_coin',
-  'white_herb',
-  'oil_lamp',
   'butcher_cleaver',
+  'brown_vial',
+  'red_vial',
   'bone_saw',
+  'white_herb',
   'ancient_ash',
+  'oil_lamp',
 ]);
 
 export function evaluateSmugglerHaggle(

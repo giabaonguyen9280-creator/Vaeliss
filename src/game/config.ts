@@ -149,7 +149,6 @@ export interface LoreBookDef {
   vol: number;
   title: string;
   floorHint: string;
-  unlockRecipeId?: string;
   content: string;
 }
 
@@ -1201,30 +1200,30 @@ export const CONFIG = {
     // === 3 SÁCH CÔNG THỨC GIẢ KIM ===
     recipe_book_expedition: {
       id: 'recipe_book_expedition',
-      name: 'Pha Chế Thuốc 1',
+      name: 'Pha Chế Thuốc 1 (Sách Công Thức)',
       category: 'relic',
       combatUsable: false,
       mapUsable: true,
       unlockRecipes: ['recipe_herbal_salve', 'recipe_sedative_draught'],
-      desc: 'Sách pha chế căn bản. Mở khóa vĩnh viễn công thức: Cao Thảo Dược & Thuốc An Thần Thảo Mộc.',
+      desc: 'Bấm [Đọc Sách] trong Túi Đồ để mở khóa công thức: Cao Thảo Dược & Thuốc An Thần Thảo Mộc.',
     },
     recipe_book_cathedral: {
       id: 'recipe_book_cathedral',
-      name: 'Pha Chế Thuốc 2',
+      name: 'Pha Chế Thuốc 2 (Sách Công Thức)',
       category: 'relic',
       combatUsable: false,
       mapUsable: true,
       unlockRecipes: ['recipe_holy_elixir', 'recipe_bandage_poultice'],
-      desc: 'Sổ tay bào chế của giáo đường. Mở khóa vĩnh viễn công thức: Thánh Dược & Cao Dán Cầm Máu Viễn Chinh.',
+      desc: 'Bấm [Đọc Sách] trong Túi Đồ để mở khóa công thức: Thánh Dược & Cao Dán Cầm Máu Viễn Chinh.',
     },
     recipe_book_forbidden: {
       id: 'recipe_book_forbidden',
-      name: 'Pha Chế Thuốc 3',
+      name: 'Pha Chế Thuốc 3 (Sách Công Thức)',
       category: 'relic',
       combatUsable: false,
       mapUsable: true,
-      unlockRecipes: ['recipe_holy_fire_oil', 'recipe_void_acid'],
-      desc: 'Bản thảo giả kim cấm. Mở khóa vĩnh viễn công thức: Lọ Dầu Lửa Thánh & Lọ Axit Hư Vô.',
+      unlockRecipes: ['recipe_void_acid', 'recipe_stimulant_serum'],
+      desc: 'Bấm [Đọc Sách] trong Túi Đồ để mở khóa công thức: Lọ Axit Hư Vô & Huyết Thanh Kích Thích.',
     },
     // === VẬT PHẨM KHỞI ĐẦU & MŨI TÊN CỦA GÃ SĂN DI VẬT ===
     crumpled_hunter_note: {
@@ -1313,7 +1312,7 @@ export const CONFIG = {
     },
   } as Record<string, UtilityItemDef>,
 
-  // Crafting Recipes (Unlocked via 3 Alchemy Books: Pha Chế Thuốc 1, 2, 3)
+  // Crafting Recipes (Unlocked via Bookshelves / Default)
   RECIPES: [
     {
       id: 'recipe_herbal_salve',
@@ -1323,18 +1322,18 @@ export const CONFIG = {
       desc: '1 Thảo Dược Xanh + 1 Thảo Dược Đỏ (+70 Sinh Lực, Xóa Nhiễm Trùng).',
     },
     {
-      id: 'recipe_sedative_draught',
-      resultItemId: 'sedative_draught',
-      name: 'Thuốc An Thần Thảo Mộc',
-      ingredients: { calm_flower: 1, holy_water: 1 },
-      desc: '1 Hoa Tĩnh Tâm + 1 Nước Thánh (+50 Lý Trí, Xóa Ảo Giác).',
-    },
-    {
       id: 'recipe_holy_elixir',
       resultItemId: 'holy_elixir',
       name: 'Thánh Dược',
       ingredients: { red_herb: 1, holy_water: 1 },
       desc: '1 Thảo Dược Đỏ + 1 Nước Thánh (+50 Sinh Lực, +35 Lý Trí).',
+    },
+    {
+      id: 'recipe_sedative_draught',
+      resultItemId: 'sedative_draught',
+      name: 'Thuốc An Thần Thảo Mộc',
+      ingredients: { calm_flower: 1, holy_water: 1 },
+      desc: '1 Hoa Tĩnh Tâm + 1 Nước Thánh (+50 Lý Trí, Xóa Ảo Giác).',
     },
     {
       id: 'recipe_bandage_poultice',
@@ -1344,18 +1343,18 @@ export const CONFIG = {
       desc: '1 Băng Gạc + 1 Cỏ Huyết Dụ (+70 Sinh Lực, Cầm máu).',
     },
     {
-      id: 'recipe_holy_fire_oil',
-      resultItemId: 'holy_fire_oil',
-      name: 'Lọ Dầu Lửa Thánh',
-      ingredients: { purple_vial: 1, holy_water: 1 },
-      desc: '1 Lọ Tím + 1 Nước Thánh (Thiêu đốt 180/lượt).',
-    },
-    {
       id: 'recipe_void_acid',
       resultItemId: 'void_acid_vial',
       name: 'Lọ Axit Hư Vô',
       ingredients: { red_vial: 1, brown_vial: 1 },
       desc: '1 Lọ Đỏ + 1 Lọ Nâu (Xuyên giáp 70%).',
+    },
+    {
+      id: 'recipe_stimulant_serum',
+      resultItemId: 'stimulant_serum',
+      name: 'Huyết Thanh Kích Thích',
+      ingredients: { blue_vial: 1, blood_vial: 1 },
+      desc: '1 Thuốc Hồi Huyết + 1 Bình Máu (+35 Sinh Lực, +25 Lý Trí, +60% Sát thương).',
     },
   ] as RecipeDef[],
 
@@ -2494,11 +2493,11 @@ const DEFAULT_LIMB_MASK_BOXES: Record<string, LimbMaskBox> = {
   legs: { x: 0.20, y: 0.65, w: 0.60, h: 0.35 },
   coiling_body: { x: 0.14, y: 0.56, w: 0.72, h: 0.38 },
   lashing_tail: { x: 0.64, y: 0.42, w: 0.36, h: 0.46 },
-  tentacle_1: { x: 0.68, y: 0.20, w: 0.32, h: 0.38 },
-  tentacle_2: { x: 0.0, y: 0.20, w: 0.32, h: 0.38 },
-  tentacle_3: { x: 0.66, y: 0.54, w: 0.34, h: 0.36 },
-  tentacle_4: { x: 0.0, y: 0.54, w: 0.34, h: 0.36 },
-  snake_tail_head: { x: 0.02, y: 0.14, w: 0.30, h: 0.34 },
+  tentacle_1: { x: 0.64, y: 0.14, w: 0.34, h: 0.74 },
+  tentacle_2: { x: 0.04, y: 0.32, w: 0.32, h: 0.28 },
+  tentacle_3: { x: 0.04, y: 0.14, w: 0.34, h: 0.24 },
+  tentacle_4: { x: 0.22, y: 0.58, w: 0.56, h: 0.34 },
+  snake_tail_head: { x: 0.62, y: 0.24, w: 0.36, h: 0.46 },
   throne_claw_left: { x: 0.0, y: 0.22, w: 0.30, h: 0.48 },
   throne_ensor_right: { x: 0.70, y: 0.22, w: 0.30, h: 0.48 },
   void_tendrils: { x: 0.18, y: 0.70, w: 0.64, h: 0.30 },
@@ -2518,9 +2517,15 @@ const CUSTOM_ENEMY_MASK_BOXES: Record<string, Partial<Record<string, LimbMaskBox
     right_arm: { x: 0.67, y: 0.22, w: 0.31, h: 0.46 },
     legs: { x: 0.24, y: 0.70, w: 0.52, h: 0.28 },
   },
+  astral_kraken: {
+    tentacle_1: { x: 0.64, y: 0.14, w: 0.34, h: 0.74 },
+    tentacle_2: { x: 0.04, y: 0.32, w: 0.32, h: 0.28 },
+    tentacle_3: { x: 0.04, y: 0.14, w: 0.34, h: 0.24 },
+    tentacle_4: { x: 0.22, y: 0.58, w: 0.56, h: 0.34 },
+  },
   void_chimera: {
-    snake_tail_head: { x: 0.03, y: 0.12, w: 0.30, h: 0.34 },
-    right_arm: { x: 0.66, y: 0.24, w: 0.32, h: 0.44 },
+    snake_tail_head: { x: 0.62, y: 0.24, w: 0.36, h: 0.46 },
+    right_arm: { x: 0.02, y: 0.24, w: 0.36, h: 0.46 },
     legs: { x: 0.22, y: 0.68, w: 0.56, h: 0.30 },
   },
   penitent_knight: {

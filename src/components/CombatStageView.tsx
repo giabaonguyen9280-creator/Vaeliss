@@ -57,6 +57,7 @@ export interface CombatStageViewProps {
   coinTossNode?: React.ReactNode;
   onHoverLimb?: (limbId: string) => void;
   onClickLimb?: (limbId: string) => void;
+  onVictoryExit?: () => void;
 }
 
 export const CombatStageView: React.FC<CombatStageViewProps> = ({
@@ -79,6 +80,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
   coinTossNode,
   onHoverLimb,
   onClickLimb,
+  onVictoryExit,
 }) => {
   const [hoveredLimbId, setHoveredLimbId] = React.useState<string | null>(null);
   const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
@@ -287,7 +289,8 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                 player,
                 activeCombatEnemy,
                 tpl,
-                tooltipLimb
+                tooltipLimb,
+                activeActorIdx
               );
               return (
                 <div className="pointer-events-none absolute bottom-3 right-3 z-30 df-card-active px-2.5 py-1.5 ring-1 ring-[#fbbf24] whitespace-nowrap space-y-0.5 shadow-[0_0_16px_rgba(0,0,0,0.9)]">
@@ -426,11 +429,15 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
               )}
             </>
           ) : (
-            <div className="my-auto text-center space-y-2 p-2">
+            <div className="my-auto text-center space-y-2 p-2 pointer-events-auto">
               <div className="text-base font-bold uppercase text-[#c5a059]">Chiến Thắng!</div>
-              <div className="w-full py-2 df-btn-bronze font-bold text-sm uppercase">
-                [F / Enter] Thoát
-              </div>
+              <button
+                type="button"
+                onClick={() => onVictoryExit?.()}
+                className="pointer-events-auto w-full py-2 df-btn-bronze font-bold text-sm uppercase cursor-pointer"
+              >
+                Thoát
+              </button>
             </div>
           )}
         </div>

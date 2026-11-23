@@ -45,6 +45,7 @@ import {
   generateWorld,
   getHerbTypeAtCoord,
   TILE,
+  NPC_TILE_SET,
   WorldMapState,
   RoomData,
   MapEnemyInstance,
@@ -311,6 +312,7 @@ export default function App() {
   }, [playerPos]);
 
   const playerRef = useRef(player);
+  playerRef.current = player;
   useEffect(() => {
     playerRef.current = player;
   }, [player]);
@@ -333,22 +335,6 @@ export default function App() {
   const [guideTab, setGuideTab] = useState<'lore' | 'move' | 'combat' | 'survival'>('lore');
   const [areaBannerText, setAreaBannerText] = useState<string>('Ngoại Vi Đại Giáo Đường Goethe');
   const [areaBannerKey, setAreaBannerKey] = useState<number>(1);
-  const [sensoryBarVisible, setSensoryBarVisible] = useState<boolean>(true);
-  const lastSensoryAreaKeyRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (screen !== 'playing') {
-      setSensoryBarVisible(false);
-      return;
-    }
-    if (lastSensoryAreaKeyRef.current === areaBannerKey) return;
-    lastSensoryAreaKeyRef.current = areaBannerKey;
-    setSensoryBarVisible(true);
-    const timer = window.setTimeout(() => {
-      setSensoryBarVisible(false);
-    }, 5000);
-    return () => window.clearTimeout(timer);
-  }, [areaBannerKey, screen]);
 
   // Trail coordinates so up to 3 recruited party members follow behind the player on the map
   const [trailCoords, setTrailCoords] = useState<Array<{ x: number; y: number }>>([
@@ -625,7 +611,7 @@ export default function App() {
   // Start new game -> enters 3-Frame Prologue first
   const enterPrologue = useCallback(
     (customSeed?: string, customClassId?: string) => {
-      const finalSeed = (customSeed ?? seedInput).trim() || generateRandomSeed();
+      const finalSeed = customSeed?.trim() || generateRandomSeed();
       const finalClass = customClassId ?? selectedClassId;
       const newWorld = generateWorld(finalSeed);
       const startRoom = newWorld.rooms[newWorld.currentRoomId];
@@ -660,12 +646,12 @@ export default function App() {
       setShowSkipProloguePrompt(false);
       setScreen('prologue');
     },
-    [seedInput, selectedClassId, characterNameInput, generateRandomSeed]
+    [selectedClassId, characterNameInput, generateRandomSeed]
   );
 
   // Skip prologue directly from Character Select -> auto-apply default intro loadout & enter F2_EXTERIOR
   const startDirectIntoExterior = useCallback(() => {
-    const finalSeed = seedInput.trim() || generateRandomSeed();
+    const finalSeed = generateRandomSeed();
     const newWorld = generateWorld(finalSeed);
     const startRoom = newWorld.rooms[newWorld.currentRoomId];
     const newPlayer = createInitialPlayer(selectedClassId, characterNameInput);
@@ -716,7 +702,7 @@ export default function App() {
       classOpening[newPlayer.classId] || startRoom.sensoryLine,
       startRoom.sensoryLine,
     ]);
-  }, [seedInput, selectedClassId, characterNameInput, generateRandomSeed]);
+  }, [selectedClassId, characterNameInput, generateRandomSeed]);
 
   const finishPrologueAndPlay = useCallback(
     (alreadyCompletedBackstory = false) => {
@@ -828,9 +814,6 @@ export default function App() {
       unlockedRecipes: Array.isArray(data.player.unlockedRecipes)
         ? [...data.player.unlockedRecipes]
         : [],
-      dismissedCompanions: Array.isArray(data.player.dismissedCompanions)
-        ? [...data.player.dismissedCompanions]
-        : [],
       inventory: {
         ...data.player.inventory,
         energy_stone: data.player.inventory?.energy_stone ?? data.player.energyStones ?? 0,
@@ -867,6 +850,10 @@ export default function App() {
       { x: Math.max(1, spawnPos.x - 3), y: Math.max(1, spawnPos.y - 1) },
     ]);
     setSelectedInvMemberIdx(0);
+    setPreviewItemId(restoredPlayer.equippedWeapon || '');
+    setInteractionMenu(null);
+    setCoinToss(null);
+    setLogOverlayVisible(false);
     setActiveEnemyUid(null);
     setEndingInfo(null);
     setActiveModal(null);
@@ -1349,7 +1336,7 @@ export default function App() {
             ? 'forsaken_nun'
             : 'night_hunter';
         const titleMap: Record<string, string> = {
-          fallen_knight: 'KẺ GÁC MỘ VÔ DANH MARCUS',
+          fallen_knight: 'KẺ GÁC MỘ VÔ DANH GARRICK',
           forsaken_nun: 'NỮ TU OAN KHUẤT AGNES',
           night_hunter: 'GÃ SĂN DI VẬT CROW',
         };
@@ -1740,18 +1727,19 @@ export default function App() {
                 ? `✓ [${w.name}] đã qua Huyết Rèn`
                 : `Nhờ Huyết Rèn [${w.name}]`,
               onSelect: () => {
-                if (forged) {
+                const latest = playerRef.current;
+                if (latest.bloodForgedWeapons?.includes(wId)) {
                   openNpcRpgDialogue(
                     'npc_smith',
                     `“Thanh [${w.name}] đã uống no máu quỷ trong lò rèn rồi... Hãy chọn vũ khí khác.”`
                   );
                   return;
                 }
-                const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
+                const pCopy: PlayerState = JSON.parse(JSON.stringify(latest));
                 const corBefore = pCopy.corruption;
                 const wasBannedBefore = isHolyMotherBanned(pCopy);
                 const res = bloodForgeWeapon(pCopy, wId);
-                if (isHunterDiscount && res.success) {
+                if (pCopy.classId === 'night_hunter' && res.success) {
                   pCopy.corruption = Math.min(100, corBefore + 8);
                   if (!wasBannedBefore && pCopy.corruption < 25) {
                     pCopy.holyMotherBanned = false;
@@ -1761,7 +1749,7 @@ export default function App() {
                 }
                 const corWarn = checkCorruptionDiegeticWarning(pCopy);
                 pCopy.questFlags.smithUsed = true;
-                setPlayer(pCopy);
+                setPlayer(() => pCopy);
                 setInteractionMenu(null);
                 addLog(res.message);
                 if (corWarn) addLog(corWarn);
@@ -1884,22 +1872,18 @@ export default function App() {
           choices.push({
             label: 'Lắng nghe bí thuật Giả Kim của lão',
             onSelect: () => {
-              const bookDef = CONFIG.ITEMS.recipe_book_forbidden;
-              const bookRecipes = bookDef?.unlockRecipes || [];
               setPlayer((prev) => ({
                 ...prev,
-                unlockedRecipes: Array.from(
-                  new Set([...prev.unlockedRecipes, ...bookRecipes])
-                ),
                 inventory: {
                   ...prev.inventory,
                   blue_vial: (prev.inventory.blue_vial || 0) + 1,
+                  recipe_book_forbidden: (prev.inventory.recipe_book_forbidden || 0) + 1,
                 },
                 questFlags: { ...prev.questFlags, physicianTalked: true },
               }));
               setInteractionMenu(null);
               addLog(
-                'Lão Thần Y cười khàn, dúi vào tay bạn một bình [Thuốc Hồi Huyết] cùng cuốn [Pha Chế Thuốc 3] (đã mở khóa công thức Giả Kim).'
+                'Lão Thần Y cười khàn, dúi vào tay bạn một bình [Thuốc Hồi Huyết] cùng quyển sách [Pha Chế Thuốc 3].'
               );
               setLogOverlayVisible(true);
             },
@@ -1974,19 +1958,21 @@ export default function App() {
             customSpeech ||
             `“Hề hề... Túi của ngươi hiện có ${player.silverCoins} Đồng Bạc. Kể từ khi sương mù khóa chặt Thung Lũng, đám giáo sĩ đều bỏ lại bạc trắng cả. Những món hàng quý có thể thương lượng giá cả — miễn đừng chọc giận ta!”`;
           const wares: Array<{ id: string; name: string; price: number }> = [
+            { id: 'torch', name: 'Đuốc Sáng (120s Ánh Sáng)', price: 3 },
             { id: 'ritual_chalk', name: 'Phấn Khắc Ấn', price: 4 },
-            { id: 'brown_vial', name: 'Lọ Nâu', price: 6 },
-            { id: 'red_vial', name: 'Lọ Đỏ', price: 6 },
-            { id: 'white_herb', name: 'Thảo Dược Trắng (Giải Độc)', price: 10 },
-            { id: 'torch', name: 'Đuốc Sáng (120s Ánh Sáng)', price: 4 },
-            { id: 'oil_lamp', name: 'Đèn Dầu Cổ (240s Ánh Sáng)', price: 14 },
-            { id: 'ancient_ash', name: 'Tro Tàn Cổ', price: 7 },
-            { id: 'poison_powder', name: 'Bột Độc', price: 8 },
-            { id: 'poison_herb', name: 'Thảo Dược Độc', price: 7 },
             { id: 'lamp_oil', name: 'Dầu Đèn', price: 6 },
-            { id: 'bone_saw', name: 'Cưa Xương Rỉ Máu', price: 8 },
+            { id: 'oil_lamp', name: 'Đèn Dầu Cổ (240s Ánh Sáng)', price: 7 },
+            { id: 'poison_herb', name: 'Thảo Dược Độc', price: 7 },
+            { id: 'ancient_ash', name: 'Tro Tàn Cổ', price: 8 },
+            { id: 'poison_powder', name: 'Bột Độc', price: 9 },
+            { id: 'white_herb', name: 'Thảo Dược Trắng (Giải Độc)', price: 9 },
+            { id: 'red_vial', name: 'Lọ Đỏ', price: 10 },
+            { id: 'brown_vial', name: 'Lọ Nâu', price: 12 },
+            ...((player.inventory.bone_saw || 0) <= 0
+              ? [{ id: 'bone_saw', name: 'Cưa Xương Rỉ Máu', price: 12 }]
+              : []),
             ...(!player.unlockedWeapons.includes('butcher_cleaver')
-              ? [{ id: 'butcher_cleaver', name: 'Đao Phay Đồ Tể', price: 12 }]
+              ? [{ id: 'butcher_cleaver', name: 'Đao Phay Đồ Tể', price: 20 }]
               : []),
             ...(remainingCoins > 0
               ? [
@@ -2697,7 +2683,7 @@ export default function App() {
                 },
               };
             });
-            addLog(`Lục soát xác [${corpseName}]: Thu được ${lootMessages.join('& ')}!`);
+            addLog(`Lục soát xác [${corpseName}]: Thu được ${lootMessages.join(' & ')}!`);
             setLogOverlayVisible(true);
           },
         });
@@ -2813,6 +2799,13 @@ export default function App() {
       });
     };
 
+    const secretMaskSet = new Set<string>(
+      !room.secretWallBlown ? room.secretChamberCoords || [] : []
+    );
+    const dismissedCompanionIds = new Set(
+      (player.dismissedCompanions || []).map((c) => c.id)
+    );
+
     for (const [dx, dy] of searchOffsets) {
       if (Math.abs(dx) + Math.abs(dy) > 1) continue;
       const cx = playerPos.x + dx;
@@ -2820,6 +2813,7 @@ export default function App() {
       if (cy < 0 || cy >= roomH || cx < 0 || cx >= roomW) continue;
       const tile = room.grid[cy][cx];
       const coordKey = `${cx},${cy}`;
+      if (secretMaskSet.has(coordKey)) continue;
 
       // Corpse has higher interaction priority than floor landmarks (e.g. RITUAL_CIRCLE)
       const corpseOnTile = allCorpses.find(
@@ -2844,13 +2838,28 @@ export default function App() {
         const modalId = npcTileToModalMap[tile];
         const lcState = player.npcLifecycle?.[modalId];
         if (lcState === 'recruited' || lcState === 'dead') continue;
-        if (tile === TILE.NPC_PRISONER && (player.npcFlags.prisonerRecruited || player.party.some((a) => a.id === 'ally_kael'))) continue;
-        if (tile === TILE.NPC_BROKEN_KNIGHT && player.party.some((a) => a.id === 'broken_knight')) continue;
+        if (tile === TILE.NPC_SMUGGLER && player.npcFlags?.smugglerClosed) continue;
+        if (
+          tile === TILE.NPC_PRISONER &&
+          (player.npcFlags.prisonerRecruited ||
+            player.party.some((a) => a.id === 'ally_kael') ||
+            dismissedCompanionIds.has('ally_kael'))
+        ) {
+          continue;
+        }
+        if (
+          tile === TILE.NPC_BROKEN_KNIGHT &&
+          (player.party.some((a) => a.id === 'broken_knight') ||
+            dismissedCompanionIds.has('broken_knight'))
+        ) {
+          continue;
+        }
         if (
           tile === TILE.NPC_RECRUIT_KNIGHT &&
           ((room.lootedCoords.includes(coordKey) && lcState !== 'map') ||
             player.classId === 'fallen_knight' ||
-            player.party.some((a) => a.id === 'fallen_knight'))
+            player.party.some((a) => a.id === 'fallen_knight') ||
+            dismissedCompanionIds.has('fallen_knight'))
         ) {
           continue;
         }
@@ -2858,7 +2867,8 @@ export default function App() {
           tile === TILE.NPC_RECRUIT_NUN &&
           ((room.lootedCoords.includes(coordKey) && lcState !== 'map') ||
             player.classId === 'forsaken_nun' ||
-            player.party.some((a) => a.id === 'forsaken_nun'))
+            player.party.some((a) => a.id === 'forsaken_nun') ||
+            dismissedCompanionIds.has('forsaken_nun'))
         ) {
           continue;
         }
@@ -2866,7 +2876,8 @@ export default function App() {
           tile === TILE.NPC_RECRUIT_HUNTER &&
           ((room.lootedCoords.includes(coordKey) && lcState !== 'map') ||
             player.classId === 'night_hunter' ||
-            player.party.some((a) => a.id === 'night_hunter'))
+            player.party.some((a) => a.id === 'night_hunter') ||
+            dismissedCompanionIds.has('night_hunter'))
         ) {
           continue;
         }
@@ -3018,7 +3029,7 @@ export default function App() {
               ? 'Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Thẻ Bài Bạc] cùng [Đuốc Sáng] ẩn dưới lớp rơm!'
               : 'Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Thẻ Bài Bạc] ẩn dưới lớp rơm!'
             : extraLootNames.length > 0
-            ? `Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}] cùng ${extraLootNames.join('và ')}.`
+            ? `Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}] cùng ${extraLootNames.join(' và ')}.`
             : `Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}].`
         );
         sfx.playSfx('loot');
@@ -3106,10 +3117,6 @@ export default function App() {
           const foodQty = hasFood ? (rng.chance(0.3) ? 2 : 1) : 0;
           let equipRewardName = '';
 
-          const guaranteedBookId = room.guaranteedRecipeBooks?.[coordKey];
-          const guaranteedBookDef = guaranteedBookId ? CONFIG.ITEMS[guaranteedBookId] : undefined;
-          const guaranteedBookRecipes = guaranteedBookDef?.unlockRecipes || [];
-
           const applyRewards = (
             prev: PlayerState,
             updates: Partial<Pick<PlayerState, 'unlockedGear' | 'unlockedShields' | 'unlockedWeapons'>>,
@@ -3131,10 +3138,6 @@ export default function App() {
             return {
               ...prev,
               ...updates,
-              unlockedRecipes:
-                guaranteedBookRecipes.length > 0
-                  ? Array.from(new Set([...prev.unlockedRecipes, ...guaranteedBookRecipes]))
-                  : prev.unlockedRecipes,
               hp:
                 extraHealthDelta < 0
                   ? Math.max(1, prev.hp + extraHealthDelta)
@@ -3208,11 +3211,8 @@ export default function App() {
               ? ` & +${foodQty} [${CONFIG.ITEMS[foodId]?.name || foodId}]`
               : '';
           const coinPart = foundLuckyCoin ? ' & +1 [Thẻ Bài Bạc]' : '';
-          const bookPart = guaranteedBookDef
-            ? ` & sách [${guaranteedBookDef.name}] (đã mở khóa công thức Giả Kim)`
-            : '';
           addLog(
-            `${prefixLog ? `${prefixLog} ` : ''}Mở nắp rương cổ: Thu được [${equipRewardName}], [${CONFIG.ITEMS[vialId]?.name || vialId}]${foodPart}${coinPart}${bookPart}.`
+            `${prefixLog ? `${prefixLog} ` : ''}Mở nắp rương cổ: Thu được [${equipRewardName}], [${CONFIG.ITEMS[vialId]?.name || vialId}]${foodPart}${coinPart}.`
           );
           setLogOverlayVisible(true);
         };
@@ -3253,7 +3253,22 @@ export default function App() {
                 ...prev,
                 hp: Math.max(1, prev.hp - 10),
               }));
-              addLog('Mũi kim bật ra từ ổ khóa rương cổ. Nắp rương vẫn đóng chặt trong bóng tối.');
+              setWorld((prev) => {
+                const curRoom = prev.rooms[room.id] || room;
+                return {
+                  ...prev,
+                  rooms: {
+                    ...prev.rooms,
+                    [room.id]: {
+                      ...curRoom,
+                      lootedCoords: curRoom.lootedCoords.includes(coordKey)
+                        ? curRoom.lootedCoords
+                        : [...curRoom.lootedCoords, coordKey],
+                    },
+                  },
+                };
+              });
+              addLog('Mũi kim bật ra từ ổ khóa rương cổ. Cơ chế khóa gãy kẹt cứng trong bóng tối.');
               setLogOverlayVisible(true);
             }
           },
@@ -3262,51 +3277,8 @@ export default function App() {
         return;
       }
 
-      // BOOKSHELF: Guaranteed Alchemy Books (Pha Chế Thuốc 1-3) unlock permanently on pickup; other shelves grant Lore / Scroll / Book.
+      // BOOKSHELF: Grants AT MOST 1 item from Lore, Chiến Kỹ Scroll, Survival Scroll, or Alchemy Recipe Book; Lose = Cursed Book Trap.
       if (tile === TILE.BOOKSHELF && !room.lootedCoords.includes(coordKey)) {
-        const guaranteedBookId = room.guaranteedRecipeBooks?.[coordKey];
-        const guaranteedBookDef = guaranteedBookId ? CONFIG.ITEMS[guaranteedBookId] : undefined;
-        if (guaranteedBookId && guaranteedBookDef) {
-          const recIds = guaranteedBookDef.unlockRecipes || [];
-          const recNames = recIds
-            .map((rid) => CONFIG.RECIPES.find((r) => r.id === rid)?.name || rid)
-            .join(', ');
-          setInteractionMenu({
-            title: `KỆ SÁCH CỔ — [${guaranteedBookDef.name.toUpperCase()}]`,
-            description: `Nằm ngay ngắn trên ngăn gỗ mục là cuốn sách giả kim đóng bìa da: "${guaranteedBookDef.name}".`,
-            selectedIndex: 0,
-            choices: [
-              {
-                label: `Nhặt & Đọc [${guaranteedBookDef.name}]`,
-                onSelect: () => {
-                  setInteractionMenu(null);
-                  setWorld((prev) => ({
-                    ...prev,
-                    rooms: {
-                      ...prev.rooms,
-                      [room.id]: {
-                        ...room,
-                        lootedCoords: [...room.lootedCoords, coordKey],
-                      },
-                    },
-                  }));
-                  setPlayer((prev) => ({
-                    ...prev,
-                    unlockedRecipes: Array.from(new Set([...prev.unlockedRecipes, ...recIds])),
-                  }));
-                  sfx.playHealOrChime();
-                  addLog(
-                    `Đã đọc [${guaranteedBookDef.name}]! Mở khóa vĩnh viễn công thức Giả Kim: ${recNames}.`
-                  );
-                  setLogOverlayVisible(true);
-                },
-              },
-              { label: 'Rời đi', onSelect: closePrompt },
-            ],
-          });
-          return;
-        }
-
         const shelfRng = new SeededRNG(`${world.seed}_bookshelf_type_${room.id}_${coordKey}`);
         const isScrollShelf = shelfRng.chance(0.55);
 
@@ -3315,7 +3287,7 @@ export default function App() {
             ? 'KỆ SÁCH CỔ — NGĂN BÍ KÍP & CÔNG THỨC'
             : 'KỆ SÁCH CỔ — NGĂN BIÊN NIÊN SỬ',
           description: isScrollShelf
-            ? 'Giữa những tầng sách mục nát thấp thoáng cuộn da cổ xưa, Bí Kíp Sinh Tồn hoặc Sách Pha Chế Thuốc. Hãy Tung Đồng Xu Định Mệnh (hoặc dùng Chìa Khóa Vạn Năng) để lục tìm cẩn trọng.'
+            ? 'Giữa những tầng sách mục nát thấp thoáng cuộn da cổ xưa, Bí Kíp Sinh Tồn hoặc Sách Công Thức Giả Kim. Hãy Tung Đồng Xu Định Mệnh (hoặc dùng Chìa Khóa Vạn Năng) để lục tìm cẩn trọng.'
             : 'Kệ sách gỗ mục nát lưu giữ 1 trang Ghi Chép Biên Niên Sử cổ đại của Đại Giáo Đường Goethe.',
           selectedIndex: 0,
           choices: [
@@ -3328,21 +3300,27 @@ export default function App() {
                 const rng = new SeededRNG(`${world.seed}_bookshelf_${room.id}_${coordKey}`);
 
                 // Mark shelf as looted
-                setWorld((prev) => ({
-                  ...prev,
-                  rooms: {
-                    ...prev.rooms,
-                    [room.id]: {
-                      ...room,
-                      lootedCoords: [...room.lootedCoords, coordKey],
+                setWorld((prev) => {
+                  const curRoom = prev.rooms[room.id] || room;
+                  return {
+                    ...prev,
+                    rooms: {
+                      ...prev.rooms,
+                      [room.id]: {
+                        ...curRoom,
+                        lootedCoords: curRoom.lootedCoords.includes(coordKey)
+                          ? curRoom.lootedCoords
+                          : [...curRoom.lootedCoords, coordKey],
+                      },
                     },
-                  },
-                }));
+                  };
+                });
 
                 if (!isScrollShelf) {
                   // Note / Lore Shelf: Grants 1 Lore Book (max 1 item)
+                  const latest = playerRef.current;
                   const uncollected = CONFIG.BOOKS.filter(
-                    (b) => !player.readBookIds.includes(b.id)
+                    (b) => !latest.readBookIds.includes(b.id)
                   );
                   const pickedBook =
                     uncollected.length > 0 ? rng.pick(uncollected) : rng.pick(CONFIG.BOOKS);
@@ -3361,6 +3339,7 @@ export default function App() {
                 }
 
                 const grantShelfTreasure = (tier: CoinOutcomeTier) => {
+                  const latest = playerRef.current;
                   if (tier === 'win') {
                     const survivalScrollPool = [
                       'scroll_shadow_step',
@@ -3374,13 +3353,13 @@ export default function App() {
                       'recipe_book_forbidden',
                     ].filter((rbId) => {
                       const recIds = CONFIG.ITEMS[rbId]?.unlockRecipes || [];
-                      return recIds.some((rid) => !player.unlockedRecipes.includes(rid));
+                      return recIds.some((rid) => !latest.unlockedRecipes.includes(rid));
                     });
                     const uncollectedSkillScrolls = CONFIG.SKILLS.filter(
                       (s) =>
                         s.branch === 'Chiến Kỹ' &&
-                        (player.skillLevels[s.id] || 0) === 0 &&
-                        (player.inventory[`scroll_${s.id}`] || 0) === 0
+                        (latest.skillLevels[s.id] || 0) === 0 &&
+                        (latest.inventory[`scroll_${s.id}`] || 0) === 0
                     ).map((s) => `scroll_${s.id}`);
 
                     const rewardCandidates: string[] = [
@@ -3391,37 +3370,20 @@ export default function App() {
 
                     if (rewardCandidates.length > 0 && rng.chance(0.75)) {
                       const pickedId = rng.pick(rewardCandidates);
-                      const pickedDef = CONFIG.ITEMS[pickedId];
-                      if (pickedDef?.unlockRecipes && pickedDef.unlockRecipes.length > 0) {
-                        const recNames = pickedDef.unlockRecipes
-                          .map((rid) => CONFIG.RECIPES.find((r) => r.id === rid)?.name || rid)
-                          .join(', ');
-                        setPlayer((prev) => ({
-                          ...prev,
-                          unlockedRecipes: Array.from(
-                            new Set([...prev.unlockedRecipes, ...(pickedDef.unlockRecipes || [])])
-                          ),
-                        }));
-                        sfx.playHealOrChime();
-                        addLog(
-                          `Tìm thấy sách [${pickedDef.name}]! Đã mở khóa vĩnh viễn công thức Giả Kim: ${recNames}.`
-                        );
-                      } else {
-                        setPlayer((prev) => ({
-                          ...prev,
-                          inventory: {
-                            ...prev.inventory,
-                            [pickedId]: (prev.inventory[pickedId] || 0) + 1,
-                          },
-                        }));
-                        sfx.playHealOrChime();
-                        addLog(
-                          `Thu nhận được [${pickedDef?.name || pickedId}]. Hãy mở Túi [I] để đọc hoặc sử dụng!`
-                        );
-                      }
+                      setPlayer((prev) => ({
+                        ...prev,
+                        inventory: {
+                          ...prev.inventory,
+                          [pickedId]: (prev.inventory[pickedId] || 0) + 1,
+                        },
+                      }));
+                      sfx.playHealOrChime();
+                      addLog(
+                        `Thu nhận được [${CONFIG.ITEMS[pickedId]?.name || pickedId}]. Hãy mở Túi [I] để đọc hoặc sử dụng!`
+                      );
                     } else {
                       const uncollectedLore = CONFIG.BOOKS.filter(
-                        (b) => !player.readBookIds.includes(b.id)
+                        (b) => !latest.readBookIds.includes(b.id)
                       );
                       if (uncollectedLore.length > 0) {
                         const b = rng.pick(uncollectedLore);
@@ -3468,14 +3430,23 @@ export default function App() {
                     );
                   } else {
                     // Cursed Book Trap!
-                    const trapNext: PlayerState = {
-                      ...player,
-                      mind: Math.max(0, player.mind - 10),
-                      corruption: Math.min(100, player.corruption + 4),
+                    const trapSnap: PlayerState = {
+                      ...latest,
+                      mind: Math.max(0, latest.mind - 10),
+                      corruption: Math.min(100, latest.corruption + 4),
                     };
-                    syncCorruptionHolyBan(trapNext);
-                    const corWarn = checkCorruptionDiegeticWarning(trapNext);
-                    setPlayer(trapNext);
+                    syncCorruptionHolyBan(trapSnap);
+                    const corWarn = checkCorruptionDiegeticWarning(trapSnap);
+                    setPlayer((prev) => {
+                      const trapNext: PlayerState = {
+                        ...prev,
+                        mind: Math.max(0, prev.mind - 10),
+                        corruption: Math.min(100, prev.corruption + 4),
+                        corruptionWarningLogged: trapSnap.corruptionWarningLogged,
+                      };
+                      syncCorruptionHolyBan(trapNext);
+                      return trapNext;
+                    });
                     sfx.playSfx('hurt');
                     addLog(
                       'BẪY SÁCH NGUYỀN! Bụi cổ ngữ đen phụt thẳng vào mặt khiến đầu óc quay cuồng và lồng ngực lạnh buốt.'
@@ -3563,16 +3534,21 @@ export default function App() {
           }));
         }
 
-        setWorld((prev) => ({
-          ...prev,
-          rooms: {
-            ...prev.rooms,
-            [room.id]: {
-              ...room,
-              lootedCoords: [...room.lootedCoords, coordKey],
+        setWorld((prev) => {
+          const curRoom = prev.rooms[room.id] || room;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [room.id]: {
+                ...curRoom,
+                lootedCoords: curRoom.lootedCoords.includes(coordKey)
+                  ? curRoom.lootedCoords
+                  : [...curRoom.lootedCoords, coordKey],
+              },
             },
-          },
-        }));
+          };
+        });
         addLog(`Lục soát xác kỵ sĩ viễn chinh tử trận: Thu được ${rewardLog}!`);
         setLogOverlayVisible(true);
         return;
@@ -3590,23 +3566,29 @@ export default function App() {
               label: 'Thiền định bên khe nứt',
               onSelect: () => {
                 setInteractionMenu(null);
-                const miasmaNext: PlayerState = JSON.parse(JSON.stringify(player));
+                const latest = playerRef.current;
+                const miasmaNext: PlayerState = JSON.parse(JSON.stringify(latest));
                 miasmaNext.mind = Math.max(2, miasmaNext.mind - 18);
                 miasmaNext.corruption = Math.min(100, miasmaNext.corruption + 8);
                 grantAffinityOnce(miasmaNext, `miasma_${room.id}_${coordKey}`, 'primordialVoid', 1);
                 syncCorruptionHolyBan(miasmaNext);
                 const corWarn = checkCorruptionDiegeticWarning(miasmaNext);
-                setPlayer(miasmaNext);
-                setWorld((prev) => ({
-                  ...prev,
-                  rooms: {
-                    ...prev.rooms,
-                    [room.id]: {
-                      ...room,
-                      lootedCoords: [...room.lootedCoords, coordKey],
+                setPlayer(() => miasmaNext);
+                setWorld((prev) => {
+                  const curRoom = prev.rooms[room.id] || room;
+                  return {
+                    ...prev,
+                    rooms: {
+                      ...prev.rooms,
+                      [room.id]: {
+                        ...curRoom,
+                        lootedCoords: curRoom.lootedCoords.includes(coordKey)
+                          ? curRoom.lootedCoords
+                          : [...curRoom.lootedCoords, coordKey],
+                      },
                     },
-                  },
-                }));
+                  };
+                });
                 addLog(
                   'Hơi khói tím lạnh buốt tràn ngập lồng ngực. Tâm trí chao đảo giữa tiếng vọng xa xăm của Hư Vô Nguyên Thủy.'
                 );
@@ -3749,7 +3731,7 @@ export default function App() {
         if (deityType === 'holy_mother') {
           const executeHolyPrayer = (holyMode: 'fasting' | 'white_herb') => {
             setInteractionMenu(null);
-            const next: PlayerState = JSON.parse(JSON.stringify(player));
+            const next: PlayerState = JSON.parse(JSON.stringify(playerRef.current));
             const res = performAltarAffinityRitual(next, {
               altarKey,
               deity: 'holy_mother',
@@ -3758,7 +3740,7 @@ export default function App() {
             if (res.success) {
               sfx.playSfx('ritual');
               updateCircleState('holy_mother', true);
-              setPlayer(next);
+              setPlayer(() => next);
             }
             addLog(res.message);
             setLogOverlayVisible(true);
@@ -3794,7 +3776,7 @@ export default function App() {
               label: 'Rạch cổ tay hiến máu',
               onSelect: () => {
                 setInteractionMenu(null);
-                const next: PlayerState = JSON.parse(JSON.stringify(player));
+                const next: PlayerState = JSON.parse(JSON.stringify(playerRef.current));
                 const res = performAltarAffinityRitual(next, {
                   altarKey,
                   deity: 'demon_lord',
@@ -3803,7 +3785,7 @@ export default function App() {
                 if (res.success) {
                   sfx.playSfx('ritual');
                   updateCircleState('demon_lord', true);
-                  setPlayer(next);
+                  setPlayer(() => next);
                 }
                 addLog(res.message);
                 setLogOverlayVisible(true);
@@ -3863,7 +3845,7 @@ export default function App() {
               label: 'Nhìn thẳng vào vết nứt vực thẳm',
               onSelect: () => {
                 setInteractionMenu(null);
-                const next: PlayerState = JSON.parse(JSON.stringify(player));
+                const next: PlayerState = JSON.parse(JSON.stringify(playerRef.current));
                 const res = performAltarAffinityRitual(next, {
                   altarKey,
                   deity: 'void_god',
@@ -3871,7 +3853,7 @@ export default function App() {
                 if (res.success) {
                   sfx.playSfx('ritual');
                   updateCircleState('void_god', true);
-                  setPlayer(next);
+                  setPlayer(() => next);
                 }
                 addLog(res.message);
                 setLogOverlayVisible(true);
@@ -3997,16 +3979,19 @@ export default function App() {
               label: 'Gạt chốt sắt mở Cổng Đường Tắt',
               onSelect: () => {
                 setInteractionMenu(null);
-                setWorld((prev) => ({
-                  ...prev,
-                  rooms: {
-                    ...prev.rooms,
-                    [room.id]: {
-                      ...room,
-                      shortcutOpened: true,
+                setWorld((prev) => {
+                  const curRoom = prev.rooms[room.id] || room;
+                  return {
+                    ...prev,
+                    rooms: {
+                      ...prev.rooms,
+                      [room.id]: {
+                        ...curRoom,
+                        shortcutOpened: true,
+                      },
                     },
-                  },
-                }));
+                  };
+                });
                 addLog('Gạt chốt sắt: Cổng Sắt Đường Tắt đã mở toang!');
                 setLogOverlayVisible(true);
               },
@@ -4037,7 +4022,7 @@ export default function App() {
       }
     }
 
-    // Check parked dismissed companions waiting on the map (Manhattan <= 1)
+    // Check parked dismissed companions waiting near Đài Cộng Hưởng (Manhattan <= 1)
     const parkedSpots = getParkedCompanionSpots(room, player);
     for (const [dx, dy] of searchOffsets) {
       if (Math.abs(dx) + Math.abs(dy) > 1) continue;
@@ -4045,16 +4030,13 @@ export default function App() {
       const sy = playerPos.y + dy;
       const parked = parkedSpots.find((p) => p.x === sx && p.y === sy);
       if (parked) {
-        const partyFull = player.party.length >= 3;
         setInteractionMenu({
           title: `${parked.ally.name.toUpperCase()}`,
-          description: `${parked.ally.name} đang đứng chờ bạn tại đây (Sinh Lực ${parked.ally.hp}/${parked.ally.maxHp}, Lý Trí ${parked.ally.mind}/${parked.ally.maxMind}, Đói ${parked.ally.hunger || 0}/100).${
-            partyFull ? ' Tổ đội hiện đã đủ 4 người.' : ''
-          }`,
+          description: `${parked.ally.name} đang kiên nhẫn chờ bạn tại đây (Sinh Lực ${parked.ally.hp}/${parked.ally.maxHp}, Lý Trí ${parked.ally.mind}/${parked.ally.maxMind}).`,
           selectedIndex: 0,
           choices: [
             {
-              label: `Mời [${parked.ally.name}] tái gia nhập đội hình`,
+              label: `Gọi [${parked.ally.name}] tái gia nhập đội hình`,
               onSelect: () => {
                 setInteractionMenu(null);
                 const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
@@ -4067,7 +4049,7 @@ export default function App() {
                 setLogOverlayVisible(true);
               },
             },
-            { label: 'Để họ chờ tiếp ở đây', onSelect: closePrompt },
+            { label: 'Để họ nghỉ ngơi tiếp', onSelect: closePrompt },
           ],
         });
         return;
@@ -4402,6 +4384,11 @@ export default function App() {
         addLog('Lớp sương ẩn thân [Bước Chân Bóng Tối] đã tan biến.');
       }
 
+      if (player.equippedBody === 'platinum_cuirass' && nextCor > 0) {
+        nextHp = Math.max(0, nextHp - 5);
+        addLog('Giáp Bạch Kim rực nóng thiêu đốt 5 Sinh Lực vì vết nhơ Tha Hóa trên người bạn!');
+      }
+
       const updatedPlayer: PlayerState = {
         ...player,
         hp: nextHp,
@@ -4470,7 +4457,8 @@ export default function App() {
           id: 'STARVED_IN_DARKNESS',
           title: 'XÁC KHÔ GIỮA ĐẠI GIÁO ĐƯỜNG',
           subtitle: `Gục ngã bởi Cơn Đói và Vết Thương • Seed mới tiếp theo: ${nextRandomSeed}`,
-          epilogue: 'Hành trình của bạn đã kết thúc.',
+          epilogue:
+            'Ánh lửa cuối cùng tàn lụi trên nền đá lạnh lẽo. Cơn đói cồn cào cùng những vết thương rỉ máu rút cạn hơi thở sau cùng, để lại thân xác gầy rộc chìm vào bóng tối câm lặng của Đại Giáo Đường Goethe.',
         });
         setScreen('ending');
         return;
@@ -4770,7 +4758,8 @@ export default function App() {
                       id: 'SLAIN_IN_COMBAT',
                       title: 'MÁU NHUỘM ĐẠI GIÁO ĐƯỜNG GOETHE',
                       subtitle: `Gục Ngã Trước Đòn Tử Thần • Seed ngẫu nhiên mới: ${nextRandomSeed}`,
-                      epilogue: 'Hành trình của bạn đã kết thúc.',
+                      epilogue:
+                        'Đồng xu định mệnh rơi xuống mặt đá lạnh buốt. Đòn tử thần giáng xuống không chút khoan nhượng, xé toạc phòng tuyến cuối cùng và nhuộm đỏ nền đá Đại Giáo Đường Goethe bằng chính máu của bạn.',
                     });
                     handleCombatEnd({ nextScreen: 'ending' });
                     return;
@@ -4847,6 +4836,7 @@ export default function App() {
       openNpcRpgDialogue,
       triggerCombatVfx,
       sleepCombatStep,
+      triggerCoinToss,
     ]
   );
 
@@ -5037,12 +5027,18 @@ export default function App() {
             return;
           }
 
-          if (e.key === '1' || key === 'escape' || e.key === 'Backspace') {
+          if (key === 'escape' || e.key === 'Backspace' || (e.key === '1' && pendingAction === 'ATTACK')) {
             sfx.playSfx('ui_move');
+            const wasSkill = pendingAction === 'SKILL';
             setPendingAction(null);
             setPendingSkillId(null);
-            setCombatMenuMode('main');
-            setCombatFocusPhase('action');
+            if (wasSkill && (key === 'escape' || e.key === 'Backspace')) {
+              setCombatMenuMode('skills');
+              setCombatFocusPhase('skills_menu');
+            } else {
+              setCombatMenuMode('main');
+              setCombatFocusPhase('action');
+            }
             return;
           }
 
@@ -5865,6 +5861,10 @@ export default function App() {
         }}
         onClickLimb={(limbId) => {
           if (isResolvingTurn || activeCombatEnemy.defeated) return;
+          const activeAllyClick = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
+          if (pendingAction === null && activeAllyClick && isPureTankSummon(activeAllyClick)) {
+            return;
+          }
           (document.activeElement as HTMLElement | null)?.blur?.();
           setSelectedLimbId(limbId);
           if (pendingAction === null) {
@@ -5896,6 +5896,7 @@ export default function App() {
             runCombatTurn('ATTACK', { limbId });
           }
         }}
+        onVictoryExit={() => handleCombatEnd({ defeatedEnemyUid: activeCombatEnemy.uid })}
       />
     );
   }
@@ -6073,6 +6074,7 @@ export default function App() {
             <div className="relative flex-1 min-h-0 w-full h-full bg-[#050407] overflow-hidden">
               <DungeonMapViewport
                 room={currentRoom}
+                worldSeed={world.seed}
                 player={player}
                 playerPos={playerPos}
                 trailCoords={trailCoords}
@@ -6084,7 +6086,22 @@ export default function App() {
                   const dx = tx - playerPos.x;
                   const dy = ty - playerPos.y;
                   if (Math.abs(dx) + Math.abs(dy) === 1) {
-                    attemptMove(dx, dy);
+                    const targetTile = currentRoom.grid[ty]?.[tx];
+                    if (
+                      targetTile !== undefined &&
+                      !isWalkableTile(targetTile, currentRoom.shortcutOpened)
+                    ) {
+                      if (
+                        targetTile === TILE.CRACKED_WALL ||
+                        targetTile === TILE.SHORTCUT_GATE ||
+                        targetTile === TILE.BLOOD_THRONE ||
+                        NPC_TILE_SET.has(targetTile)
+                      ) {
+                        handleTileInteraction();
+                      }
+                    } else {
+                      attemptMove(dx, dy);
+                    }
                   } else if (dx === 0 && dy === 0) {
                     handleTileInteraction();
                   }
@@ -6227,11 +6244,9 @@ export default function App() {
               </div>
             )}
 
-            {/* Slim Bottom Sensory Line (auto-hides 5s after entering an area, reappears on re-entry) */}
+            {/* Slim Bottom Sensory Line */}
             <div
-              className={`absolute inset-x-0 bottom-0 z-20 bg-[#0b090e]/95 border-t border-[#3b2f2d] px-3.5 py-1.5 text-xs sm:text-sm text-[#cfc0a9] italic flex items-center justify-between gap-2 transition-opacity duration-500 ${
-                sensoryBarVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
-              }`}
+              className="shrink-0 bg-[#0b090e]/95 border-t border-[#3b2f2d] px-3.5 py-1.5 text-xs sm:text-sm text-[#cfc0a9] italic flex items-center justify-between gap-2"
               title={currentRoom.sensoryLine}
             >
               <span className="truncate">“{currentRoom.sensoryLine}”</span>

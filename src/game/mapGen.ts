@@ -504,6 +504,14 @@ export function generateWorld(seed: string): WorldMapState {
         }
       }
 
+      // Boss rooms are terminal rooms for their floors; F1_R0 and F3_R0 enter via floor stairs instead of PORTAL_PREV
+      if (isBossRoom) {
+        grid[exitY][exitX] = TILE.FLOOR;
+      }
+      if ((fc.floor === 1 || fc.floor === 3) && idx === 0) {
+        grid[spawnY][spawnX - 1] = TILE.WALL;
+      }
+
       // 1. Build occupiedTiles & reservedMask to prevent ANY overlapping stairs, altars, NPCs, props, or chasms
       const reservedMask = new Set<string>();
       const occupiedTiles = new Set<string>();
@@ -610,9 +618,15 @@ export function generateWorld(seed: string): WorldMapState {
       };
 
       // Helper to place landmarks, stairs & NPCs checking occupiedTiles first + guaranteed walkable clearance
-      const placeLandmark = (cx: number, cy: number, tileType: TILE, clearRadius = 1, reserveRadius = 2) => {
+      const placeLandmark = (
+        cx: number,
+        cy: number,
+        tileType: TILE,
+        clearRadius = 1,
+        reserveRadius = 2
+      ): [number, number] | null => {
         const spot = findUnoccupiedSpot(cx, cy, Math.min(1, clearRadius));
-        if (!spot) return;
+        if (!spot) return null;
         const [sx, sy] = spot;
         for (let dy = -clearRadius; dy <= clearRadius; dy++) {
           for (let dx = -clearRadius; dx <= clearRadius; dx++) {
@@ -628,6 +642,7 @@ export function generateWorld(seed: string): WorldMapState {
         }
         grid[sy][sx] = tileType;
         reserveArea(sx, sy, reserveRadius);
+        return [sx, sy];
       };
 
       // Inter-floor stairs (checked against occupiedTiles before placement)
@@ -785,8 +800,10 @@ export function generateWorld(seed: string): WorldMapState {
             }
           }
           if (clear3x3) {
-            placeLandmark(rx, ry, TILE.RITUAL_CIRCLE, 1, 2);
-            ritualCircles[`${rx},${ry}`] = { deityType: assignedDeity, used: false };
+            const placed = placeLandmark(rx, ry, TILE.RITUAL_CIRCLE, 1, 2);
+            if (placed) {
+              ritualCircles[`${placed[0]},${placed[1]}`] = { deityType: assignedDeity, used: false };
+            }
             break;
           }
         }

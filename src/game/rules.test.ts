@@ -2448,6 +2448,216 @@ test('Combat.ts Deep Bugfix: guarding resets after round, Vaelis drops 1 void_co
   assert.equal(effigyTriggered, true, 'black_straw_effigy must trigger and block parasite/infection');
 });
 
+test('Workstream A & B: Panic ITEM, ally ITEM isolation, Lv3 skills, gear passives, 3 alchemy books, waiting spot, and boss mapGen fixes', () => {
+  // 1. Main player panicking (mind < 30) can still use ITEM (e.g. opium_vial) without panic hijack
+  const pPanicItem = createInitialPlayer('fallen_knight');
+  pPanicItem.mind = 10;
+  pPanicItem.inventory.opium_vial = 1;
+  const foePanic = createMapEnemyInstance('e_panic_item', 'starved_hound', 4, 4);
+  const panicItemOut = executeSingleActorCombatAction(
+    pPanicItem,
+    foePanic,
+    0,
+    'ITEM',
+    'torso',
+    { itemId: 'opium_vial' },
+    new SeededRNG('PANIC-ITEM')
+  );
+  assert.equal(pPanicItem.mind > 10, true, 'Main player must be able to use sanity ITEM while panicking');
+  assert.equal(pPanicItem.inventory.opium_vial, 0);
+  assert.equal(panicItemOut.logs.some((l) => l.includes('HOẢNG LOẠN')), false);
+
+  // 2. Ally offensive ITEM executes directly under ally name/turn even while main player is panicking
+  const pWithAlly = createInitialPlayer('forsaken_nun');
+  pWithAlly.mind = 5; // Panicking main player
+  const kael = createRecruitedAlly('ally_kael');
+  kael.mind = 80;
+  pWithAlly.party.push(kael);
+  pWithAlly.inventory.brown_vial = 1;
+  const foeAllyItem = createMapEnemyInstance('e_ally_item', 'fanatic_zealot', 4, 4);
+  const foeAllyTorso = foeAllyItem.limbs.find((l) => l.id === 'torso');
+  if (foeAllyTorso) {
+    foeAllyTorso.hp = 2000;
+    foeAllyTorso.maxHp = 2000;
+  }
+  const allyItemOut = executeSingleActorCombatAction(
+    pWithAlly,
+    foeAllyItem,
+    1,
+    'ITEM',
+    'torso',
+    { itemId: 'brown_vial' },
+    new SeededRNG('ALLY-ITEM')
+  );
+  assert.equal(pWithAlly.inventory.brown_vial, 0);
+  assert.equal((allyItemOut.lastDealtDmg || 0) >= 650, true);
+  assert.equal(allyItemOut.actorIdx, 1);
+  assert.equal(allyItemOut.logs.some((l) => l.includes(`[${kael.name}]`)), true);
+
+  // 3. Lv3 skills: en_garde (crit + separate status), hamstring_bind (2nd limb lock), blessed_heal (+20% armor), veil_of_blindness (evasion + clear coinFlip), necromancy (+8 Mind on kill)
+  const pSkills = createInitialPlayer('fallen_knight');
+  pSkills.mind = 120;
+  pSkills.hunger = 0;
+  pSkills.skillLevels.en_garde = 3;
+  pSkills.skillLevels.hamstring_bind = 3;
+  pSkills.skillLevels.blessed_heal = 3;
+  pSkills.skillLevels.veil_of_blindness = 3;
+  pSkills.skillLevels.necromancy = 3;
+  const summonGhoul = createRecruitedAlly('fallen_knight');
+  summonGhoul.isUndeadSummon = true;
+  summonGhoul.classId = 'summon_ghoul';
+  summonGhoul.mind = 20;
+  summonGhoul.maxMind = 80;
+  pSkills.party.push(summonGhoul);
+
+  const paladin = createMapEnemyInstance('e_skills_lv3', 'executioner_paladin', 4, 4);
+  for (const l of paladin.limbs) {
+    l.hp = 3000;
+    l.maxHp = 3000;
+  }
+  const egOut = executeSingleActorCombatAction(
+    pSkills,
+    paladin,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'en_garde' },
+    new SeededRNG('EN-GARDE-3')
+  );
+  assert.equal(egOut.wasCrit, true, 'en_garde Lv3 must trigger guaranteed crit when hunger < 90');
+  assert.equal((pSkills.statuses.enGardeTurns || 0) > 0, true);
+  assert.equal(pSkills.statuses.divineAegisTurns, 0, 'en_garde must not grant divineAegisTurns');
+
+  executeSingleActorCombatAction(
+    pSkills,
+    paladin,
+    0,
+    'SKILL',
+    'left_leg',
+    { skillId: 'hamstring_bind' },
+    new SeededRNG('HAMSTRING-3')
+  );
+  assert.equal(Object.keys(paladin.lockedLimbIds || {}).length >= 2, true, 'hamstring_bind Lv3 must lock 2nd intact limb');
+
+  executeSingleActorCombatAction(
+    pSkills,
+    paladin,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'blessed_heal' },
+    new SeededRNG('BLESSED-3')
+  );
+  assert.equal(pSkills.statuses.blessedArmorTurns, 2, 'blessed_heal Lv3 must grant 2 turns of blessedArmorTurns');
+
+  paladin.telegraphing = true;
+  paladin.telegraphCoinFlip = true;
+  executeSingleActorCombatAction(
+    pSkills,
+    paladin,
+    0,
+    'SKILL',
+    'torso',
+    { skillId: 'veil_of_blindness' },
+    new SeededRNG('VEIL-3')
+  );
+  assert.equal((pSkills.statuses.veilEvasionTurns || 0) >= 3, true);
+  assert.equal(paladin.telegraphCoinFlip, false, 'veil_of_blindness Lv3 must clear telegraphCoinFlip');
+
+  // Kill enemy to verify necromancy Lv3 +8 Mind to undead summon
+  paladin.limbs.forEach((l) => {
+    if (l.id !== 'torso') l.hp = 0;
+  });
+  paladin.limbs.find((l) => l.id === 'torso')!.hp = 1;
+  executeSingleActorCombatAction(pSkills, paladin, 0, 'ATTACK', 'torso', undefined, new SeededRNG('NECRO-WIN'));
+  assert.equal(summonGhoul.mind, 28, 'necromancy Lv3 must restore +8 Mind to surviving undead summon on kill');
+
+  // 4. Gear passives: stalkers_cap hitBonus & platinum_cuirass corruption burn
+  const pCap = createInitialPlayer('night_hunter');
+  pCap.equippedHead = null;
+  pCap.statuses.blindedTurns = 2;
+  const foeCap = createMapEnemyInstance('e_cap', 'fanatic_zealot', 4, 4);
+  const tplCap = CONFIG.ENEMIES.fanatic_zealot;
+  const torsoCap = foeCap.limbs.find((l) => l.id === 'torso')!;
+  const baseHit = computeLimbHitChance(pCap, foeCap, tplCap, torsoCap);
+  pCap.equippedHead = 'stalkers_cap';
+  const capHit = computeLimbHitChance(pCap, foeCap, tplCap, torsoCap);
+  assert.equal(capHit > baseHit, true, 'stalkers_cap must increase hit chance');
+
+  const pPlat = createInitialPlayer('fallen_knight');
+  pPlat.hp = 100;
+  pPlat.corruption = 10;
+  pPlat.equippedBody = 'platinum_cuirass';
+  const stunnedSlime = createMapEnemyInstance('e_plat', 'starved_hound', 4, 4);
+  stunnedSlime.stunTurns = 2;
+  resolveEnemyCombatRound(pPlat, stunnedSlime, new SeededRNG('PLAT-BURN'));
+  assert.equal(pPlat.hp, 95, 'platinum_cuirass must burn 5 HP at end of combat round when corruption > 0');
+
+  // 5. CombatEngine actorIndex preview + ally guarding persistence across multiple hits
+  const ce = new CombatEngine();
+  const pPreview = createInitialPlayer('fallen_knight');
+  const allyPrev = createRecruitedAlly('night_hunter');
+  pPreview.party.push(allyPrev);
+  const allyPreviewOut = ce.getDamagePreview(pPreview, foeCap, tplCap, torsoCap, 1);
+  assert.equal(allyPreviewOut.maxDmg >= allyPreviewOut.minDmg && allyPreviewOut.minDmg > 0, true);
+
+  const pGuardMulti = createInitialPlayer('fallen_knight');
+  const guardAlly = createRecruitedAlly('fallen_knight');
+  guardAlly.guarding = true;
+  guardAlly.hp = 135;
+  guardAlly.maxHp = 135;
+  pGuardMulti.party.push(guardAlly);
+  const multiBoss = createMapEnemyInstance('e_multi_guard', 'demon_lord_vaelis', 4, 4);
+  multiBoss.stunTurns = 0;
+  resolveEnemyCombatRound(pGuardMulti, multiBoss, new SeededRNG('MULTI-HIT-GUARD'));
+  assert.equal(guardAlly.guarding, false, 'ally.guarding resets at end of round after defending all multi-hits');
+
+  // 6. Alchemy consolidation: fresh player has unlockedRecipes = [], 6 recipes across 3 books, no Lore unlockRecipeId
+  const freshP = createInitialPlayer('fallen_knight');
+  assert.deepEqual(freshP.unlockedRecipes, []);
+  assert.equal(CONFIG.RECIPES.length, 6);
+  const bookUnlocked = new Set([
+    ...(CONFIG.ITEMS.recipe_book_expedition?.unlockRecipes || []),
+    ...(CONFIG.ITEMS.recipe_book_cathedral?.unlockRecipes || []),
+    ...(CONFIG.ITEMS.recipe_book_forbidden?.unlockRecipes || []),
+  ]);
+  assert.equal(bookUnlocked.size, 6);
+  for (const r of CONFIG.RECIPES) {
+    assert.equal(bookUnlocked.has(r.id), true, `Recipe ${r.id} must belong to one of the 3 alchemy books`);
+  }
+
+  // 7. Waiting spot coordinates persisted on leaveOrDismissPartyMember & cleared on recallDismissedCompanion
+  const pWait = createInitialPlayer('forsaken_nun');
+  const waitAlly = createRecruitedAlly('ally_kael');
+  pWait.party.push(waitAlly);
+  leaveOrDismissPartyMember(pWait, 0, 'leave', { roomId: 'F2_R2', x: 6, y: 7 });
+  assert.equal(pWait.dismissedCompanions?.[0]?.waitingRoomId, 'F2_R2');
+  assert.equal(pWait.dismissedCompanions?.[0]?.waitingX, 6);
+  assert.equal(pWait.dismissedCompanions?.[0]?.waitingY, 7);
+  recallDismissedCompanion(pWait, 'ally_kael');
+  assert.equal(pWait.party[0].waitingRoomId, undefined);
+
+  // 8. MapGen boss room portal fix & ritualCircles key alignment
+  const wCheck = generateWorld('MAPGEN-VERIFY-1');
+  for (const bId of ['F2_R4', 'F3_R3', 'F1_R3']) {
+    const tiles = wCheck.rooms[bId].grid.flat();
+    assert.equal(tiles.includes(TILE.PORTAL_NEXT), false, `Boss room ${bId} must not contain PORTAL_NEXT`);
+  }
+  assert.equal(wCheck.rooms.F1_R0.grid.flat().includes(TILE.PORTAL_PREV), false, 'F1_R0 must not contain orphaned PORTAL_PREV');
+  assert.equal(wCheck.rooms.F3_R0.grid.flat().includes(TILE.PORTAL_PREV), false, 'F3_R0 must not contain orphaned PORTAL_PREV');
+  for (const rId of ['F2_R1', 'F2_R3', 'F3_R1', 'F1_R1']) {
+    const r = wCheck.rooms[rId];
+    for (let y = 0; y < r.grid.length; y++) {
+      for (let x = 0; x < r.grid[y].length; x++) {
+        if (r.grid[y][x] === TILE.RITUAL_CIRCLE) {
+          assert.ok(r.ritualCircles?.[`${x},${y}`], `Ritual circle in ${rId} at ${x},${y} must have metadata`);
+        }
+      }
+    }
+  }
+});
+
+
 
 
 

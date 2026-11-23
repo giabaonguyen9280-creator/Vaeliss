@@ -21,6 +21,7 @@ import { SeededRNG } from '../game/prng';
 
 interface DungeonMapViewportProps {
   room: RoomData;
+  worldSeed?: string;
   player: PlayerState;
   playerPos: { x: number; y: number };
   trailCoords: Array<{ x: number; y: number }>;
@@ -32,82 +33,18 @@ interface DungeonMapViewportProps {
   onEnemyCollidePlayer?: (enemy: MapEnemyInstance) => void;
 }
 
-export function findSafeCompanionParkTile(
-  room: RoomData | undefined,
-  origin: { x: number; y: number },
-  existingDismissed: PartyAlly[] = []
-): { x: number; y: number } {
-  if (!room) return { x: origin.x, y: origin.y };
-  const roomH = room.height || room.grid.length;
-  const roomW = room.width || room.grid[0]?.length || 0;
-  const occupied = new Set<string>();
-  for (const e of room.enemies) {
-    if (!e.defeated) occupied.add(`${e.x},${e.y}`);
-  }
-  for (const dc of existingDismissed) {
-    if (dc.hp > 0 && dc.parkedLocation?.roomId === room.id) {
-      occupied.add(`${dc.parkedLocation.x},${dc.parkedLocation.y}`);
-    }
-  }
-  const offsets: Array<[number, number]> = [
-    [-1, 0],
-    [1, 0],
-    [0, 1],
-    [0, -1],
-    [-1, 1],
-    [1, 1],
-    [-1, -1],
-    [1, -1],
-    [0, 0],
-  ];
-  for (const [dx, dy] of offsets) {
-    const nx = origin.x + dx;
-    const ny = origin.y + dy;
-    if (nx <= 0 || nx >= roomW - 1 || ny <= 0 || ny >= roomH - 1) continue;
-    const key = `${nx},${ny}`;
-    if (occupied.has(key)) continue;
-    const tile = room.grid[ny]?.[nx];
-    if (!isWalkableTile(tile, room.shortcutOpened)) continue;
-    if (tile === TILE.FLOOR_TRAP || tile === TILE.MIASMA_VENT) continue;
-    return { x: nx, y: ny };
-  }
-  return { x: origin.x, y: origin.y };
-}
-
 export function getParkedCompanionSpots(
   room: RoomData,
   player: PlayerState
 ): Array<{ ally: PartyAlly; x: number; y: number }> {
-  const dismissed = (player.dismissedCompanions || []).filter((a) => a.hp > 0);
+  const dismissed = (player.dismissedCompanions || []).filter((a) => {
+    if (a.hp <= 0) return false;
+    if (a.waitingRoomId && a.waitingRoomId !== room.id) return false;
+    return true;
+  });
   if (dismissed.length === 0) return [];
   const roomH = room.height || room.grid.length;
   const roomW = room.width || room.grid[0]?.length || 0;
-  const spots: Array<{ ally: PartyAlly; x: number; y: number }> = [];
-  const usedKeys = new Set<string>();
-
-  // 1. Render dismissed companions pinned to their exact parkedLocation in this room
-  const legacyUnpinned: PartyAlly[] = [];
-  for (const ally of dismissed) {
-    if (ally.parkedLocation) {
-      if (ally.parkedLocation.roomId !== room.id) continue;
-      const sx = Math.max(1, Math.min(roomW - 2, ally.parkedLocation.x));
-      const sy = Math.max(1, Math.min(roomH - 2, ally.parkedLocation.y));
-      const key = `${sx},${sy}`;
-      if (!usedKeys.has(key) && isWalkableTile(room.grid[sy]?.[sx], room.shortcutOpened)) {
-        usedKeys.add(key);
-        spots.push({ ally, x: sx, y: sy });
-      } else {
-        const fallback = findSafeCompanionParkTile(room, { x: sx, y: sy }, []);
-        usedKeys.add(`${fallback.x},${fallback.y}`);
-        spots.push({ ally, x: fallback.x, y: fallback.y });
-      }
-    } else {
-      legacyUnpinned.push(ally);
-    }
-  }
-
-  // 2. Legacy fallback for older saves without parkedLocation: place near HEXEN_ALTAR
-  if (legacyUnpinned.length === 0) return spots;
   let altarX = -1;
   let altarY = -1;
   for (let y = 0; y < roomH && altarX === -1; y++) {
@@ -119,8 +56,22 @@ export function getParkedCompanionSpots(
       }
     }
   }
-  if (altarX === -1) return spots;
 
+  const waitOffsets: Array<[number, number]> = [
+    [0, 0],
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+    [-2, 0],
+    [2, 0],
+    [0, -2],
+    [0, 2],
+  ];
   const candidateOffsets: Array<[number, number]> = [
     [-2, 0],
     [2, 0],
@@ -135,20 +86,45 @@ export function getParkedCompanionSpots(
     [-2, -1],
     [2, -1],
   ];
-  for (const ally of legacyUnpinned) {
-    for (const [ox, oy] of candidateOffsets) {
-      const sx = altarX + ox;
-      const sy = altarY + oy;
-      if (sx <= 0 || sx >= roomW - 1 || sy <= 0 || sy >= roomH - 1) continue;
-      const key = `${sx},${sy}`;
-      if (usedKeys.has(key)) continue;
-      const tile = room.grid[sy]?.[sx];
-      if (!isWalkableTile(tile)) continue;
-      if (tile === TILE.FLOOR_TRAP) continue;
-      if (room.enemies.some((e) => !e.defeated && e.x === sx && e.y === sy)) continue;
-      usedKeys.add(key);
-      spots.push({ ally, x: sx, y: sy });
-      break;
+  const spots: Array<{ ally: PartyAlly; x: number; y: number }> = [];
+  const usedKeys = new Set<string>();
+  const canParkAt = (sx: number, sy: number) => {
+    if (sx <= 0 || sx >= roomW - 1 || sy <= 0 || sy >= roomH - 1) return false;
+    const key = `${sx},${sy}`;
+    if (usedKeys.has(key)) return false;
+    const tile = room.grid[sy]?.[sx];
+    if (!isWalkableTile(tile, room.shortcutOpened)) return false;
+    if (tile === TILE.FLOOR_TRAP) return false;
+    if (room.enemies.some((e) => !e.defeated && e.x === sx && e.y === sy)) return false;
+    return true;
+  };
+
+  for (const ally of dismissed) {
+    if (
+      ally.waitingRoomId === room.id &&
+      typeof ally.waitingX === 'number' &&
+      typeof ally.waitingY === 'number'
+    ) {
+      for (const [ox, oy] of waitOffsets) {
+        const sx = ally.waitingX + ox;
+        const sy = ally.waitingY + oy;
+        if (!canParkAt(sx, sy)) continue;
+        usedKeys.add(`${sx},${sy}`);
+        spots.push({ ally, x: sx, y: sy });
+        break;
+      }
+      continue;
+    }
+
+    if (ally.waitingRoomId === undefined && altarX !== -1) {
+      for (const [ox, oy] of candidateOffsets) {
+        const sx = altarX + ox;
+        const sy = altarY + oy;
+        if (!canParkAt(sx, sy)) continue;
+        usedKeys.add(`${sx},${sy}`);
+        spots.push({ ally, x: sx, y: sy });
+        break;
+      }
     }
   }
   return spots;
@@ -156,10 +132,13 @@ export function getParkedCompanionSpots(
 
 function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): boolean {
   const lifecycle = player.npcLifecycle || {};
-  const parkedIds = new Set((player.dismissedCompanions || []).filter((a) => a.hp > 0).map((a) => a.id));
+  const dismissedIds = new Set((player.dismissedCompanions || []).map((c) => c.id));
+  if (tile === TILE.NPC_SMUGGLER) {
+    return !player.npcFlags?.smugglerClosed;
+  }
   if (tile === TILE.NPC_RECRUIT_KNIGHT) {
     if (lifecycle.npc_recruit_knight === 'recruited' || lifecycle.npc_recruit_knight === 'dead') return false;
-    if (parkedIds.has('fallen_knight')) return false;
+    if (dismissedIds.has('fallen_knight')) return false;
     return (
       (lifecycle.npc_recruit_knight === 'map' || !looted) &&
       player.classId !== 'fallen_knight' &&
@@ -168,7 +147,7 @@ function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): bool
   }
   if (tile === TILE.NPC_RECRUIT_NUN) {
     if (lifecycle.npc_recruit_nun === 'recruited' || lifecycle.npc_recruit_nun === 'dead') return false;
-    if (parkedIds.has('forsaken_nun')) return false;
+    if (dismissedIds.has('forsaken_nun')) return false;
     return (
       (lifecycle.npc_recruit_nun === 'map' || !looted) &&
       player.classId !== 'forsaken_nun' &&
@@ -177,7 +156,7 @@ function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): bool
   }
   if (tile === TILE.NPC_RECRUIT_HUNTER) {
     if (lifecycle.npc_recruit_hunter === 'recruited' || lifecycle.npc_recruit_hunter === 'dead') return false;
-    if (parkedIds.has('night_hunter')) return false;
+    if (dismissedIds.has('night_hunter')) return false;
     return (
       (lifecycle.npc_recruit_hunter === 'map' || !looted) &&
       player.classId !== 'night_hunter' &&
@@ -186,12 +165,12 @@ function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): bool
   }
   if (tile === TILE.NPC_PRISONER) {
     if (lifecycle.npc_prisoner === 'recruited' || lifecycle.npc_prisoner === 'dead') return false;
-    if (parkedIds.has('ally_kael')) return false;
+    if (dismissedIds.has('ally_kael')) return false;
     return !player.npcFlags.prisonerRecruited && !player.party.some((a) => a.id === 'ally_kael');
   }
   if (tile === TILE.NPC_BROKEN_KNIGHT) {
     if (lifecycle.npc_broken_knight === 'recruited' || lifecycle.npc_broken_knight === 'dead') return false;
-    if (parkedIds.has('broken_knight')) return false;
+    if (dismissedIds.has('broken_knight')) return false;
     return !player.party.some((a) => a.id === 'broken_knight');
   }
   return true;
@@ -199,6 +178,7 @@ function isNpcTileActive(tile: TILE, player: PlayerState, looted: boolean): bool
 
 export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   room,
+  worldSeed,
   player,
   playerPos,
   trailCoords,
@@ -304,6 +284,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
 
   const renderStateRef = useRef({
     room,
+    worldSeed,
     player,
     playerPos,
     trailCoords,
@@ -313,6 +294,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
   });
   renderStateRef.current = {
     room,
+    worldSeed,
     player,
     playerPos,
     trailCoords,
@@ -329,6 +311,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
     const renderFrame = (now: number) => {
       const {
         room,
+        worldSeed,
         player,
         playerPos,
         trailCoords,
@@ -361,7 +344,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
 
           // Build or reuse Offscreen Static Tile Layer
           const hasBloodThrone = room.grid.some((row) => row.includes(TILE.BLOOD_THRONE));
-          const cacheKey = `${room.id}_${roomW}x${roomH}_${room.secretWallBlown}_${room.shortcutOpened}_${hasBloodThrone}_${room.lootedCoords.join('|')}`;
+          const cacheKey = `${worldSeed || ''}_${room.id}_${roomW}x${roomH}_${room.secretWallBlown}_${room.shortcutOpened}_${hasBloodThrone}_${room.lootedCoords.join('|')}`;
           if (!offscreenRef.current || offscreenRef.current.cacheKey !== cacheKey) {
             const offCanvas = document.createElement('canvas');
             offCanvas.width = worldPxW;
@@ -386,7 +369,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
 
                 const variantHash =
                   tile === TILE.HERB
-                    ? herbTypeToVariant(getHerbTypeAtCoord(room, x, y))
+                    ? herbTypeToVariant(getHerbTypeAtCoord(room, x, y, worldSeed))
                     : new SeededRNG(`tile_${room.id}_${x}_${y}`).int(0, 19);
                 const floorTex = getFloorTileTexture(
                   room.floor,
@@ -1364,7 +1347,7 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
             else if (t === TILE.CRATE && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Lục Thùng';
             else if (t === TILE.HERB && !room.lootedCoords.includes(cKey)) {
-              const ht = getHerbTypeAtCoord(room, ix, iy);
+              const ht = getHerbTypeAtCoord(room, ix, iy, worldSeed);
               promptLabel =
                 ht === 'red_herb'
                   ? '[F] Hái Thảo Dược Đỏ'

@@ -155,7 +155,6 @@ export const LoreModal: React.FC<LoreModalProps> = ({
           (() => {
             const hasVoidCore = (player.inventory.void_core || 0) > 0;
             const hasReconScroll = (player.inventory.reconstruction_scroll || 0) > 0;
-            const reconFragCount = player.inventory.reconstruction_fragment || 0;
             const hasElixir = (player.inventory.elixir_of_ancients || 0) > 0;
             const child13InParty = player.party.some((a) => a.id === 'child_13' && a.hp > 0);
             const child13Rescued = Boolean(player.questFlags?.child13Rescued);
@@ -171,7 +170,6 @@ export const LoreModal: React.FC<LoreModalProps> = ({
 
             const reconDiscovered =
               hasReconScroll ||
-              reconFragCount > 0 ||
               player.readBookIds.includes('book_13') ||
               Boolean(player.questFlags?.chroniclerTalked);
 
@@ -215,10 +213,8 @@ export const LoreModal: React.FC<LoreModalProps> = ({
                 clue: !reconDiscovered
                   ? 'Chưa rõ tung tích.'
                   : hasReconScroll
-                  ? 'Đã ghép trọn vẹn Cuộn Thần Chú.'
-                  : reconFragCount > 0
-                  ? `Đang giữ ${reconFragCount}/3 mảnh rời.`
-                  : '3 mảnh cổ chú thất lạc trong Thung Lũng.',
+                  ? 'Đã thu giữ trọn vẹn Cuộn Thần Chú.'
+                  : 'Cuộn cổ chú thất lạc nơi sâu thẳm Tầng 3.',
               },
               {
                 key: 'elixir',

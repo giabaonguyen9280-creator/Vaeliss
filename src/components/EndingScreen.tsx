@@ -52,7 +52,9 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
 
   const isDefeat =
     endingInfo.id === 'SLAIN_IN_COMBAT' || endingInfo.id === 'STARVED_IN_DARKNESS';
-  const displayEpilogue = isDefeat ? 'Hành trình của bạn đã kết thúc.' : endingInfo.epilogue;
+  const displayEpilogue = isDefeat
+    ? endingInfo.epilogue || 'Hành trình của bạn đã kết thúc.'
+    : endingInfo.epilogue;
 
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[#050408] text-[#e7dcc8] flex flex-col justify-between select-none">

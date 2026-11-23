@@ -200,20 +200,16 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'lore' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#c5a059]">Ba Tầng Thung Lũng:</b> Từ Lâu Đài Hắc Ám, qua Đại Giáo
-            Đường đổ nát, xuống tới đáy Vực Sao không ánh sáng.
+            • <b className="text-[#c5a059]">Ba Tầng Thung Lũng:</b> Lâu Đài Hắc Ám, Đại Giáo Đường và Vực Sao bị ép chặt vào nhau giữa màn sương đặc quánh.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Cổ Thư [L]:</b> Những trang da dê còn sót lại trên kệ
-            sách lưu giữ mảnh ký ức của những kẻ đi trước.
+            • <b className="text-[#c5a059]">Cổ Thư [L]:</b> Lục tìm những trang da dê rải rác trên kệ sách để ghép nối sự thật bị vùi lấp.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Đài Cộng Hưởng:</b> Bệ đá cổ nơi các nghi thức khắc ấn
-            và đánh đổi linh hồn diễn ra.
+            • <b className="text-[#c5a059]">Đài Cộng Hưởng:</b> Dâng Đá Linh Hồn để khắc ấn kỹ năng và chạm tới các thế lực cổ xưa.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Đồng Hành:</b> Bạn có thể đi cùng những kẻ sống sót trên
-            đường; ai ngã xuống sẽ vĩnh viễn nằm lại bóng tối.
+            • <b className="text-[#c5a059]">Tổ Đội Sinh Tồn:</b> Chiêu mộ người sống sót hoặc kẻ đồng hành; cái chết trong hầm ngục là vĩnh viễn.
           </li>
         </ul>
       )}
@@ -221,20 +217,16 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'move' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#c5a059]">WASD / Mũi tên:</b> Di chuyển từng bước qua hành lang
-            và sảnh đá.
+            • <b className="text-[#c5a059]">WASD / Mũi tên:</b> Bước đi qua từng phiến đá lạnh; giữ <b>Shift</b> để lướt nhanh qua hành lang trống.
           </li>
           <li>
-            • <b className="text-[#c5a059]">F / Enter / Space:</b> Tương tác với rương, kệ sách, đài
-            đá, người sống sót và xác quái.
+            • <b className="text-[#c5a059]">[F] / Enter / Space:</b> Kiểm tra rương, kệ sách, đài đá, người sống sót và xác quái trên đường.
           </li>
           <li>
-            • <b className="text-[#c5a059]">I / L / ESC:</b> Mở Túi Đồ, đọc Cổ Thư hoặc đóng bảng
-            đang mở.
+            • <b className="text-[#c5a059]">[T] / [I] / [L]:</b> Bật tắt Đuốc <b>[T]</b>, mở Túi Đồ <b>[I]</b>, tra Cổ Thư <b>[L]</b> hoặc Cẩm Nang <b>[? / ESC]</b>.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Giường Đá:</b> Chỗ ngả lưng hiếm hoi để nghỉ sức và ghi
-            lại dấu vết hành trình.
+            • <b className="text-[#c5a059]">Giường Đá Lưu:</b> Ngả lưng bên ngọn lửa yếu ớt để ghi dấu hành trình và lấy lại hơi thở.
           </li>
         </ul>
       )}
@@ -242,20 +234,16 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'combat' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#c5a059]">Điều Khiển:</b> Dùng <b>W/S</b> hoặc chuột chọn lệnh và
-            bộ phận, <b>Enter / F</b> xác nhận, <b>ESC</b> quay lại; phím tắt <b>1..5</b>.
+            • <b className="text-[#c5a059]">Phím Tắt Chiến Đấu:</b> Dùng <b>[1..6]</b>, <b>[W/A/S/D]</b> và <b>[Enter / F]</b> để chọn hành động, mục tiêu hoặc <b>[ESC]</b> lùi lại.
           </li>
           <li>
-            • <b className="text-[#c96b6b]">Nhắm Bộ Phận:</b> Kẻ địch gồm nhiều chi riêng biệt — hãy
-            quan sát đòn thế để chọn mục tiêu phù hợp.
+            • <b className="text-[#c96b6b]">Nhắm Bộ Phận:</b> Quái vật mang nhiều chi thể khác nhau — quan sát để chặt đứt tay cầm vũ khí hoặc chân trụ của chúng.
           </li>
           <li>
-            • <b className="text-[#9ab08e]">Thế Thủ:</b> Thu mình chống đỡ trước những đòn đánh nặng
-            nề khi quái vật tụ lực.
+            • <b className="text-[#9ab08e]">Phòng Thủ Đúng Nhịp:</b> Khi kẻ thù tụ lực sát khí đỏ rực, giơ khiên thủ thế trước khi đòn tử thần giáng xuống.
           </li>
           <li>
-            • <b className="text-[#c5a059]">Rút Lui &amp; Khí Cụ:</b> Không phải cuộc chạm trán nào
-            cũng đáng để đổi bằng máu thịt.
+            • <b className="text-[#c5a059]">Đàm Thoại &amp; Thoát Thân:</b> Một số kẻ địch dao động trước lời chất vấn, hoặc dùng vật phẩm nghi binh để mở đường lui.
           </li>
         </ul>
       )}
@@ -263,20 +251,16 @@ export const GuideModal: React.FC<GuideModalProps> = ({ guideTab, setGuideTab, o
       {guideTab === 'survival' && (
         <ul className="df-well p-3.5 space-y-1.5 text-xs text-[#d3d3d3]">
           <li>
-            • <b className="text-[#eab308]">Cơn Đói &amp; Lý Trí:</b> Bóng tối và đói khát âm thầm
-            bào mòn thân xác lẫn tinh thần; hãy giữ lương thực và ánh đuốc bên mình.
+            • <b className="text-[#eab308]">Cơn Đói &amp; Lý Trí:</b> Bóng tối, mùi máu và cơn đói âm ỉ gặm nhấm cả thân xác lẫn tinh thần — đừng để bản thân cạn kiệt quá lâu.
           </li>
           <li>
-            • <b className="text-[#c96b6b]">Thương Tích:</b> Chảy máu, độc tố hay nhiễm trùng đều có
-            thể đoạt mạng nếu để kéo dài.
+            • <b className="text-[#c5a059]">Vết Thương &amp; Độc Tố:</b> Chảy máu, nhiễm độc hay vết thương mưng mủ sẽ rút cạn sinh lực theo từng bước chân nếu không xử lý kịp.
           </li>
           <li>
-            • <b className="text-[#a3b2c4]">Dược Thảo &amp; Dụng Cụ:</b> Băng gạc, thảo mộc, bình
-            thuốc và công cụ thô sơ đều ẩn chứa công dụng riêng chờ bạn tự thử nghiệm.
+            • <b className="text-[#a3b2c4]">Vật Phẩm &amp; Pha Chế:</b> Tìm thảo dược, lọ dung dịch và các quyển sách <b>Pha Chế Thuốc</b> để tự điều chế thuốc cứu mạng.
           </li>
           <li>
-            • <b className="text-[#a889b8]">Sách Pha Chế:</b> Tìm những cuốn sách giả kim trong hầm
-            ngục để tự điều chế thuốc từ nguyên liệu nhặt được.
+            • <b className="text-[#a889b8]">Cưa Xương Bất Đắc Dĩ:</b> Khi một chi thể đã hoại tử không thể cứu vãn, đôi khi phải hy sinh nó để giữ lại mạng sống.
           </li>
         </ul>
       )}

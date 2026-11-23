@@ -356,9 +356,10 @@ export class CombatEngine {
     player: PlayerState,
     enemy: MapEnemyInstance,
     tpl: EnemyTemplate,
-    limb: LimbConfig
+    limb: LimbConfig,
+    actorIndex: number = 0
   ): LimbDamagePreview {
-    return computeLimbDamagePreview(player, enemy, tpl, limb);
+    return computeLimbDamagePreview(player, enemy, tpl, limb, actorIndex);
   }
 
   public getLimbBadges(enemy: MapEnemyInstance, limbId: string): LimbDebuffBadge[] {

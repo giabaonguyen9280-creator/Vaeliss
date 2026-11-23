@@ -5810,6 +5810,8 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
         ? '#10b981'
         : itemId === 'silver_sword_oil'
         ? '#cbd5e1'
+        : itemId === 'void_acid_vial'
+        ? '#a855f7'
         : itemId === 'strong_alcohol'
         ? '#b45309'
         : '#48cae4';
@@ -5921,8 +5923,11 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
       ctx.fill();
     } else {
       // Botanical Herb Leaf / Calm Flower
+      const isWhiteHerb = itemId === 'white_herb';
       const leafCol = itemId.includes('red')
         ? '#e11d48'
+        : isWhiteHerb
+        ? '#f1f5f9'
         : itemId === 'calm_flower'
         ? '#38bdf8'
         : '#34d399';
@@ -5935,7 +5940,7 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
       ctx.stroke();
 
       // Leaf center vein
-      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.strokeStyle = isWhiteHerb ? 'rgba(148,163,184,0.75)' : 'rgba(255,255,255,0.45)';
       ctx.beginPath();
       ctx.moveTo(cx, size * 0.22);
       ctx.lineTo(cx, size * 0.78);
@@ -9573,9 +9578,9 @@ export function drawInventoryPaperdoll(
     drawArterialStump(ctx, cx + 21 * scale, h * 0.36, 7 * scale);
   }
 
-  // Head + Equipped Helm / Hood / Veil
+  // Head + Equipped Helm / Hood / Mask / Bare Head
   const headId = spec.equippedHead || '';
-  if (headId.includes('helm') || key === 'fallen_knight') {
+  if (headId.includes('helm') || headId === 'mail_coif') {
     const helmGrad = ctx.createLinearGradient(cx - 12 * scale, h * 0.10, cx + 12 * scale, h * 0.30);
     helmGrad.addColorStop(0, '#94a3b8');
     helmGrad.addColorStop(1, '#334155');
@@ -9587,11 +9592,35 @@ export function drawInventoryPaperdoll(
     ctx.fillStyle = '#070509';
     ctx.fillRect(cx - 8 * scale, h * 0.18, 16 * scale, 2.8 * scale);
     ctx.fillRect(cx - 1.5 * scale, h * 0.18, 3 * scale, 10 * scale);
-  } else {
-    // Hood or Veil
+  } else if (headId === 'beak_mask') {
+    ctx.fillStyle = '#1f2937';
+    ctx.beginPath();
+    ctx.arc(cx, h * 0.20, 11 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Plague bird beak + goggles
+    ctx.fillStyle = '#d6d3d1';
+    ctx.beginPath();
+    ctx.moveTo(cx - 3 * scale, h * 0.20);
+    ctx.lineTo(cx + 15 * scale, h * 0.25);
+    ctx.lineTo(cx - 2 * scale, h * 0.27);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.arc(cx - 3 * scale, h * 0.18, 2.4 * scale, 0, Math.PI * 2);
+    ctx.arc(cx + 4 * scale, h * 0.18, 2.4 * scale, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (headId) {
+    // Hood, Veil, Cap, or Crown
     ctx.fillStyle =
       headId.includes('blood') || headId.includes('crown')
         ? '#7f1d1d'
+        : headId === 'stalkers_cap'
+        ? '#2e4232'
+        : headId === 'ashen_hood'
+        ? '#475569'
         : key === 'forsaken_nun'
         ? '#e6dcc0'
         : key === 'night_hunter'
@@ -9611,6 +9640,28 @@ export function drawInventoryPaperdoll(
     ctx.arc(cx, h * 0.21, 10 * scale, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+
+    ctx.fillStyle = isSkeleton ? '#38bdf8' : '#09070a';
+    ctx.beginPath();
+    ctx.arc(cx - 3.8 * scale, h * 0.20, 1.8 * scale, 0, Math.PI * 2);
+    ctx.arc(cx + 3.8 * scale, h * 0.20, 1.8 * scale, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // Bare head without helmet or hood
+    ctx.fillStyle = isSkeleton ? '#d4d4d8' : isGhoul ? '#65a30d' : '#d8c2ae';
+    ctx.beginPath();
+    ctx.arc(cx, h * 0.20, 10.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    if (!isSkeleton) {
+      ctx.fillStyle =
+        key === 'forsaken_nun' ? '#d4c8b4' : key === 'night_hunter' ? '#2c221e' : '#1e1b18';
+      ctx.beginPath();
+      ctx.arc(cx, h * 0.16, 10.6 * scale, Math.PI * 1.02, Math.PI * 1.98);
+      ctx.fill();
+      ctx.stroke();
+    }
 
     ctx.fillStyle = isSkeleton ? '#38bdf8' : '#09070a';
     ctx.beginPath();
