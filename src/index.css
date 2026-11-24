@@ -658,6 +658,209 @@
   will-change: filter;
 }
 
+/* ==========================================================================
+   SUBTLE COMBAT DEBUFF BADGE ANIMATIONS
+   ========================================================================== */
+@keyframes debuffBleedPulse {
+  0%, 100% {
+    box-shadow: 0 0 2px rgba(185, 28, 28, 0.25), inset 0 0 4px rgba(127, 29, 29, 0.35);
+    filter: brightness(0.96);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 9px rgba(220, 38, 38, 0.75), inset 0 0 7px rgba(220, 38, 38, 0.42);
+    filter: brightness(1.16);
+    transform: scale(1.03);
+  }
+}
+
+.debuff-anim-bleed {
+  animation: debuffBleedPulse 1.75s ease-in-out infinite;
+  will-change: transform, box-shadow, filter;
+}
+
+@keyframes debuffPoisonShake {
+  0%, 72%, 100% {
+    transform: translate3d(0, 0, 0);
+    box-shadow: 0 0 2px rgba(22, 163, 74, 0.25);
+  }
+  76% {
+    transform: translate3d(-1.2px, 0, 0);
+    box-shadow: 0 0 8px rgba(74, 222, 128, 0.68);
+  }
+  81% {
+    transform: translate3d(1.2px, -0.4px, 0);
+    box-shadow: 0 0 9px rgba(74, 222, 128, 0.72);
+  }
+  86% {
+    transform: translate3d(-0.9px, 0.4px, 0);
+    box-shadow: 0 0 7px rgba(74, 222, 128, 0.58);
+  }
+  91% {
+    transform: translate3d(0.8px, 0, 0);
+    box-shadow: 0 0 5px rgba(74, 222, 128, 0.4);
+  }
+}
+
+.debuff-anim-poison {
+  animation: debuffPoisonShake 2.1s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+
+@keyframes debuffStunJitter {
+  0%, 100% {
+    transform: rotate(0deg) translate3d(0, 0, 0);
+    box-shadow: 0 0 3px rgba(217, 119, 6, 0.3);
+  }
+  20% {
+    transform: rotate(-2.4deg) translate3d(-0.6px, -0.5px, 0);
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.65);
+  }
+  42% {
+    transform: rotate(2.1deg) translate3d(0.7px, 0.4px, 0);
+    box-shadow: 0 0 6px rgba(251, 191, 36, 0.48);
+  }
+  65% {
+    transform: rotate(-1.6deg) translate3d(-0.4px, 0.5px, 0);
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+  }
+  84% {
+    transform: rotate(1.4deg) translate3d(0.5px, -0.4px, 0);
+    box-shadow: 0 0 4px rgba(217, 119, 6, 0.35);
+  }
+}
+
+.debuff-anim-stun {
+  animation: debuffStunJitter 1.45s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform, box-shadow;
+}
+
+@keyframes debuffBurnFlicker {
+  0%, 100% {
+    transform: translateY(0px);
+    box-shadow: 0 0 3px rgba(234, 88, 12, 0.32);
+    filter: brightness(0.98);
+  }
+  35% {
+    transform: translateY(-0.8px);
+    box-shadow: 0 0 9px rgba(251, 146, 60, 0.72);
+    filter: brightness(1.15);
+  }
+  68% {
+    transform: translateY(-0.3px);
+    box-shadow: 0 0 5px rgba(249, 115, 22, 0.48);
+    filter: brightness(1.04);
+  }
+}
+
+.debuff-anim-burn {
+  animation: debuffBurnFlicker 1.25s ease-in-out infinite;
+  will-change: transform, box-shadow, filter;
+}
+
+@keyframes debuffAcidCorrode {
+  0%, 100% {
+    transform: translateY(0px);
+    box-shadow: 0 0 2px rgba(248, 113, 113, 0.28);
+  }
+  45% {
+    transform: translateY(0.5px);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.62);
+  }
+  75% {
+    transform: translateY(-0.5px);
+    box-shadow: 0 0 4px rgba(248, 113, 113, 0.38);
+  }
+}
+
+.debuff-anim-acid {
+  animation: debuffAcidCorrode 1.85s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+
+@keyframes debuffBlindDim {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.56;
+  }
+}
+
+.debuff-anim-blind {
+  animation: debuffBlindDim 2.5s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes debuffPanicTremor {
+  0%, 66%, 100% {
+    transform: translate3d(0, 0, 0);
+    box-shadow: 0 0 2px rgba(220, 38, 38, 0.3);
+  }
+  72% {
+    transform: translate3d(-1px, -0.4px, 0);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.65);
+  }
+  80% {
+    transform: translate3d(1px, 0.4px, 0);
+    box-shadow: 0 0 6px rgba(220, 38, 38, 0.55);
+  }
+  88% {
+    transform: translate3d(-0.7px, 0.3px, 0);
+    box-shadow: 0 0 7px rgba(248, 113, 113, 0.6);
+  }
+}
+
+.debuff-anim-panic {
+  animation: debuffPanicTremor 1.65s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+
+@keyframes debuffParasitePulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 2px rgba(142, 108, 163, 0.3);
+  }
+  50% {
+    transform: scale(1.035);
+    box-shadow: 0 0 8px rgba(192, 132, 252, 0.55);
+  }
+}
+
+.debuff-anim-parasite {
+  animation: debuffParasitePulse 2.3s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+
+@keyframes debuffOilSheen {
+  0%, 100% {
+    box-shadow: 0 0 2px rgba(192, 132, 252, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 7px rgba(192, 132, 252, 0.58);
+  }
+}
+
+.debuff-anim-oil {
+  animation: debuffOilSheen 2.6s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+@keyframes debuffLockedPulse {
+  0%, 100% {
+    box-shadow: 0 0 2px rgba(56, 189, 248, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 7px rgba(56, 189, 248, 0.62);
+  }
+}
+
+.debuff-anim-locked {
+  animation: debuffLockedPulse 2.1s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .df-card-active,
   .df-btn-active,
@@ -671,6 +874,16 @@
   .ending-pan-bg,
   .combat-log-slide-in,
   .limb-target-pulse,
+  .debuff-anim-bleed,
+  .debuff-anim-poison,
+  .debuff-anim-stun,
+  .debuff-anim-burn,
+  .debuff-anim-acid,
+  .debuff-anim-blind,
+  .debuff-anim-panic,
+  .debuff-anim-parasite,
+  .debuff-anim-oil,
+  .debuff-anim-locked,
   .vfx-sword::before,
   .vfx-heavy-axe::before,
   .vfx-heavy-axe::after,

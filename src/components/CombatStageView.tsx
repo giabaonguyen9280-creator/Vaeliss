@@ -37,6 +37,15 @@ function getCombatLogsKey(logs: string[]): number {
   return id;
 }
 
+const ENEMY_DEBUFF_ANIM_CLASS: Record<string, string> = {
+  poison: 'debuff-anim-poison',
+  burn: 'debuff-anim-burn',
+  acid: 'debuff-anim-acid',
+  blind: 'debuff-anim-blind',
+  oil: 'debuff-anim-oil',
+  locked: 'debuff-anim-locked',
+};
+
 export interface CombatStageViewProps {
   combatStageCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   combatEngine: CombatEngine;
@@ -139,6 +148,22 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                     Mất Tay Vũ Khí — Đòn Tay Không
                   </span>
                 )}
+                {(activeCombatEnemy.bleedPerTurn || 0) > 0 && (
+                  <span
+                    className="px-1.5 py-0.5 bg-[#2a0c10] border border-[#b91c1c] text-[11px] font-mono text-[#f87171] debuff-anim-bleed"
+                    title="Địch đang chảy máu mỗi lượt"
+                  >
+                    [CHẢY MÁU -{activeCombatEnemy.bleedPerTurn}/T]
+                  </span>
+                )}
+                {(activeCombatEnemy.stunTurns || 0) > 0 && (
+                  <span
+                    className="px-1.5 py-0.5 bg-[#241b0a] border border-[#d97706] text-[11px] font-mono text-[#fbbf24] debuff-anim-stun"
+                    title="Địch đang bị choáng"
+                  >
+                    [CHOÁNG {activeCombatEnemy.stunTurns}T]
+                  </span>
+                )}
                 {(player.poisonCoatTurns || 0) > 0 && (
                   <span className="px-1.5 py-0.5 bg-[#0e2618] border border-[#4ade80] text-[11px] text-[#4ade80]">
                     [TẨM ĐỘC · {player.poisonCoatTurns} đòn]
@@ -219,7 +244,9 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                           <span
                             key={b.type}
                             style={{ borderColor: b.color, color: b.color }}
-                            className="px-1.5 py-0.5 bg-[#09070d]/95 border text-[11px] font-mono font-bold flex items-center gap-0.5 shadow"
+                            className={`px-1.5 py-0.5 bg-[#09070d]/95 border text-[11px] font-mono font-bold flex items-center gap-0.5 shadow ${
+                              ENEMY_DEBUFF_ANIM_CLASS[b.type] || ''
+                            }`}
                           >
                             <span>
                               [{b.label} {b.turns}T]
@@ -568,7 +595,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                           )}
                           {player.statuses.bleeding && (
                             <span
-                              className="px-1 py-0.5 bg-[#2a0c10] border border-[#b91c1c] text-[#f87171] font-mono text-[9px] font-bold leading-none"
+                              className="px-1 py-0.5 bg-[#2a0c10] border border-[#b91c1c] text-[#f87171] font-mono text-[9px] font-bold leading-none debuff-anim-bleed"
                               title="Chảy Máu"
                             >
                               [CHẢY MÁU]
@@ -576,7 +603,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                           )}
                           {player.statuses.poisoned && (
                             <span
-                              className="px-1 py-0.5 bg-[#0f2216] border border-[#16a34a] text-[#4ade80] font-mono text-[9px] font-bold leading-none"
+                              className="px-1 py-0.5 bg-[#0f2216] border border-[#16a34a] text-[#4ade80] font-mono text-[9px] font-bold leading-none debuff-anim-poison"
                               title="Trúng Độc"
                             >
                               [ĐỘC]
@@ -584,7 +611,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                           )}
                           {player.statuses.parasite && (
                             <span
-                              className="px-1 py-0.5 bg-[#1d1226] border border-[#8e6ca3] text-[#d8b4fe] font-mono text-[9px] font-bold leading-none"
+                              className="px-1 py-0.5 bg-[#1d1226] border border-[#8e6ca3] text-[#d8b4fe] font-mono text-[9px] font-bold leading-none debuff-anim-parasite"
                               title="Ký Sinh"
                             >
                               [KÝ SINH]
@@ -592,7 +619,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                           )}
                           {(player.statuses.blindedTurns || 0) > 0 && (
                             <span
-                              className="px-1 py-0.5 bg-[#18181b] border border-[#71717a] text-[#d4d4d8] font-mono text-[9px] font-bold leading-none"
+                              className="px-1 py-0.5 bg-[#18181b] border border-[#71717a] text-[#d4d4d8] font-mono text-[9px] font-bold leading-none debuff-anim-blind"
                               title="Mù Lòa"
                             >
                               [MÙ]
@@ -600,7 +627,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                           )}
                           {hasInfection && (
                             <span
-                              className="px-1 py-0.5 bg-[#172414] border border-[#65a30d] text-[#a3e635] font-mono text-[9px] font-bold leading-none"
+                              className="px-1 py-0.5 bg-[#172414] border border-[#65a30d] text-[#a3e635] font-mono text-[9px] font-bold leading-none debuff-anim-poison"
                               title="Nhiễm Trùng"
                             >
                               [NHIỄM TRÙNG]
@@ -617,7 +644,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                             )}
                           {isPlayerPanicking(player) && (
                             <span
-                              className="px-1 py-0.5 bg-[#2a0c10] border border-[#dc2626] text-[#fca5a5] font-mono text-[9px] font-bold leading-none"
+                              className="px-1 py-0.5 bg-[#2a0c10] border border-[#dc2626] text-[#fca5a5] font-mono text-[9px] font-bold leading-none debuff-anim-panic"
                               title="Hoảng Loạn"
                             >
                               [HOẢNG LOẠN]
@@ -720,7 +747,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                             )}
                             {(ally.stunnedTurns || 0) > 0 && (
                               <span
-                                className="px-1 py-0.5 bg-[#241b0a] border border-[#d97706] text-[#fbbf24] font-mono text-[9px] font-bold leading-none"
+                                className="px-1 py-0.5 bg-[#241b0a] border border-[#d97706] text-[#fbbf24] font-mono text-[9px] font-bold leading-none debuff-anim-stun"
                                 title="Choáng"
                               >
                                 [CHOÁNG]
@@ -728,7 +755,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                             )}
                             {ally.statuses?.bleeding && (
                               <span
-                                className="px-1 py-0.5 bg-[#2a0c10] border border-[#b91c1c] text-[#f87171] font-mono text-[9px] font-bold leading-none"
+                                className="px-1 py-0.5 bg-[#2a0c10] border border-[#b91c1c] text-[#f87171] font-mono text-[9px] font-bold leading-none debuff-anim-bleed"
                                 title="Chảy Máu"
                               >
                                 [CHẢY MÁU]
@@ -736,7 +763,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                             )}
                             {ally.statuses?.poisoned && (
                               <span
-                                className="px-1 py-0.5 bg-[#0f2216] border border-[#16a34a] text-[#4ade80] font-mono text-[9px] font-bold leading-none"
+                                className="px-1 py-0.5 bg-[#0f2216] border border-[#16a34a] text-[#4ade80] font-mono text-[9px] font-bold leading-none debuff-anim-poison"
                                 title="Trúng Độc"
                               >
                                 [ĐỘC]
@@ -744,7 +771,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                             )}
                             {hasInfection && (
                               <span
-                                className="px-1 py-0.5 bg-[#172414] border border-[#65a30d] text-[#a3e635] font-mono text-[9px] font-bold leading-none"
+                                className="px-1 py-0.5 bg-[#172414] border border-[#65a30d] text-[#a3e635] font-mono text-[9px] font-bold leading-none debuff-anim-poison"
                                 title="Nhiễm Trùng"
                               >
                                 [NHIỄM TRÙNG]
@@ -752,7 +779,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                             )}
                             {isFrenzied && (
                               <span
-                                className="px-1 py-0.5 bg-[#2a0c10] border border-[#dc2626] text-[#fca5a5] font-mono text-[9px] font-bold leading-none"
+                                className="px-1 py-0.5 bg-[#2a0c10] border border-[#dc2626] text-[#fca5a5] font-mono text-[9px] font-bold leading-none debuff-anim-panic"
                                 title="Hoảng Loạn / Cuồng Loạn"
                               >
                                 [HOẢNG LOẠN]
