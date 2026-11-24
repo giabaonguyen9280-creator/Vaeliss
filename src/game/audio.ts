@@ -17,6 +17,7 @@ export type SfxType =
   | 'explosion'
   | 'heal'
   | 'hurt'
+  | 'miss'
   | 'enemy_alert';
 
 export interface AudioVisualSettings {
@@ -787,6 +788,25 @@ class SoundEngine {
         osc.start(now + idx * 0.018);
         osc.stop(now + idx * 0.018 + 0.19);
       });
+      return;
+    }
+
+    if (type === 'miss') {
+      const noise = ctx.createBufferSource();
+      noise.buffer = this.getNoiseBuffer(ctx);
+      const nf = ctx.createBiquadFilter();
+      nf.type = 'bandpass';
+      nf.frequency.setValueAtTime(900, now);
+      nf.frequency.exponentialRampToValueAtTime(260, now + 0.16);
+      nf.Q.value = 1.6;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.13, now);
+      ng.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+      noise.connect(nf);
+      nf.connect(ng);
+      ng.connect(this.sfxGain);
+      noise.start(now);
+      noise.stop(now + 0.18);
       return;
     }
 

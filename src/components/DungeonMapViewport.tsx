@@ -372,11 +372,18 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                   tile === TILE.HERB
                     ? herbTypeToVariant(getHerbTypeAtCoord(room, x, y, worldSeed))
                     : new SeededRNG(`tile_${room.id}_${x}_${y}`).int(0, 19);
+                const isTileLooted =
+                  (tile === TILE.HERB ||
+                    tile === TILE.CHEST ||
+                    tile === TILE.FLOOR_TRAP ||
+                    tile === TILE.CORPSE_LOOT) &&
+                  room.lootedCoords.includes(`${x},${y}`);
                 const floorTex = getFloorTileTexture(
                   room.floor,
                   texTile,
                   variantHash,
-                  Boolean(room.isExterior)
+                  Boolean(room.isExterior),
+                  isTileLooted
                 );
                 offCtx.drawImage(floorTex, px, py, tileW, tileH);
 
@@ -435,13 +442,12 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               offCtx.restore();
             }
 
-            // Second Pass: Hard 6px 2.5D Wall Cast Shadows onto adjacent floor tiles + looted prop dimmers
+            // Second Pass: Hard 6px 2.5D Wall Cast Shadows onto adjacent floor tiles
             for (let y = 0; y < roomH; y++) {
               for (let x = 0; x < roomW; x++) {
                 const tile = room.grid[y][x];
                 const px = x * tileW;
                 const py = y * tileH;
-                const coordKey = `${x},${y}`;
 
                 const isWallTile = tile === TILE.WALL || tile === TILE.CRACKED_WALL || tile === TILE.VOID;
                 if (!isWallTile) {
@@ -465,19 +471,6 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                     lGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
                     offCtx.fillStyle = lGrad;
                     offCtx.fillRect(px + 6, py, 8, tileH);
-                  }
-                }
-
-                if (
-                  tile === TILE.CRATE ||
-                  tile === TILE.HERB ||
-                  tile === TILE.CHEST ||
-                  tile === TILE.CORPSE_LOOT ||
-                  tile === TILE.FLOOR_TRAP
-                ) {
-                  if (room.lootedCoords.includes(coordKey)) {
-                    offCtx.fillStyle = 'rgba(0,0,0,0.58)';
-                    offCtx.fillRect(px + 6, py + 6, tileW - 12, tileH - 12);
                   }
                 }
               }
@@ -702,7 +695,8 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
               tileH,
               new Set(corpseInst.severedLimbs || []),
               corpseState,
-              Boolean(corpseInst.isFloorBoss)
+              Boolean(corpseInst.isFloorBoss),
+              Boolean(corpseInst.corpseLooted)
             );
             const isNearPlayer =
               Math.abs(corpseInst.x - playerPos.x) + Math.abs(corpseInst.y - playerPos.y) <= 1;
@@ -1445,6 +1439,12 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
             else if (t === TILE.CORPSE_LOOT && !room.lootedCoords.includes(cKey))
               promptLabel = '[F] Lục Xác Kỵ Sĩ';
+            else if (
+              t === TILE.FLOOR_TRAP &&
+              !room.lootedCoords.includes(cKey) &&
+              Math.abs(ix - playerPos.x) + Math.abs(iy - playerPos.y) === 1
+            )
+              promptLabel = '[F] Tháo Bẫy';
             else if (t === TILE.CRACKED_WALL) promptLabel = '[F] Nổ Tường';
             else {
               const parkedHere = parkedCompanions.find((p) => p.x === ix && p.y === iy);

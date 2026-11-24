@@ -25,6 +25,12 @@ export interface CombatVfxState {
   key: number;
 }
 
+export interface CombatStageNotice {
+  key: number;
+  text: string;
+  tone: 'miss' | 'evade';
+}
+
 const combatLogsKeyMap = new WeakMap<string[], number>();
 let nextCombatLogsKey = 1;
 
@@ -53,6 +59,7 @@ export interface CombatStageViewProps {
   player: PlayerState;
   combatLogs: string[];
   activeVfx: CombatVfxState | null;
+  combatNotice?: CombatStageNotice | null;
   screenShakeMode: 'none' | 'normal' | 'heavy';
   isResolvingTurn: boolean;
   selectedLimbId: string;
@@ -76,6 +83,7 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
   player,
   combatLogs,
   activeVfx,
+  combatNotice,
   screenShakeMode,
   isResolvingTurn,
   selectedLimbId,
@@ -110,6 +118,25 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
 
   const currentTargetLimb =
     activeCombatEnemy.limbs.find((l) => l.id === selectedLimbId) || activeCombatEnemy.limbs[0];
+  const hoveredLimb = hoveredLimbId
+    ? activeCombatEnemy.limbs.find(
+        (l) =>
+          l.id === hoveredLimbId &&
+          l.hp > 0 &&
+          !activeCombatEnemy.severedLimbs.includes(l.id)
+      ) || null
+    : null;
+  const displayLimb = hoveredLimb || currentTargetLimb;
+  const displayLimbTargetable = displayLimb
+    ? canTargetEnemyLimb(activeCombatEnemy, tpl, displayLimb.id).allowed
+    : true;
+  const displayLimbArmor =
+    displayLimb &&
+    displayLimb.hp > 0 &&
+    !activeCombatEnemy.severedLimbs.includes(displayLimb.id)
+      ? combatEngine.getDamagePreview(player, activeCombatEnemy, tpl, displayLimb, activeActorIdx)
+          .armorPoints
+      : 0;
   const enemyWeaponLost = isEnemyWeaponLimbSevered(activeCombatEnemy, tpl);
 
   return (
@@ -186,9 +213,25 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                 </div>
               )}
             </div>
-            <div className="flex items-center shrink-0 text-xs sm:text-sm uppercase tracking-wider text-[#c5a059] font-mono font-bold">
-              <span>⌖ {currentTargetLimb?.name}</span>
-            </div>
+            {!activeCombatEnemy.defeated && displayLimb && (
+              <div
+                className={`flex items-center gap-2 shrink-0 px-2 py-0.5 text-xs sm:text-sm uppercase tracking-wider font-mono font-bold transition-colors ${
+                  pendingAction !== null || hoveredLimb !== null
+                    ? 'bg-[#1a1510] border border-[#fbbf24] text-[#fde68a]'
+                    : 'text-[#c5a059]'
+                }`}
+              >
+                <span>⌖ {displayLimb.name}</span>
+                {!displayLimbTargetable && (
+                  <span className="text-[#fca5a5] text-[11px]">[KHÓA]</span>
+                )}
+                {displayLimbArmor > 0 && (
+                  <span className="text-[#94a3b8] text-[11px] font-normal normal-case">
+                    (Giáp: {displayLimbArmor})
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {activeCombatEnemy.telegraphCoinFlip && (
@@ -200,6 +243,25 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
 
         {/* Center Responsive 16:11 Unified Canvas Stage with Weapon VFX & Minimalist Anatomical Reticles */}
         <div className="flex-1 min-h-0 w-full flex items-center justify-center py-0.5 relative z-10">
+          {combatNotice && (
+            <div
+              key={combatNotice.key}
+              className={`pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 border shadow-[0_4px_18px_rgba(0,0,0,0.85)] combat-log-slide-in flex items-center gap-2 max-w-[92%] ${
+                combatNotice.tone === 'miss'
+                  ? 'bg-[#15131c]/95 border-[#94a3b8] text-[#f1f5f9]'
+                  : 'bg-[#0f1722]/95 border-[#60a5fa] text-[#dbeafe]'
+              }`}
+            >
+              <span
+                className={`text-xs font-mono font-bold uppercase tracking-wider shrink-0 ${
+                  combatNotice.tone === 'miss' ? 'text-[#fde68a]' : 'text-[#93c5fd]'
+                }`}
+              >
+                {combatNotice.tone === 'miss' ? '✕ HỤT ĐÒN' : '◈ NÉ TRÁNH'}
+              </span>
+              <span className="text-xs sm:text-sm truncate">{combatNotice.text}</span>
+            </div>
+          )}
           <div className="relative h-full aspect-[16/11] max-w-full flex items-center justify-center">
             <canvas
               ref={combatStageCanvasRef}
@@ -286,51 +348,6 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                 );
               })}
           </div>
-
-          {/* Fixed Bottom-Right Limb Damage Preview Tooltip */}
-          {!activeCombatEnemy.defeated &&
-            (pendingAction !== null || hoveredLimbId !== null) &&
-            (() => {
-              const tooltipLimb =
-                (hoveredLimbId
-                  ? activeCombatEnemy.limbs.find((l) => l.id === hoveredLimbId)
-                  : null) || currentTargetLimb;
-              if (
-                !tooltipLimb ||
-                tooltipLimb.hp <= 0 ||
-                activeCombatEnemy.severedLimbs.includes(tooltipLimb.id)
-              ) {
-                return null;
-              }
-              const targetable = canTargetEnemyLimb(activeCombatEnemy, tpl, tooltipLimb.id).allowed;
-              const preview = combatEngine.getDamagePreview(
-                player,
-                activeCombatEnemy,
-                tpl,
-                tooltipLimb,
-                activeActorIdx
-              );
-              return (
-                <div className="pointer-events-none absolute bottom-3 right-3 z-30 df-card-active px-2.5 py-1.5 ring-1 ring-[#fbbf24] whitespace-nowrap space-y-0.5 shadow-[0_0_16px_rgba(0,0,0,0.9)]">
-                  <div className="text-xs font-bold text-[#e7dcc8]">
-                    ⌖ {tooltipLimb.name}
-                    {!targetable && <span className="text-[#fca5a5] ml-1.5">[KHÓA]</span>}
-                  </div>
-                  <div className="flex items-center gap-2.5 text-[11px] font-mono">
-                    <span className="text-[#fca5a5]">
-                      {preview.minDmg}-{preview.maxDmg} ST
-                    </span>
-                    <span className="text-[#86efac]">{preview.hitPct}% Trúng</span>
-                    <span className="text-[#fde047]">{preview.critPct}% CM</span>
-                  </div>
-                  {preview.armorPoints > 0 && (
-                    <div className="text-[11px] font-mono text-[#94a3b8]">
-                      Giáp: {preview.armorPoints} (-{preview.armorReductionPct}%)
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
         </div>
 
         {/* Bottom Strip of Upper Stage: Recent Combat Log Line & Active Weapon Hint */}
@@ -338,7 +355,14 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
           <div className="text-[#d3d3d3] flex-1 min-w-0 flex items-baseline gap-2 overflow-hidden">
             <span className="text-[#c5a059] font-bold shrink-0">Diễn biến:</span>
             {combatLogs[0] ? (
-              <span key={getCombatLogsKey(combatLogs)} className="min-w-0 combat-log-slide-in">
+              <span
+                key={getCombatLogsKey(combatLogs)}
+                className={`min-w-0 combat-log-slide-in ${
+                  combatLogs[0].includes('[HỤT ĐÒN]')
+                    ? 'text-[#fde68a] font-semibold'
+                    : ''
+                }`}
+              >
                 {combatLogs[0]}
               </span>
             ) : null}

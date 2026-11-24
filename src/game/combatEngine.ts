@@ -389,7 +389,6 @@ export class CombatEngine {
 
     if (action === 'ATTACK' || action === 'SKILL') {
       this.playerAttackTimerMs = 260;
-      this.enemyHitDelayTimerMs = 110;
     }
 
     let res: CombatTurnResult;
@@ -415,9 +414,7 @@ export class CombatEngine {
     const hitY = Math.round(limbNorm.ny * 440);
 
     if (res.lastDealtDmg && res.lastDealtDmg > 0) {
-      if (action === 'ITEM') {
-        this.enemyHitDelayTimerMs = 80;
-      }
+      this.enemyHitDelayTimerMs = action === 'ITEM' ? 80 : 110;
       const pKind =
         res.particleType ||
         (opts?.skillId === 'holy_light' || opts?.itemId === 'brown_vial'
@@ -431,11 +428,22 @@ export class CombatEngine {
         id: this.nextFloatId++,
         text: `-${res.lastDealtDmg}${res.wasCrit ? ' CHÍ MẠNG!' : ''}`,
         color: res.wasCrit ? '#facc15' : pKind === 'fire' ? '#fb923c' : '#f87171',
-        x: hitX - 28,
+        x: hitX,
         y: hitY - 22,
         vy: -0.65,
         lifeMs: 950,
         maxLifeMs: 950,
+      });
+    } else if (res.missed) {
+      this.floatingTexts.push({
+        id: this.nextFloatId++,
+        text: 'HỤT ĐÒN!',
+        color: '#e2e8f0',
+        x: hitX,
+        y: hitY - 22,
+        vy: -0.6,
+        lifeMs: 1150,
+        maxLifeMs: 1150,
       });
     }
 
@@ -445,11 +453,22 @@ export class CombatEngine {
         id: this.nextFloatId++,
         text: `-${res.lastTakenDmg} Sinh Lực`,
         color: '#fb923c',
-        x: 175,
+        x: 205,
         y: 320,
         vy: -0.55,
         lifeMs: 950,
         maxLifeMs: 950,
+      });
+    } else if (res.enemyMissed) {
+      this.floatingTexts.push({
+        id: this.nextFloatId++,
+        text: 'NÉ ĐƯỢC!',
+        color: '#93c5fd',
+        x: 205,
+        y: 320,
+        vy: -0.55,
+        lifeMs: 1000,
+        maxLifeMs: 1000,
       });
     }
 
@@ -503,7 +522,6 @@ export class CombatEngine {
 
     if (action === 'ATTACK' || action === 'SKILL') {
       this.playerAttackTimerMs = 260;
-      this.enemyHitDelayTimerMs = 110;
     }
 
     const res = executeSingleActorCombatAction(
@@ -524,9 +542,7 @@ export class CombatEngine {
     const hitY = Math.round(limbNorm.ny * 440);
 
     if (res.lastDealtDmg && res.lastDealtDmg > 0) {
-      if (action === 'ITEM') {
-        this.enemyHitDelayTimerMs = 80;
-      }
+      this.enemyHitDelayTimerMs = action === 'ITEM' ? 80 : 110;
       const pKind =
         res.particleType ||
         (opts?.skillId === 'holy_light' || opts?.itemId === 'brown_vial' || opts?.itemId === 'holy_fire_oil'
@@ -540,11 +556,22 @@ export class CombatEngine {
         id: this.nextFloatId++,
         text: `-${res.lastDealtDmg}${res.wasCrit ? ' CHÍ MẠNG!' : ''}`,
         color: res.wasCrit ? '#facc15' : pKind === 'fire' ? '#fb923c' : '#f87171',
-        x: hitX - 28,
+        x: hitX,
         y: hitY - 22,
         vy: -0.65,
         lifeMs: 950,
         maxLifeMs: 950,
+      });
+    } else if (res.missed) {
+      this.floatingTexts.push({
+        id: this.nextFloatId++,
+        text: 'HỤT ĐÒN!',
+        color: '#e2e8f0',
+        x: hitX,
+        y: hitY - 22,
+        vy: -0.6,
+        lifeMs: 1150,
+        maxLifeMs: 1150,
       });
     }
 
@@ -554,7 +581,7 @@ export class CombatEngine {
         id: this.nextFloatId++,
         text: `-${res.lastTakenDmg} Sinh Lực`,
         color: '#fb923c',
-        x: 175,
+        x: 205,
         y: 320,
         vy: -0.55,
         lifeMs: 950,
@@ -612,11 +639,22 @@ export class CombatEngine {
         id: this.nextFloatId++,
         text: `-${res.lastTakenDmg} Sinh Lực`,
         color: '#fb923c',
-        x: 175,
+        x: 205,
         y: 320,
         vy: -0.55,
         lifeMs: 950,
         maxLifeMs: 950,
+      });
+    } else if (res.enemyMissed) {
+      this.floatingTexts.push({
+        id: this.nextFloatId++,
+        text: 'NÉ ĐƯỢC!',
+        color: '#93c5fd',
+        x: 205,
+        y: 320,
+        vy: -0.55,
+        lifeMs: 1000,
+        maxLifeMs: 1000,
       });
     }
 

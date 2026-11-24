@@ -538,8 +538,8 @@ function buildExteriorCourtyardRoom(seed: string): RoomData {
   grid[gateY][w - 3] = TILE.PORTAL_NEXT;
   grid[gateY + 1][w - 3] = TILE.BARS;
 
-  grid[5][4] = TILE.CRATE;
-  grid[h - 4][6] = TILE.CRATE;
+  grid[3][2] = TILE.CRATE;
+  grid[h - 3][6] = TILE.CRATE;
   grid[3][18] = TILE.CRATE;
   grid[3][12] = TILE.BOOKSHELF;
   grid[3][15] = TILE.BOOKSHELF;
@@ -1092,15 +1092,116 @@ export function generateWorld(seed: string): WorldMapState {
         }
       }
 
-      // Place Crates, Chest, Herbs, and Survival Props with strict >= 2 Manhattan distance (bufferRadius = 1)
+      // Proximity helpers for wall, corner, and niche alignment of loot containers & crates
+      const cardinalDirs: Array<[number, number]> = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ];
+      const isStructuralWallOrObstacle = (t: TILE | undefined): boolean =>
+        t === TILE.WALL ||
+        t === TILE.CRACKED_WALL ||
+        t === TILE.VOID ||
+        t === TILE.BARS ||
+        t === TILE.CHASM;
+      const isPlacedContainerOrProp = (t: TILE | undefined): boolean =>
+        t === TILE.BOOKSHELF || t === TILE.CRATE || t === TILE.CHEST || t === TILE.BED_SAVE;
+
+      const isSafeWallContainerSpot = (cx: number, cy: number): boolean => {
+        if (cx < 2 || cx > roomW - 3 || cy < 3 || cy > roomH - 3) return false;
+        if (grid[cy]?.[cx] !== TILE.FLOOR) return false;
+        if (reservedMask.has(`${cx},${cy}`)) return false;
+
+        const walkableNeighbors: Array<[number, number]> = [];
+        for (const [dx, dy] of cardinalDirs) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          const nt = grid[ny]?.[nx];
+          if (nt !== undefined && isWalkableTile(nt, false)) {
+            walkableNeighbors.push([nx, ny]);
+          }
+        }
+        if (walkableNeighbors.length === 0) return false;
+        if (walkableNeighbors.length === 1) return true;
+
+        // Verify local 5x5 walkable connectivity so containers never pinch corridors or niches
+        const start = walkableNeighbors[0];
+        const visited = new Set<string>([`${start[0]},${start[1]}`]);
+        const queue: Array<[number, number]> = [start];
+        while (queue.length > 0) {
+          const [qx, qy] = queue.shift()!;
+          for (const [dx, dy] of cardinalDirs) {
+            const nx = qx + dx;
+            const ny = qy + dy;
+            if (nx === cx && ny === cy) continue;
+            if (Math.abs(nx - cx) > 2 || Math.abs(ny - cy) > 2) continue;
+            const key = `${nx},${ny}`;
+            if (visited.has(key)) continue;
+            const nt = grid[ny]?.[nx];
+            if (nt !== undefined && isWalkableTile(nt, false)) {
+              visited.add(key);
+              queue.push([nx, ny]);
+            }
+          }
+        }
+        return walkableNeighbors.every(([wx, wy]) => visited.has(`${wx},${wy}`));
+      };
+
+      const popWallAlignedContainerSpot = (
+        rngSource: SeededRNG,
+        bufferRadius = 1
+      ): [number, number] | null => {
+        const cornerOrNicheSpots: Array<[number, number]> = [];
+        const wallAdjacentSpots: Array<[number, number]> = [];
+
+        for (let y = 3; y <= roomH - 3; y++) {
+          for (let x = 2; x <= roomW - 3; x++) {
+            if (!isSafeWallContainerSpot(x, y)) continue;
+            let wallAdjCount = 0;
+            let propAdjCount = 0;
+            for (const [dx, dy] of cardinalDirs) {
+              const nt = grid[y + dy]?.[x + dx];
+              if (isStructuralWallOrObstacle(nt)) wallAdjCount++;
+              else if (isPlacedContainerOrProp(nt)) propAdjCount++;
+            }
+            const totalSupport = wallAdjCount + propAdjCount;
+            if (wallAdjCount >= 2 || (wallAdjCount >= 1 && totalSupport >= 2)) {
+              cornerOrNicheSpots.push([x, y]);
+            } else if (wallAdjCount === 1 || propAdjCount >= 1) {
+              wallAdjacentSpots.push([x, y]);
+            }
+          }
+        }
+
+        let pool: Array<[number, number]> = [];
+        if (cornerOrNicheSpots.length > 0 && wallAdjacentSpots.length > 0) {
+          pool = rngSource.chance(0.68) ? cornerOrNicheSpots : wallAdjacentSpots;
+        } else if (cornerOrNicheSpots.length > 0) {
+          pool = cornerOrNicheSpots;
+        } else if (wallAdjacentSpots.length > 0) {
+          pool = wallAdjacentSpots;
+        }
+
+        if (pool.length === 0) return null;
+        const [tx, ty] = pool[rngSource.int(0, pool.length - 1)];
+        const openIdx = openTiles.findIndex(([ox, oy]) => ox === tx && oy === ty);
+        if (openIdx >= 0) openTiles.splice(openIdx, 1);
+        reserveArea(tx, ty, bufferRadius);
+        return [tx, ty];
+      };
+
+      // Place Chest & Crates strictly aligned to walls, corners, or room niches; Herbs in interior floor
       const herbTypes: Record<string, HerbType> = { ...secretHerbTypes };
       if (!isThroneRoom) {
-        const chestSpot = popTileWithBuffer(extraRng, 1);
+        const chestSpot =
+          popWallAlignedContainerSpot(extraRng, 1) || popWallAlignedContainerSpot(extraRng, 0);
         if (chestSpot) grid[chestSpot[1]][chestSpot[0]] = TILE.CHEST;
 
         const crateCount = isBossRoom ? 2 : 3;
         for (let cIdx = 0; cIdx < crateCount; cIdx++) {
-          const crateSpot = popTileWithBuffer(extraRng, 1);
+          const crateSpot =
+            popWallAlignedContainerSpot(extraRng, 1) || popWallAlignedContainerSpot(extraRng, 0);
           if (crateSpot) grid[crateSpot[1]][crateSpot[0]] = TILE.CRATE;
         }
 

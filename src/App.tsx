@@ -8,7 +8,7 @@ import {
   HelpCircle,
   Settings,
 } from 'lucide-react';
-import { CONFIG, DifficultyMode, WeaponCategory } from './game/config';
+import { CONFIG, DifficultyMode, EnemyTemplate, WeaponCategory } from './game/config';
 import {
   evaluateCanonEnding,
   evaluateVoidRiftRequirements,
@@ -28,7 +28,7 @@ import { DungeonMapViewport, getParkedCompanionSpots } from './components/Dungeo
 import { TitleScreen } from './components/TitleScreen';
 import { PrologueScreen } from './components/PrologueScreen';
 import { EndingScreen } from './components/EndingScreen';
-import { CombatStageView, CombatMenuMode } from './components/CombatStageView';
+import { CombatStageView, CombatMenuMode, CombatStageNotice } from './components/CombatStageView';
 import { InventoryModal, EquipSlotKey } from './components/InventoryModal';
 import { HexenModal } from './components/HexenModal';
 import { LoreModal, HunterNoteModal } from './components/LoreModal';
@@ -135,26 +135,681 @@ interface InteractionPromptState {
   selectedIndex: number;
 }
 
+// ============================================================================
+// CONFIGURATION CONSTANTS & PURE HELPERS
+// ============================================================================
+
+const DEFAULT_CLASS_DEF = CONFIG.CLASSES[0];
+const DEFAULT_CLASS_ID = DEFAULT_CLASS_DEF?.id ?? 'fallen_knight';
+const DEFAULT_CLASS_NAME = DEFAULT_CLASS_DEF?.name ?? 'Kỵ Sĩ Sa Ngã';
+const DEFAULT_BOOK_ID = CONFIG.BOOKS[0]?.id ?? '';
+
+const COMBAT_TIMING_MS = {
+  FLEE_EXIT_DELAY: 350,
+  OFFENSE_FAST_DELAY: 250,
+  OFFENSE_NORMAL_DELAY: 660,
+  UTILITY_FAST_DELAY: 200,
+  UTILITY_NORMAL_DELAY: 340,
+  ENEMY_FAST_DELAY: 250,
+  ENEMY_NORMAL_DELAY: 700,
+  VFX_CLEAR: 560,
+  SHAKE_NORMAL: 280,
+  SHAKE_HEAVY: 380,
+  COIN_FLIP_RESOLVE: 650,
+  HEAVY_DMG_THRESHOLD: 500,
+  ENEMY_HEAVY_DMG_THRESHOLD: 35,
+} as const;
+
+const EXPLORATION_CONSTANTS = {
+  ANIM_TICK_MS: 95,
+  SANITY_TICK_MS: 1000,
+  SANITY_DECAY_SECONDS: 30,
+  AI_TICK_MS: 400,
+  TORCH_LOW_RATIO: 0.3,
+  TORCH_DURATION_SEC: 120,
+  OIL_LAMP_DURATION_SEC: 240,
+  EASY_TORCH_DECAY: 0.75,
+  NORMAL_TORCH_DECAY: 1,
+  DARKNESS_SANITY_MULT: 1.5,
+  DASH_COOLDOWN_MULT: 0.48,
+  DASH_MIN_COOLDOWN_MS: 95,
+  EASY_HUNGER_PER_STEP: 0.28,
+  NORMAL_HUNGER_STEP_MOD: 5,
+  NORMAL_HUNGER_GAIN: 2,
+  STARVATION_THRESHOLD: 80,
+  STARVATION_HP_LOSS: 3,
+  FLOOR_TRAP_HP_LOSS: 22,
+  FLOOR_TRAP_MIND_LOSS: 6,
+  PLATINUM_CUIRASS_BURN_HP: 5,
+  MAX_COMBAT_LOGS: 18,
+  MAX_NARRATIVE_LOGS: 35,
+  MAX_PARTY_ALLIES: 3,
+} as const;
+
+const COIN_TOSS_BALANCING = {
+  PANIC_WIN_CHANCE: 0.38,
+  BASE_WIN_CHANCE: 0.5,
+  MAX_WIN_CHANCE: 0.88,
+  CLAW_ACCESSORY_BONUS: 0.15,
+} as const;
+
+const CANVAS_STAGE_DIMS = {
+  WIDTH: 640,
+  HEIGHT: 440,
+  ENEMY_BY_SCALE: {
+    '3x3': { w: 500, h: 430 },
+    '2x3': { w: 465, h: 420 },
+    '2x2': { w: 425, h: 405 },
+    '1x2': { w: 375, h: 395 },
+  },
+} as const;
+
+const SELF_UTILITY_SKILLS = new Set([
+  'blessed_heal',
+  'divine_aegis',
+  'purification',
+  'blood_pact',
+  'veil_of_blindness',
+  'necromancy',
+]);
+
+const SEED_PREFIXES = ['VAELIS', 'GOETHE', 'ABYSS', 'HEXEN', 'ECLIPSE', 'BONE'] as const;
+const CHARACTER_NAMES = [
+  'Vaelen',
+  'Kaelen',
+  'Seraphina',
+  'Corvus',
+  'Alistair',
+  'Isolde',
+  'Gideon',
+  'Morrigan',
+  'Balthazar',
+  'Valeria',
+] as const;
+
+const CLASS_OPENING_LORE: Record<string, string> = {
+  fallen_knight:
+    'Ký ức Kỵ Đoàn: Bạn siết chặt chuôi kiếm trước Cổng Sắt Goethe. Đội trưởng Vaelis từng thề bảo vệ nhân loại — vì sao ngài lại kéo cả Lâu Đài Hắc Ám đè nát thánh địa này?',
+  forsaken_nun:
+    'Tội Ác Máu Đen: Giữa sương mù, hình ảnh bức tượng Thánh Mẫu khóc ra máu đen lại hiện về. Đứa em trai duy nhất của bạn — Thánh Tử Thứ 13 — vẫn đang bị giam dưới đáy địa ngục này.',
+  night_hunter:
+    'Lời Nguyền Hóa Đá: Lớp vảy đá xám trên cánh tay lại nhói buốt. Chỉ có bình Tiên Dược Nguyên Sơ dưới đáy Vực Sao và Lõi Khóa Hư Vô mới giúp bạn thoát khỏi Thung Lũng Xương Tàn.',
+};
+
+const INITIAL_NARRATIVE_LOGS: string[] = [
+  'Lâu Đài Hắc Ám từ vòm trời đêm giáng xuống, nghiền nát mái vòm Đại Giáo Đường Goethe.',
+  'Bạn tỉnh dậy tại Ngoại Vi Đại Giáo Đường Goethe giữa sương mù và mùi máu tanh.',
+];
+
+const LOG_TEXT = {
+  TORCH_LIT: 'Bạn châm ngọn đuốc mới, ánh lửa bập bùng đẩy lùi bóng tối.',
+  OIL_LAMP_LIT: 'Bạn châm lửa Đèn Dầu Cổ, ánh sáng ổn định đẩy lùi bóng tối đặc quánh.',
+  NO_LIGHT_SOURCE: 'Trong hành trang không còn Đuốc hay Đèn Dầu nào!',
+  FLED_COMBAT: 'Cả đội đã thoát khỏi cuộc giao tranh trong gang tấc.',
+  NO_ENOUGH_MIND: 'Không đủ Lý Trí để thi triển kỹ năng này!',
+  SHIELDED_LIMB_FALLBACK: 'Bộ phận này đang bị che chắn!',
+} as const;
+
+function createDefaultTrailCoords(spawnX: number, spawnY: number): Array<{ x: number; y: number }> {
+  return [
+    { x: Math.max(1, spawnX - 1), y: spawnY },
+    { x: Math.max(1, spawnX - 2), y: spawnY },
+    { x: Math.max(1, spawnX - 2), y: Math.max(1, spawnY - 1) },
+    { x: Math.max(1, spawnX - 3), y: Math.max(1, spawnY - 1) },
+  ];
+}
+
+function appendCombatLogEntries(prev: string[], newLogs: string[]): string[] {
+  if (newLogs.length === 0) return prev;
+  return [...newLogs.slice().reverse(), ...prev.slice(0, EXPLORATION_CONSTANTS.MAX_COMBAT_LOGS)];
+}
+
+/**
+ * Resolves a valid, intact, targetable limb ID for the active combat enemy.
+ * If the preferred limb is severed or blocked, automatically re-routes to the
+ * nearest geometric intact targetable limb using reticle coordinates.
+ */
+function resolveNearestValidLimbId(
+  enemy: MapEnemyInstance,
+  tpl: EnemyTemplate,
+  preferredLimbId?: string | null
+): string {
+  const isAlive = (id: string) => {
+    const limb = enemy.limbs.find((l) => l.id === id);
+    return Boolean(limb && limb.hp > 0 && !enemy.severedLimbs.includes(limb.id));
+  };
+
+  if (preferredLimbId && isAlive(preferredLimbId) && canTargetEnemyLimb(enemy, tpl, preferredLimbId).allowed) {
+    return preferredLimbId;
+  }
+
+  const aliveLimbs = enemy.limbs.filter((l) => l.hp > 0 && !enemy.severedLimbs.includes(l.id));
+  if (aliveLimbs.length === 0) return preferredLimbId || 'torso';
+
+  const targetable = aliveLimbs.filter((l) => canTargetEnemyLimb(enemy, tpl, l.id).allowed);
+  const candidates = targetable.length > 0 ? targetable : aliveLimbs;
+
+  if (preferredLimbId) {
+    const reticleMap = getLimbReticlePositions(tpl.spriteKey);
+    const refPos = reticleMap[preferredLimbId];
+    if (refPos) {
+      let best = candidates[0];
+      let bestDist = Infinity;
+      for (const cand of candidates) {
+        const pos = reticleMap[cand.id];
+        if (!pos) continue;
+        const dist = Math.hypot(pos.nx - refPos.nx, pos.ny - refPos.ny);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = cand;
+        }
+      }
+      if (best) return best.id;
+    }
+  }
+
+  return candidates.find((l) => l.id === 'torso')?.id || candidates[0]?.id || 'torso';
+}
+
+interface ExplorationHeaderBarProps {
+  player: PlayerState;
+  currentRoom: RoomData;
+  muted: boolean;
+  onLightTorch: () => void;
+  onOpenInventory: () => void;
+  onOpenLore: () => void;
+  onOpenGuide: () => void;
+  onOpenSettings: () => void;
+  onToggleMute: () => void;
+}
+
+function ExplorationHeaderBar({
+  player,
+  currentRoom,
+  muted,
+  onLightTorch,
+  onOpenInventory,
+  onOpenLore,
+  onOpenGuide,
+  onOpenSettings,
+  onToggleMute,
+}: ExplorationHeaderBarProps) {
+  const tCur = player.torchTimer ?? EXPLORATION_CONSTANTS.TORCH_DURATION_SEC;
+  const tMax = Math.max(1, player.torchMaxTimer ?? EXPLORATION_CONSTANTS.TORCH_DURATION_SEC);
+  const tPct = Math.round((tCur / tMax) * 100);
+  const partyPanicking = isPlayerPanicking(player) || player.party.some((a) => a.hp > 0 && a.mind < 30);
+
+  return (
+    <header className="bg-[#0d0b0f] border-b border-[#3a3a3a] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div
+          className={`w-36 sm:w-44 h-2.5 overflow-hidden border ${
+            player.corruption >= 60
+              ? 'bg-[#170b1c] border-[#8b0000]'
+              : player.corruption > 0
+              ? 'bg-[#1c0d12] border-[#8b0000]'
+              : 'bg-[#0e1410] border-[#3a3a3a]'
+          }`}
+        >
+          <div
+            className="h-full transition-all duration-300"
+            style={{
+              width: `${Math.max(10, Math.min(100, player.corruption))}%`,
+              backgroundColor: '#2d4530',
+              backgroundImage:
+                player.corruption <= 0
+                  ? 'none'
+                  : 'linear-gradient(90deg, #2d4530 0%, #8b0000 55%, #5b2e6e 100%)',
+              backgroundSize: '176px 100%',
+            }}
+          />
+        </div>
+        {!currentRoom.isExterior && (
+          <button
+            type="button"
+            onClick={onLightTorch}
+            title="Nhiên liệu ánh sáng — Bấm [T] hoặc nhấp để thắp nhanh Đuốc Sáng / Đèn Dầu"
+            className={`px-2 py-0.5 border font-mono text-xs leading-none flex items-center gap-1 cursor-pointer transition-opacity hover:opacity-90 ${
+              tCur <= 0
+                ? 'bg-[#1a090c] border-[#8b0000] text-[#c96b6b] animate-pulse'
+                : tPct < 30
+                ? 'bg-[#241608] border-[#d97706] text-[#fbbf24]'
+                : 'bg-[#17120c] border-[#5e4b30] text-[#dfd2b4]'
+            }`}
+          >
+            {tCur <= 0 ? (
+              <span>[TẮT ĐUỐC] [T]</span>
+            ) : (
+              <>
+                <Flame className="w-3 h-3 text-[#c5a059] shrink-0" />
+                <span>[ĐUỐC {tPct}%] [T]</span>
+              </>
+            )}
+          </button>
+        )}
+        {partyPanicking && (
+          <span className="px-2 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[#fca5a5] font-mono text-xs font-bold animate-pulse">
+            [HOẢNG LOẠN]
+          </span>
+        )}
+      </div>
+
+      {/* Quick Modal Action Buttons (Hexen & Save/Load are strictly world interactions) */}
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={onOpenInventory}
+          className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+        >
+          <Backpack className="w-3.5 h-3.5 text-[#c5a059]" /> Túi [I]
+        </button>
+        <button
+          onClick={onOpenLore}
+          className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+        >
+          <BookOpen className="w-3.5 h-3.5 text-[#c5a059]" /> Sách ({player.readBookIds.length}/{CONFIG.BOOKS.length}) [L]
+        </button>
+        <button
+          onClick={onOpenGuide}
+          className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+          title="Sách Hướng Dẫn Sinh Tồn [?]"
+        >
+          <HelpCircle className="w-3.5 h-3.5 text-[#c5a059]" /> Cẩm Nang [?]
+        </button>
+        <button
+          onClick={onOpenSettings}
+          className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+          title="Cài Đặt Hệ Thống [ESC]"
+        >
+          <Settings className="w-3.5 h-3.5 text-[#c5a059]" /> Cài Đặt [ESC]
+        </button>
+        <button
+          onClick={onToggleMute}
+          className="df-btn p-1.5 text-xs cursor-pointer"
+          title="Bật/Tắt Âm Thanh"
+        >
+          {muted ? <VolumeX className="w-3.5 h-3.5 text-[#d3d3d3]" /> : <Volume2 className="w-3.5 h-3.5 text-[#c5a059]" />}
+        </button>
+      </div>
+    </header>
+  );
+}
+
+interface ExplorationDialogueOverlayProps {
+  interactionMenu: InteractionPromptState | null;
+  logOverlayVisible: boolean;
+  narrativeLogs: string[];
+  onHoverChoice: (idx: number) => void;
+  onDismissLogOverlay: () => void;
+}
+
+function ExplorationDialogueOverlay({
+  interactionMenu,
+  logOverlayVisible,
+  narrativeLogs,
+  onHoverChoice,
+  onDismissLogOverlay,
+}: ExplorationDialogueOverlayProps) {
+  if (!interactionMenu && !logOverlayVisible) return null;
+
+  const rawSpeaker = (interactionMenu?.title || 'NHẬT KÝ HÀNH TRÌNH').trim();
+  const firstChar = rawSpeaker.charAt(0).toUpperCase();
+  const restChars = rawSpeaker.slice(1).toUpperCase();
+
+  return (
+    <div className="absolute inset-x-4 bottom-8 z-30">
+      {/* Docked Right-Side Choice Window (Flush above the right side of the bottom dialogue box) */}
+      {interactionMenu ? (
+        <div className="ml-auto w-fit min-w-[310px] max-w-[540px] mb-[2px] df-panel px-3.5 py-2.5 space-y-1">
+          {interactionMenu.choices.map((choice, idx) => {
+            const isSelected = idx === interactionMenu.selectedIndex;
+            return (
+              <button
+                key={idx}
+                type="button"
+                onMouseEnter={() => onHoverChoice(idx)}
+                onClick={() => choice.onSelect()}
+                className={`w-full text-left px-4 py-1.5 font-serif text-sm sm:text-base tracking-wide transition cursor-pointer ${
+                  choice.muted
+                    ? isSelected
+                      ? 'text-[#b5aba0] font-semibold'
+                      : 'text-[#847c74] hover:text-[#b5aba0]'
+                    : isSelected
+                    ? 'text-[#f3e6c4] font-semibold'
+                    : 'text-[#d3d3d3]/75 hover:text-[#f3e6c4]'
+                }`}
+                style={
+                  isSelected
+                    ? {
+                        background: choice.muted
+                          ? 'radial-gradient(ellipse at center, rgba(64, 56, 54, 0.72) 0%, rgba(30, 26, 26, 0.45) 55%, rgba(15, 10, 12, 0) 100%)'
+                          : 'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
+                        textShadow: choice.muted ? undefined : '0 0 8px rgba(197, 160, 89, 0.55)',
+                      }
+                    : undefined
+                }
+              >
+                <div>{choice.label}</div>
+                {choice.hint && (
+                  <div className="text-[11px] font-sans font-normal text-[#968d85] mt-0.5 leading-snug">
+                    ↳ {choice.hint}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="ml-auto w-fit min-w-[230px] mb-[2px] df-panel px-3.5 py-2">
+          <button
+            type="button"
+            onClick={onDismissLogOverlay}
+            className="w-full text-left px-4 py-1 font-serif text-sm sm:text-base tracking-wide text-[#f3e6c4] font-semibold cursor-pointer"
+            style={{
+              background:
+                'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
+              textShadow: '0 0 8px rgba(197, 160, 89, 0.55)',
+            }}
+          >
+            Tiếp tục hành trình [F]
+          </button>
+        </div>
+      )}
+
+      {/* Bottom RPG Dialogue Box with Gothic Illuminated Drop-Cap Nameplate */}
+      <div className="df-panel px-5 py-3.5 min-h-[112px] flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="inline-flex items-end gap-1 select-none">
+              <span
+                className="w-6 h-6 bg-[#d3d3d3] text-[#09070a] border border-[#c5a059] font-black text-base flex items-center justify-center leading-none shadow-sm"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                {firstChar}
+              </span>
+              <span
+                className="text-xs sm:text-sm font-bold tracking-[0.14em] text-[#c5a059] uppercase leading-none pb-0.5"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                {restChars}
+              </span>
+            </div>
+            <span className="text-[10px] text-[#9b8f82] font-mono">
+              {interactionMenu
+                ? '[W/S] Chọn • [F / Enter] Xác nhận • [ESC] Đóng'
+                : '[F / ESC] Đóng'}
+            </span>
+          </div>
+
+          {interactionMenu ? (
+            <div className="text-sm sm:text-base font-serif text-[#d3d3d3] leading-relaxed">
+              {interactionMenu.description.startsWith('“') ||
+              interactionMenu.description.startsWith('"')
+                ? interactionMenu.description
+                : `“${interactionMenu.description}”`}
+            </div>
+          ) : (
+            <div className="max-h-20 overflow-y-auto space-y-1 pr-1 text-xs sm:text-sm font-serif">
+              {narrativeLogs.slice(0, 4).map((log, i) => (
+                <div
+                  key={i}
+                  className={`leading-snug ${
+                    i === 0 ? 'text-[#d3d3d3] font-semibold' : 'text-[#9b8f82] text-xs'
+                  }`}
+                >
+                  • {log}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ExplorationModalLayerProps {
+  activeModal: ActiveModal;
+  player: PlayerState;
+  setPlayer: React.Dispatch<React.SetStateAction<PlayerState>>;
+  world: WorldMapState;
+  setWorld: React.Dispatch<React.SetStateAction<WorldMapState>>;
+  currentRoom: RoomData;
+  playerPos: { x: number; y: number };
+  invTab: 'equip' | 'items' | 'alchemy' | 'saw';
+  setInvTab: React.Dispatch<React.SetStateAction<'equip' | 'items' | 'alchemy' | 'saw'>>;
+  isAmputating: boolean;
+  setIsAmputating: React.Dispatch<React.SetStateAction<boolean>>;
+  sawTargetMemberIdx: number | null;
+  setSawTargetMemberIdx: React.Dispatch<React.SetStateAction<number | null>>;
+  selectedInvMemberIdx: number;
+  setSelectedInvMemberIdx: React.Dispatch<React.SetStateAction<number>>;
+  selectedEquipSlot: EquipSlotKey;
+  setSelectedEquipSlot: React.Dispatch<React.SetStateAction<EquipSlotKey>>;
+  previewItemId: string;
+  setPreviewItemId: React.Dispatch<React.SetStateAction<string>>;
+  invFeedback: string | null;
+  setInvFeedback: React.Dispatch<React.SetStateAction<string | null>>;
+  torchLowWarnedRef: React.MutableRefObject<boolean>;
+  loreModalTab: 'books' | 'destiny';
+  setLoreModalTab: React.Dispatch<React.SetStateAction<'books' | 'destiny'>>;
+  selectedLoreBookId: string;
+  setSelectedLoreBookId: React.Dispatch<React.SetStateAction<string>>;
+  hexenTab: 'skills' | 'rituals';
+  setHexenTab: React.Dispatch<React.SetStateAction<'skills' | 'rituals'>>;
+  selectedHexenSkillId: string | null;
+  setSelectedHexenSkillId: React.Dispatch<React.SetStateAction<string | null>>;
+  hexenFeedback: string | null;
+  setHexenFeedback: React.Dispatch<React.SetStateAction<string | null>>;
+  saveSlots: Array<SaveSlotData | null>;
+  guideTab: 'move' | 'combat' | 'survival' | 'lore';
+  setGuideTab: React.Dispatch<React.SetStateAction<'move' | 'combat' | 'survival' | 'lore'>>;
+  audioSettings: AudioVisualSettings;
+  setAudioSettings: React.Dispatch<React.SetStateAction<AudioVisualSettings>>;
+  setMuted: React.Dispatch<React.SetStateAction<boolean>>;
+  confirmReturnTitle: boolean;
+  setConfirmReturnTitle: React.Dispatch<React.SetStateAction<boolean>>;
+  onSetActiveModal: React.Dispatch<React.SetStateAction<ActiveModal>>;
+  onAddLog: (msg: string) => void;
+  onShowLogOverlay: () => void;
+  onPromptCrackedWallExplosion: () => void;
+  onTriggerNightHunterElixirEnding: (pCopy: PlayerState) => void;
+  onTriggerVoidPortal: (destId: string) => void;
+  onSaveSlot: (idx: number) => void;
+  onLoadSlot: (idx: number) => void;
+  onDeleteSlot: (idx: number) => void;
+  onReturnToTitle: () => void;
+}
+
+function ExplorationModalLayer({
+  activeModal,
+  player,
+  setPlayer,
+  world,
+  setWorld,
+  currentRoom,
+  playerPos,
+  invTab,
+  setInvTab,
+  isAmputating,
+  setIsAmputating,
+  sawTargetMemberIdx,
+  setSawTargetMemberIdx,
+  selectedInvMemberIdx,
+  setSelectedInvMemberIdx,
+  selectedEquipSlot,
+  setSelectedEquipSlot,
+  previewItemId,
+  setPreviewItemId,
+  invFeedback,
+  setInvFeedback,
+  torchLowWarnedRef,
+  loreModalTab,
+  setLoreModalTab,
+  selectedLoreBookId,
+  setSelectedLoreBookId,
+  hexenTab,
+  setHexenTab,
+  selectedHexenSkillId,
+  setSelectedHexenSkillId,
+  hexenFeedback,
+  setHexenFeedback,
+  saveSlots,
+  guideTab,
+  setGuideTab,
+  audioSettings,
+  setAudioSettings,
+  setMuted,
+  confirmReturnTitle,
+  setConfirmReturnTitle,
+  onSetActiveModal,
+  onAddLog,
+  onShowLogOverlay,
+  onPromptCrackedWallExplosion,
+  onTriggerNightHunterElixirEnding,
+  onTriggerVoidPortal,
+  onSaveSlot,
+  onLoadSlot,
+  onDeleteSlot,
+  onReturnToTitle,
+}: ExplorationModalLayerProps) {
+  if (!activeModal) return null;
+  const computedStats = getComputedPlayerStats(player);
+
+  return (
+    <>
+      {activeModal === 'inventory' && (
+        <InventoryModal
+          player={player}
+          setPlayer={setPlayer}
+          world={world}
+          setWorld={setWorld}
+          playerPos={playerPos}
+          computedStats={computedStats}
+          invTab={invTab}
+          setInvTab={setInvTab}
+          isAmputating={isAmputating}
+          setIsAmputating={setIsAmputating}
+          sawTargetMemberIdx={sawTargetMemberIdx}
+          setSawTargetMemberIdx={setSawTargetMemberIdx}
+          selectedInvMemberIdx={selectedInvMemberIdx}
+          setSelectedInvMemberIdx={setSelectedInvMemberIdx}
+          selectedEquipSlot={selectedEquipSlot}
+          setSelectedEquipSlot={setSelectedEquipSlot}
+          previewItemId={previewItemId}
+          setPreviewItemId={setPreviewItemId}
+          invFeedback={invFeedback}
+          setInvFeedback={setInvFeedback}
+          torchLowWarnedRef={torchLowWarnedRef}
+          onClose={() => onSetActiveModal(null)}
+          onOpenHunterNote={() => onSetActiveModal('hunter_note')}
+          onAddLog={onAddLog}
+          onShowLogOverlay={onShowLogOverlay}
+          onPromptCrackedWallExplosion={onPromptCrackedWallExplosion}
+          onTriggerNightHunterElixirEnding={onTriggerNightHunterElixirEnding}
+        />
+      )}
+
+      {activeModal === 'lore' && (
+        <LoreModal
+          player={player}
+          loreModalTab={loreModalTab}
+          setLoreModalTab={setLoreModalTab}
+          selectedLoreBookId={selectedLoreBookId}
+          setSelectedLoreBookId={setSelectedLoreBookId}
+          onClose={() => onSetActiveModal(null)}
+        />
+      )}
+
+      {activeModal === 'hunter_note' && (
+        <HunterNoteModal onClose={() => onSetActiveModal(null)} />
+      )}
+
+      {activeModal === 'hexen' && (
+        <HexenModal
+          player={player}
+          setPlayer={setPlayer}
+          currentRoom={currentRoom}
+          hexenTab={hexenTab}
+          setHexenTab={setHexenTab}
+          selectedHexenSkillId={selectedHexenSkillId}
+          setSelectedHexenSkillId={setSelectedHexenSkillId}
+          hexenFeedback={hexenFeedback}
+          setHexenFeedback={setHexenFeedback}
+          onClose={() => onSetActiveModal(null)}
+          onAddLog={onAddLog}
+          onTriggerVoidPortal={onTriggerVoidPortal}
+        />
+      )}
+
+      {activeModal === 'saves' && (
+        <SavesModal
+          worldSeed={world.seed}
+          saveSlots={saveSlots}
+          onSaveSlot={onSaveSlot}
+          onLoadSlot={onLoadSlot}
+          onDeleteSlot={onDeleteSlot}
+          onClose={() => onSetActiveModal(null)}
+        />
+      )}
+
+      {activeModal === 'guide' && (
+        <GuideModal
+          guideTab={guideTab}
+          setGuideTab={setGuideTab}
+          onClose={() => onSetActiveModal(null)}
+        />
+      )}
+
+      {activeModal === 'settings' && (
+        <SettingsModal
+          world={world}
+          playerPos={playerPos}
+          audioSettings={audioSettings}
+          setAudioSettings={setAudioSettings}
+          setMuted={setMuted}
+          confirmReturnTitle={confirmReturnTitle}
+          setConfirmReturnTitle={setConfirmReturnTitle}
+          onOpenSaves={() => onSetActiveModal('saves')}
+          onReturnToTitle={onReturnToTitle}
+          onClose={() => onSetActiveModal(null)}
+        />
+      )}
+    </>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState<ScreenMode>('title');
   const [seedInput, setSeedInput] = useState<string>(CONFIG.DEFAULT_SEED);
-  const [characterNameInput, setCharacterNameInput] = useState<string>(CONFIG.CLASSES[0].name);
-  const [selectedClassId, setSelectedClassId] = useState<string>(CONFIG.CLASSES[0].id);
+  const [characterNameInput, setCharacterNameInput] = useState<string>(DEFAULT_CLASS_NAME);
+  const [selectedClassId, setSelectedClassId] = useState<string>(DEFAULT_CLASS_ID);
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyMode>('normal');
   const [world, setWorld] = useState<WorldMapState>(() => generateWorld(CONFIG.DEFAULT_SEED));
-  const [player, setPlayer] = useState<PlayerState>(() => createInitialPlayer(CONFIG.CLASSES[0].id));
+  const [player, setPlayer] = useState<PlayerState>(() => createInitialPlayer(DEFAULT_CLASS_ID));
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number }>({ x: 3, y: 9 });
   const hungerStepAccumRef = useRef<number>(0);
 
   // Active combat enemy reference & standalone CombatEngine Manager
   const combatEngineRef = useRef<CombatEngine>(new CombatEngine());
   const [activeEnemyUid, setActiveEnemyUid] = useState<string | null>(null);
+  const activeEnemyUidRef = useRef<string | null>(null);
+  activeEnemyUidRef.current = activeEnemyUid;
   const [combatLogs, setCombatLogs] = useState<string[]>([]);
   const [selectedLimbId, setSelectedLimbId] = useState<string>('torso');
   const selectedLimbIdRef = useRef<string>('torso');
   selectedLimbIdRef.current = selectedLimbId;
+  const syncSelectedLimbId = useCallback((limbId: string) => {
+    selectedLimbIdRef.current = limbId;
+    setSelectedLimbId(limbId);
+  }, []);
   const [combatMenuMode, setCombatMenuMode] = useState<CombatMenuMode>('main');
   const [activeActorIdx, setActiveActorIdx] = useState<number>(0);
+  const activeActorIdxRef = useRef<number>(0);
+  activeActorIdxRef.current = activeActorIdx;
+  const syncActiveActorIdx = useCallback((actorIdx: number) => {
+    activeActorIdxRef.current = actorIdx;
+    setActiveActorIdx(actorIdx);
+  }, []);
   const [combatFocusPhase, setCombatFocusPhase] = useState<
     'action' | 'skills_menu' | 'items_menu'
   >('action');
@@ -173,6 +828,7 @@ export default function App() {
     color: string;
     key: number;
   } | null>(null);
+  const [combatNotice, setCombatNotice] = useState<CombatStageNotice | null>(null);
   const [screenShakeMode, setScreenShakeMode] = useState<'none' | 'normal' | 'heavy'>('none');
   const [isResolvingTurn, setIsResolvingTurn] = useState<boolean>(false);
   const isResolvingTurnRef = useRef<boolean>(false);
@@ -180,12 +836,26 @@ export default function App() {
   const portraitErrorRef = useRef<Record<string, boolean>>({});
   const combatAbortRef = useRef<number>(0);
   const vfxTimerRef = useRef<number | null>(null);
+  const combatNoticeTimerRef = useRef<number | null>(null);
   const shakeTimerRef = useRef<number | null>(null);
 
   const markPortraitError = useCallback((url: string) => {
     if (!url || portraitErrorRef.current[url]) return;
     portraitErrorRef.current = { ...portraitErrorRef.current, [url]: true };
     setPortraitErrorMap((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
+  }, []);
+
+  const triggerCombatNotice = useCallback((text: string, tone: 'miss' | 'evade') => {
+    if (combatNoticeTimerRef.current) window.clearTimeout(combatNoticeTimerRef.current);
+    setCombatNotice({
+      key: Date.now() + Math.floor(Math.random() * 1000),
+      text: text.replace(/^\[HỤT ĐÒN\]\s*/i, ''),
+      tone,
+    });
+    combatNoticeTimerRef.current = window.setTimeout(() => {
+      setCombatNotice(null);
+      combatNoticeTimerRef.current = null;
+    }, 1500);
   }, []);
 
   const triggerCombatVfx = useCallback(
@@ -200,7 +870,7 @@ export default function App() {
         vfxTimerRef.current = window.setTimeout(() => {
           setActiveVfx(null);
           vfxTimerRef.current = null;
-        }, 560);
+        }, COMBAT_TIMING_MS.VFX_CLEAR);
       }
       if (audioSettings.screenShakeEnabled) {
         if (shakeTimerRef.current) window.clearTimeout(shakeTimerRef.current);
@@ -208,7 +878,7 @@ export default function App() {
         shakeTimerRef.current = window.setTimeout(() => {
           setScreenShakeMode('none');
           shakeTimerRef.current = null;
-        }, isHeavy ? 380 : 280);
+        }, isHeavy ? COMBAT_TIMING_MS.SHAKE_HEAVY : COMBAT_TIMING_MS.SHAKE_NORMAL);
       }
     },
     [audioSettings.screenShakeEnabled]
@@ -257,6 +927,9 @@ export default function App() {
       if (vfxTimerRef.current) {
         window.clearTimeout(vfxTimerRef.current);
       }
+      if (combatNoticeTimerRef.current) {
+        window.clearTimeout(combatNoticeTimerRef.current);
+      }
       if (shakeTimerRef.current) {
         window.clearTimeout(shakeTimerRef.current);
       }
@@ -264,7 +937,7 @@ export default function App() {
   }, []);
   const [selectedEquipSlot, setSelectedEquipSlot] = useState<EquipSlotKey>('weapon');
   const [previewItemId, setPreviewItemId] = useState<string>('broad_iron_sword');
-  const [selectedLoreBookId, setSelectedLoreBookId] = useState<string>(CONFIG.BOOKS[0].id);
+  const [selectedLoreBookId, setSelectedLoreBookId] = useState<string>(DEFAULT_BOOK_ID);
   const [loreModalTab, setLoreModalTab] = useState<'books' | 'destiny'>('books');
 
   // 3D Silver Coin Toss Inline Overlay & Shift Key 2-Coin / Combat Fast-Forward State
@@ -296,10 +969,7 @@ export default function App() {
     isPersonal?: boolean;
   } | null>(null);
 
-  const [narrativeLogs, setNarrativeLogs] = useState<string[]>([
-    'Lâu Đài Hắc Ám từ vòm trời đêm giáng xuống, nghiền nát mái vòm Đại Giáo Đường Goethe.',
-    'Bạn tỉnh dậy tại Ngoại Vi Đại Giáo Đường Goethe giữa sương mù và mùi máu tanh.',
-  ]);
+  const [narrativeLogs, setNarrativeLogs] = useState<string[]>(INITIAL_NARRATIVE_LOGS);
   const [lastStepTime, setLastStepTime] = useState<number>(0);
   const inCombat = screen === 'combat';
   const [isInputLocked, setIsInputLocked] = useState<boolean>(false);
@@ -352,7 +1022,7 @@ export default function App() {
   const addLog = useCallback((msg: string) => {
     setNarrativeLogs((prev) => {
       if (prev[0] === msg) return prev;
-      return [msg, ...prev.slice(0, 35)];
+      return [msg, ...prev.slice(0, EXPLORATION_CONSTANTS.MAX_NARRATIVE_LOGS)];
     });
   }, []);
 
@@ -432,7 +1102,7 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => {
       setAnimTick((t) => (t + 1) % 10000);
-    }, 95);
+    }, EXPLORATION_CONSTANTS.ANIM_TICK_MS);
     return () => clearInterval(timer);
   }, []);
 
@@ -444,7 +1114,7 @@ export default function App() {
       onResolve: (won: boolean, tier: CoinOutcomeTier) => void,
       onLockpick?: () => void
     ) => {
-      const panicking = isPlayerPanicking(player);
+      const panicking = isPlayerPanicking(playerRef.current);
       if (panicking) {
         const autoSide: 'HEADS' | 'TAILS' = Math.random() < 0.5 ? 'HEADS' : 'TAILS';
         setCoinToss({
@@ -461,8 +1131,8 @@ export default function App() {
         sfx.playSfx('coin_flip');
         setTimeout(() => {
           sfx.playSfx('coin_land');
-          const rng = new SeededRNG(`${world.seed}_panic_coin_${Date.now()}`);
-          const won = rng.chance(0.38);
+          const rng = new SeededRNG(`${worldRef.current.seed}_panic_coin_${Date.now()}`);
+          const won = rng.chance(COIN_TOSS_BALANCING.PANIC_WIN_CHANCE);
           const landed: 'HEADS' | 'TAILS' = won ? autoSide : autoSide === 'HEADS' ? 'TAILS' : 'HEADS';
           setCoinToss((prev) =>
             prev
@@ -476,7 +1146,7 @@ export default function App() {
                 }
               : null
           );
-        }, 650);
+        }, COMBAT_TIMING_MS.COIN_FLIP_RESOLVE);
         return;
       }
 
@@ -495,13 +1165,14 @@ export default function App() {
         onLockpick,
       });
     },
-    [player, world.seed]
+    []
   );
 
   const handleChooseCoinSide = useCallback(
     (side: 'HEADS' | 'TAILS', tossTwoWithShift: boolean = false) => {
       if (!coinToss || coinToss.flipping || coinToss.resultSide) return;
-      const canUseLuckyCoin = tossTwoWithShift && (player.inventory.lucky_coin || 0) > 0;
+      const latestPlayer = playerRef.current;
+      const canUseLuckyCoin = tossTwoWithShift && (latestPlayer.inventory.lucky_coin || 0) > 0;
       if (canUseLuckyCoin) {
         setPlayer((prev) => ({
           ...prev,
@@ -521,14 +1192,17 @@ export default function App() {
 
       setTimeout(() => {
         sfx.playSfx('coin_land');
-        const rng = new SeededRNG(`${world.seed}_coin_${Date.now()}`);
-        const computed = getComputedPlayerStats(player);
+        const currentPlayer = playerRef.current;
+        const rng = new SeededRNG(`${worldRef.current.seed}_coin_${Date.now()}`);
+        const computed = getComputedPlayerStats(currentPlayer);
         const hasClawBoost =
-          player.equippedAccessory === 'void_beast_claw' ||
-          GEAR_ITEMS[player.equippedAccessory || '']?.coinTossBoost;
+          currentPlayer.equippedAccessory === 'void_beast_claw' ||
+          GEAR_ITEMS[currentPlayer.equippedAccessory || '']?.coinTossBoost;
         const winChance = Math.min(
-          0.88,
-          0.5 + (computed.luck - 10) * 0.01 + (hasClawBoost ? 0.15 : 0)
+          COIN_TOSS_BALANCING.MAX_WIN_CHANCE,
+          COIN_TOSS_BALANCING.BASE_WIN_CHANCE +
+            (computed.luck - 10) * 0.01 +
+            (hasClawBoost ? COIN_TOSS_BALANCING.CLAW_ACCESSORY_BONUS : 0)
         );
 
         const win1 = rng.chance(winChance);
@@ -571,9 +1245,9 @@ export default function App() {
               }
             : null
         );
-      }, 650);
+      }, COMBAT_TIMING_MS.COIN_FLIP_RESOLVE);
     },
-    [coinToss, player, world.seed]
+    [coinToss]
   );
 
   const confirmCoinTossOutcome = useCallback(() => {
@@ -589,26 +1263,13 @@ export default function App() {
   }, [coinToss]);
 
   const generateRandomSeed = useCallback((): string => {
-    const prefixes = ['VAELIS', 'GOETHE', 'ABYSS', 'HEXEN', 'ECLIPSE', 'BONE'];
-    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const prefix = SEED_PREFIXES[Math.floor(Math.random() * SEED_PREFIXES.length)] || 'VAELIS';
     const suffix = Math.floor(1000 + Math.random() * 9000);
     return `${prefix}-${suffix}`;
   }, []);
 
   const generateRandomCharacterName = useCallback((): string => {
-    const names = [
-      'Vaelen',
-      'Kaelen',
-      'Seraphina',
-      'Corvus',
-      'Alistair',
-      'Isolde',
-      'Gideon',
-      'Morrigan',
-      'Balthazar',
-      'Valeria',
-    ];
-    return names[Math.floor(Math.random() * names.length)];
+    return CHARACTER_NAMES[Math.floor(Math.random() * CHARACTER_NAMES.length)] || 'Vaelen';
   }, []);
 
   // Start new game -> enters 3-Frame Prologue first
@@ -625,6 +1286,7 @@ export default function App() {
       setWorld(newWorld);
       setPlayer(newPlayer);
       setPlayerPos({ x: startRoom.spawnX, y: startRoom.spawnY });
+      activeEnemyUidRef.current = null;
       setActiveEnemyUid(null);
       setEndingInfo(null);
       setActiveModal(null);
@@ -641,12 +1303,7 @@ export default function App() {
       torchLowWarnedRef.current = false;
       hungerStepAccumRef.current = 0;
       setSmugglerPrices({});
-      setTrailCoords([
-        { x: Math.max(1, startRoom.spawnX - 1), y: startRoom.spawnY },
-        { x: Math.max(1, startRoom.spawnX - 2), y: startRoom.spawnY },
-        { x: Math.max(1, startRoom.spawnX - 2), y: Math.max(1, startRoom.spawnY - 1) },
-        { x: Math.max(1, startRoom.spawnX - 3), y: startRoom.spawnY - 1 },
-      ]);
+      setTrailCoords(createDefaultTrailCoords(startRoom.spawnX, startRoom.spawnY));
       setSelectedInvMemberIdx(0);
       setShowSkipProloguePrompt(false);
       setScreen('prologue');
@@ -666,6 +1323,7 @@ export default function App() {
     setWorld(newWorld);
     setPlayer(newPlayer);
     setPlayerPos({ x: startRoom.spawnX, y: startRoom.spawnY });
+    activeEnemyUidRef.current = null;
     setActiveEnemyUid(null);
     setEndingInfo(null);
     setActiveModal(null);
@@ -682,30 +1340,17 @@ export default function App() {
     torchLowWarnedRef.current = false;
     hungerStepAccumRef.current = 0;
     setSmugglerPrices({});
-    setTrailCoords([
-      { x: Math.max(1, startRoom.spawnX - 1), y: startRoom.spawnY },
-      { x: Math.max(1, startRoom.spawnX - 2), y: startRoom.spawnY },
-      { x: Math.max(1, startRoom.spawnX - 2), y: Math.max(1, startRoom.spawnY - 1) },
-      { x: Math.max(1, startRoom.spawnX - 3), y: startRoom.spawnY - 1 },
-    ]);
+    setTrailCoords(createDefaultTrailCoords(startRoom.spawnX, startRoom.spawnY));
     setSelectedInvMemberIdx(0);
     setShowSkipProloguePrompt(false);
 
-    const classOpening: Record<string, string> = {
-      fallen_knight:
-        'Ký ức Kỵ Đoàn: Bạn siết chặt chuôi kiếm trước Cổng Sắt Goethe. Đội trưởng Vaelis từng thề bảo vệ nhân loại — vì sao ngài lại kéo cả Lâu Đài Hắc Ám đè nát thánh địa này?',
-      forsaken_nun:
-        'Tội Ác Máu Đen: Giữa sương mù, hình ảnh bức tượng Thánh Mẫu khóc ra máu đen lại hiện về. Đứa em trai duy nhất của bạn — Thánh Tử Thứ 13 — vẫn đang bị giam dưới đáy địa ngục này.',
-      night_hunter:
-        'Lời Nguyền Hóa Đá: Lớp vảy đá xám trên cánh tay lại nhói buốt. Chỉ có bình Tiên Dược Nguyên Sơ dưới đáy Vực Sao và Lõi Khóa Hư Vô mới giúp bạn thoát khỏi Thung Lũng Xương Tàn.',
-    };
     isInputLockedRef.current = false;
     setIsInputLocked(false);
     setScreen('playing');
     setNarrativeLogs([
       `Bạn đứng trước Cổng Sắt Răng Cưa tại ${startRoom.name}.`,
       ...(loadoutRes.summary ? [loadoutRes.summary] : []),
-      classOpening[newPlayer.classId] || startRoom.sensoryLine,
+      CLASS_OPENING_LORE[newPlayer.classId] || startRoom.sensoryLine,
       startRoom.sensoryLine,
     ]);
   }, [selectedClassId, selectedDifficulty, characterNameInput, generateRandomSeed]);
@@ -727,21 +1372,13 @@ export default function App() {
         setBackstoryChosen(true);
       }
       setIntroStepOutcome(null);
-      const classOpening: Record<string, string> = {
-        fallen_knight:
-          'Ký ức Kỵ Đoàn: Bạn siết chặt chuôi kiếm trước Cổng Sắt Goethe. Đội trưởng Vaelis từng thề bảo vệ nhân loại — vì sao ngài lại kéo cả Lâu Đài Hắc Ám đè nát thánh địa này?',
-        forsaken_nun:
-          'Tội Ác Máu Đen: Giữa sương mù, hình ảnh bức tượng Thánh Mẫu khóc ra máu đen lại hiện về. Đứa em trai duy nhất của bạn — Thánh Tử Thứ 13 — vẫn đang bị giam dưới đáy địa ngục này.',
-        night_hunter:
-          'Lời Nguyền Hóa Đá: Lớp vảy đá xám trên cánh tay lại nhói buốt. Chỉ có bình Tiên Dược Nguyên Sơ dưới đáy Vực Sao và Lõi Khóa Hư Vô mới giúp bạn thoát khỏi Thung Lũng Xương Tàn.',
-      };
       isInputLockedRef.current = false;
       setIsInputLocked(false);
       setScreen('playing');
       setNarrativeLogs([
         `Bạn đứng trước Cổng Sắt Răng Cưa tại ${startRoom.name}.`,
         ...(starterPackSummary ? [starterPackSummary] : []),
-        classOpening[player.classId] || startRoom.sensoryLine,
+        CLASS_OPENING_LORE[player.classId] || startRoom.sensoryLine,
         startRoom.sensoryLine,
       ]);
     },
@@ -768,7 +1405,7 @@ export default function App() {
       const seedParam = params.get('seed') || CONFIG.DEFAULT_SEED;
       const newWorld = generateWorld(seedParam);
       const startRoom = newWorld.rooms[newWorld.currentRoomId];
-      const newPlayer = createInitialPlayer(CONFIG.CLASSES[0].id);
+      const newPlayer = createInitialPlayer(DEFAULT_CLASS_ID);
       applyDefaultIntroLoadoutForRemainingSteps(newPlayer, 0);
       setWorld(newWorld);
       setPlayer(newPlayer);
@@ -854,17 +1491,13 @@ export default function App() {
     torchLowWarnedRef.current = false;
     hungerStepAccumRef.current = 0;
     setSmugglerPrices({});
-    setTrailCoords([
-      { x: Math.max(1, spawnPos.x - 1), y: spawnPos.y },
-      { x: Math.max(1, spawnPos.x - 2), y: spawnPos.y },
-      { x: Math.max(1, spawnPos.x - 2), y: Math.max(1, spawnPos.y - 1) },
-      { x: Math.max(1, spawnPos.x - 3), y: Math.max(1, spawnPos.y - 1) },
-    ]);
+    setTrailCoords(createDefaultTrailCoords(spawnPos.x, spawnPos.y));
     setSelectedInvMemberIdx(0);
     setPreviewItemId(restoredPlayer.equippedWeapon || '');
     setInteractionMenu(null);
     setCoinToss(null);
     setLogOverlayVisible(false);
+    activeEnemyUidRef.current = null;
     setActiveEnemyUid(null);
     setEndingInfo(null);
     setActiveModal(null);
@@ -880,8 +1513,9 @@ export default function App() {
     refreshSaveSlots();
   };
 
-  const currentRoom: RoomData = world.rooms[world.currentRoomId];
-  const activeCombatEnemy: MapEnemyInstance | undefined = currentRoom.enemies.find(
+  const currentRoom: RoomData =
+    world.rooms[world.currentRoomId] || Object.values(world.rooms)[0];
+  const activeCombatEnemy: MapEnemyInstance | undefined = currentRoom?.enemies.find(
     (e) => e.uid === activeEnemyUid
   );
 
@@ -897,20 +1531,16 @@ export default function App() {
       setScreenShakeMode('none');
       isInputLockedRef.current = true;
       setIsInputLocked(true);
+      activeEnemyUidRef.current = enemyInst.uid;
       setActiveEnemyUid(enemyInst.uid);
       const defaultLimb =
         enemyInst.limbs.find(
           (l) => l.isWeaponArm && l.hp > 0 && canTargetEnemyLimb(enemyInst, tpl, l.id).allowed
-        )?.id ||
-        enemyInst.limbs.find(
-          (l) => l.hp > 0 && canTargetEnemyLimb(enemyInst, tpl, l.id).allowed
-        )?.id ||
-        enemyInst.limbs.find((l) => l.hp > 0)?.id ||
-        'torso';
+        )?.id || resolveNearestValidLimbId(enemyInst, tpl);
       (document.activeElement as HTMLElement | null)?.blur?.();
-      setSelectedLimbId(defaultLimb);
+      syncSelectedLimbId(defaultLimb);
       setCombatMenuMode('main');
-      setActiveActorIdx(0);
+      syncActiveActorIdx(0);
       setCombatFocusPhase('action');
       setCombatActionCursor(0);
       setCombatSubCursor(0);
@@ -1046,14 +1676,24 @@ export default function App() {
       // Dynamic Torchlight depletion inside dark dungeon interiors (paused in Exterior & Safe Zones)
       let torchDepletedNow = false;
       if (!room.isExterior && !inSafeZone) {
-        const curTorch = playerRef.current.torchTimer ?? 120;
-        const maxTorch = Math.max(1, playerRef.current.torchMaxTimer ?? 120);
-        const torchDecay = playerRef.current.difficulty === 'easy' ? 0.75 : 1;
+        const curTorch = playerRef.current.torchTimer ?? EXPLORATION_CONSTANTS.TORCH_DURATION_SEC;
+        const maxTorch = Math.max(
+          1,
+          playerRef.current.torchMaxTimer ?? EXPLORATION_CONSTANTS.TORCH_DURATION_SEC
+        );
+        const torchDecay =
+          playerRef.current.difficulty === 'easy'
+            ? EXPLORATION_CONSTANTS.EASY_TORCH_DECAY
+            : EXPLORATION_CONSTANTS.NORMAL_TORCH_DECAY;
         if (curTorch > 0) {
           const nextTorch = Math.max(0, curTorch - torchDecay);
           const prevRatio = curTorch / maxTorch;
           const nextRatio = nextTorch / maxTorch;
-          if (prevRatio >= 0.3 && nextRatio < 0.3 && !torchLowWarnedRef.current) {
+          if (
+            prevRatio >= EXPLORATION_CONSTANTS.TORCH_LOW_RATIO &&
+            nextRatio < EXPLORATION_CONSTANTS.TORCH_LOW_RATIO &&
+            !torchLowWarnedRef.current
+          ) {
             torchLowWarnedRef.current = true;
             addLog('Bóng tối xung quanh dường như đang bao trùm lấy ngươi...');
           }
@@ -1065,7 +1705,10 @@ export default function App() {
             ...prev,
             torchTimer: Math.max(
               0,
-              (prev.torchTimer ?? 120) - (prev.difficulty === 'easy' ? 0.75 : 1)
+              (prev.torchTimer ?? EXPLORATION_CONSTANTS.TORCH_DURATION_SEC) -
+                (prev.difficulty === 'easy'
+                  ? EXPLORATION_CONSTANTS.EASY_TORCH_DECAY
+                  : EXPLORATION_CONSTANTS.NORMAL_TORCH_DECAY)
             ),
           }));
         } else {
@@ -1079,9 +1722,14 @@ export default function App() {
       }
 
       const sanityMult = getAmputationSanityMultiplier(playerRef.current);
-      const darknessMult = !room.isExterior && (torchDepletedNow || (playerRef.current.torchTimer ?? 120) <= 0) ? 1.5 : 1;
+      const darknessMult =
+        !room.isExterior &&
+        (torchDepletedNow ||
+          (playerRef.current.torchTimer ?? EXPLORATION_CONSTANTS.TORCH_DURATION_SEC) <= 0)
+          ? EXPLORATION_CONSTANTS.DARKNESS_SANITY_MULT
+          : 1;
       sanitySecondsRef.current += sanityMult * darknessMult;
-      if (sanitySecondsRef.current >= 30) {
+      if (sanitySecondsRef.current >= EXPLORATION_CONSTANTS.SANITY_DECAY_SECONDS) {
         sanitySecondsRef.current = 0;
         setPlayer((prev) => {
           const drain = prev.hunger >= 50 ? 2 : 1;
@@ -1103,7 +1751,7 @@ export default function App() {
             : 'Bóng tối đặc quánh và sự tĩnh lặng chết chóc đang bào mòn Lý Trí...'
         );
       }
-    }, 1000);
+    }, EXPLORATION_CONSTANTS.SANITY_TICK_MS);
     return () => window.clearInterval(timer);
   }, [screen, activeModal, interactionMenu, coinToss, logOverlayVisible, addLog]);
 
@@ -1121,6 +1769,11 @@ export default function App() {
       isResolvingTurnRef.current = false;
       setIsResolvingTurn(false);
       setActiveVfx(null);
+      setCombatNotice(null);
+      if (combatNoticeTimerRef.current) {
+        window.clearTimeout(combatNoticeTimerRef.current);
+        combatNoticeTimerRef.current = null;
+      }
       setScreenShakeMode('none');
       const roomId = worldRef.current.currentRoomId;
       if (opts?.defeatedEnemyUid) {
@@ -1158,15 +1811,16 @@ export default function App() {
       }
       isInputLockedRef.current = false;
       setIsInputLocked(false);
+      activeEnemyUidRef.current = null;
       setActiveEnemyUid(null);
-      setActiveActorIdx(0);
+      syncActiveActorIdx(0);
       setCombatMenuMode('main');
       setCombatFocusPhase('action');
       setPendingAction(null);
       setPendingSkillId(null);
       setScreen(opts?.nextScreen || 'playing');
     },
-    []
+    [syncActiveActorIdx]
   );
 
   // Room transition helper that updates Fog-of-War visitedRoomIds, resets old room enemy Chase states, and updates Area Banner
@@ -1214,12 +1868,7 @@ export default function App() {
         ...prev,
         mind: Math.min(prev.maxMind, prev.mind + prev.mindPerRoom),
       }));
-      setTrailCoords([
-        { x: Math.max(1, nextX - 1), y: nextY },
-        { x: Math.max(1, nextX - 2), y: nextY },
-        { x: Math.max(1, nextX - 2), y: Math.max(1, nextY - 1) },
-        { x: Math.max(1, nextX - 3), y: Math.max(1, nextY - 1) },
-      ]);
+      setTrailCoords(createDefaultTrailCoords(nextX, nextY));
       setAreaBannerText(nextRoom.name);
       setAreaBannerKey((k) => k + 1);
       setInteractionMenu(null);
@@ -1432,7 +2081,8 @@ export default function App() {
                 return;
               }
               const useWhite = (player.inventory.green_herb || 0) <= 0;
-              const secondBookId = CONFIG.BOOKS[1].id;
+              const secondBook = CONFIG.BOOKS[1];
+              const secondBookId = secondBook?.id;
               let gainedHolyAff = false;
               let learnedHolyLight = false;
               setPlayer((prev) => {
@@ -1445,7 +2095,7 @@ export default function App() {
                     learnedHolyLight = true;
                   }
                 }
-                if (!next.readBookIds.includes(secondBookId)) {
+                if (secondBookId && !next.readBookIds.includes(secondBookId)) {
                   next.readBookIds.push(secondBookId);
                 }
                 next.inventory.energy_stone = (next.inventory.energy_stone ?? next.energyStones - 2) + 2;
@@ -1459,7 +2109,7 @@ export default function App() {
               });
               setInteractionMenu(null);
               addLog(
-                `Giáo Sĩ Mù run rẩy trao hai viên Đá Linh Hồn Rỗng cùng [${CONFIG.BOOKS[1]?.title || 'Sổ Kiểm Kê Tế Lễ'}]${
+                `Giáo Sĩ Mù run rẩy trao hai viên Đá Linh Hồn Rỗng cùng [${secondBook?.title || 'Sổ Kiểm Kê Tế Lễ'}]${
                   learnedHolyLight ? ', thì thầm truyền lại [Ánh Sáng Thánh Mẫu]' : ''
                 }.${gainedHolyAff ? ' Một hơi ấm dịu nhẹ khẽ chạm vào trái tim bạn.' : ''}`
               );
@@ -1812,14 +2462,15 @@ export default function App() {
                   );
                   return;
                 }
-                const keyBookId = CONFIG.BOOKS[3].id;
+                const keyBookId = CONFIG.BOOKS[3]?.id;
                 setPlayer((prev) => ({
                   ...prev,
                   hp: prev.maxHp,
                   mind: prev.maxMind,
-                  readBookIds: prev.readBookIds.includes(keyBookId)
-                    ? prev.readBookIds
-                    : [...prev.readBookIds, keyBookId],
+                  readBookIds:
+                    keyBookId && !prev.readBookIds.includes(keyBookId)
+                      ? [...prev.readBookIds, keyBookId]
+                      : prev.readBookIds,
                   inventory: {
                     ...prev.inventory,
                     knight_ring: Math.max(0, (prev.inventory.knight_ring || 0) - 1),
@@ -1932,7 +2583,9 @@ export default function App() {
           choices.push({
             label: 'Lắng nghe lời giải mã cổ thư',
             onSelect: () => {
-              const loreBooks = CONFIG.BOOKS.slice(0, 4).map((b) => b.id);
+              const loreBooks = CONFIG.BOOKS.slice(0, 4)
+                .map((b) => b?.id)
+                .filter((id): id is string => Boolean(id));
               setPlayer((prev) => {
                 const next: PlayerState = JSON.parse(JSON.stringify(prev));
                 grantAffinityOnce(next, 'milestone_chronicler_void', 'primordialVoid', 1);
@@ -2792,16 +3445,10 @@ export default function App() {
         });
       }
 
-      if (!corpse.corpseDevoured) {
-        const hasDemonicPact = (player.affinities?.demonicPact || 0) >= 1;
+      const hasDemonicPact = (player.affinities?.demonicPact || 0) >= 1;
+      if (!corpse.corpseDevoured && hasDemonicPact) {
         corpseChoices.push({
-          label: hasDemonicPact
-            ? 'Nuốt Chửng cái xác (Khế Ước Huyết Quỷ)'
-            : 'Nuốt Chửng cái xác [Khóa: Cần Huyết Quỷ ≥ 1]',
-          muted: !hasDemonicPact,
-          hint: !hasDemonicPact
-            ? 'Bản năng phàm trần từ chối thịt ô uế — cần ký khế ước [Huyết Quỷ] tại Vòng Tròn Máu.'
-            : undefined,
+          label: 'Nuốt Chửng cái xác (Khế Ước Huyết Quỷ)',
           onSelect: () => {
             setInteractionMenu(null);
             const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
@@ -2840,10 +3487,9 @@ export default function App() {
 
       setInteractionMenu({
         title: `XÁC CỦA ${corpseName.toUpperCase()}`,
-        description:
-          (player.affinities?.demonicPact || 0) >= 1
-            ? 'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm, giải phẫu, niệm Chiêu Hồn Thuật hoặc Nuốt Chửng theo Khế Ước Huyết Quỷ.'
-            : 'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm hoặc dùng Cuộn Giải Phẫu Thực Địa (Nuốt Chửng bị khóa cho đến khi ký khế ước Huyết Quỷ ≥ 1).',
+        description: hasDemonicPact
+          ? 'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm, giải phẫu, niệm Chiêu Hồn Thuật hoặc Nuốt Chửng theo Khế Ước Huyết Quỷ.'
+          : 'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm hoặc dùng Cuộn Giải Phẫu Thực Địa.',
         selectedIndex: 0,
         choices: corpseChoices,
       });
@@ -2985,7 +3631,9 @@ export default function App() {
                       addLog(
                         'BỊ PHỤC KÍCH! Bóng đen lao vào xé rách màn đêm khi bạn vừa khép mắt!'
                       );
-                      startCombatWithEnemy(ambushEnemy, { ambushFirstStrike: true });
+                      if (ambushEnemy) {
+                        startCombatWithEnemy(ambushEnemy, { ambushFirstStrike: true });
+                      }
                     }
                   }
                 );
@@ -4105,6 +4753,45 @@ export default function App() {
         });
         return;
       }
+
+      // Disarm adjacent armed FLOOR_TRAP on [F] -> transitions sprite to sprung/closed state
+      if (
+        tile === TILE.FLOOR_TRAP &&
+        !room.lootedCoords.includes(coordKey) &&
+        Math.abs(dx) + Math.abs(dy) === 1
+      ) {
+        sfx.playSfx('ui_confirm');
+        setWorld((prev) => {
+          const curRoom = prev.rooms[room.id] || room;
+          if (curRoom.lootedCoords.includes(coordKey)) return prev;
+          return {
+            ...prev,
+            rooms: {
+              ...prev.rooms,
+              [room.id]: {
+                ...curRoom,
+                lootedCoords: [...curRoom.lootedCoords, coordKey],
+              },
+            },
+          };
+        });
+        addLog('Bạn cẩn thận gạt chốt sắt, kích hoạt cho Bẫy Chông bật đóng lại an toàn.');
+        setLogOverlayVisible(true);
+        return;
+      }
+    }
+
+    // Looted wooden crates retain their intact sprite; approaching and checking them reports empty
+    for (const [dx, dy] of searchOffsets) {
+      const cx = playerPos.x + dx;
+      const cy = playerPos.y + dy;
+      if (cy < 0 || cy >= roomH || cx < 0 || cx >= roomW) continue;
+      if (room.grid[cy][cx] === TILE.CRATE && room.lootedCoords.includes(`${cx},${cy}`)) {
+        sfx.playSfx('ui_move');
+        addLog('Thùng gỗ này trống rỗng, chẳng còn vật tư nào bên trong.');
+        setLogOverlayVisible(true);
+        return;
+      }
     }
 
     // Check parked dismissed companions waiting near Đài Cộng Hưởng (Manhattan <= 1)
@@ -4314,7 +5001,7 @@ export default function App() {
         setIsInputLocked(true);
         triggerCombat(tickResult.collidedEnemy);
       }
-    }, 400);
+    }, EXPLORATION_CONSTANTS.AI_TICK_MS);
 
     return () => window.clearInterval(tickId);
   }, [canRunAiTick, triggerCombat]);
@@ -4341,7 +5028,10 @@ export default function App() {
       const baseCooldown = getPlayerStepCooldownMs(player);
       const cooldown =
         shiftHeldRef.current && lostLegs < 2
-          ? Math.max(95, Math.round(baseCooldown * 0.48))
+          ? Math.max(
+              EXPLORATION_CONSTANTS.DASH_MIN_COOLDOWN_MS,
+              Math.round(baseCooldown * EXPLORATION_CONSTANTS.DASH_COOLDOWN_MULT)
+            )
           : baseCooldown;
       if (now - lastStepTime < cooldown) return;
 
@@ -4441,21 +5131,24 @@ export default function App() {
       let hungerGain = 0;
       if (player.difficulty === 'easy') {
         // Easy mode: 30% reduced hunger gain while moving (normal = 0.4/step -> easy = 0.28/step)
-        hungerStepAccumRef.current += 0.28;
+        hungerStepAccumRef.current += EXPLORATION_CONSTANTS.EASY_HUNGER_PER_STEP;
         if (hungerStepAccumRef.current >= 1) {
           hungerGain = Math.floor(hungerStepAccumRef.current);
           hungerStepAccumRef.current -= hungerGain;
         }
       } else {
-        hungerGain = nextSteps % 5 === 0 ? 2 : 0;
+        hungerGain =
+          nextSteps % EXPLORATION_CONSTANTS.NORMAL_HUNGER_STEP_MOD === 0
+            ? EXPLORATION_CONSTANTS.NORMAL_HUNGER_GAIN
+            : 0;
       }
       const nextHunger = Math.min(100, player.hunger + hungerGain);
       let nextHp = player.hp;
       let nextMind = player.mind;
       let nextCor = player.corruption;
 
-      if (nextHunger >= 80) {
-        nextHp = Math.max(0, nextHp - 3);
+      if (nextHunger >= EXPLORATION_CONSTANTS.STARVATION_THRESHOLD) {
+        nextHp = Math.max(0, nextHp - EXPLORATION_CONSTANTS.STARVATION_HP_LOSS);
         addLog('Cơn Đói Cực Hạn rút cạn 3 Sinh Lực mỗi bước chân!');
       }
 
@@ -4481,7 +5174,7 @@ export default function App() {
       }
 
       if (player.equippedBody === 'platinum_cuirass' && nextCor > 0) {
-        nextHp = Math.max(0, nextHp - 5);
+        nextHp = Math.max(0, nextHp - EXPLORATION_CONSTANTS.PLATINUM_CUIRASS_BURN_HP);
         addLog('Giáp Bạch Kim rực nóng thiêu đốt 5 Sinh Lực vì vết nhơ Tha Hóa trên người bạn!');
       }
 
@@ -4590,8 +5283,8 @@ export default function App() {
       if (isFloorTrapTriggered) {
         sfx.playSfx('hurt');
         setPlayer((prev) => {
-          const nextHp = Math.max(1, prev.hp - 22);
-          const nextMind = Math.max(0, prev.mind - 6);
+          const nextHp = Math.max(1, prev.hp - EXPLORATION_CONSTANTS.FLOOR_TRAP_HP_LOSS);
+          const nextMind = Math.max(0, prev.mind - EXPLORATION_CONSTANTS.FLOOR_TRAP_MIND_LOSS);
           return {
             ...prev,
             hp: nextHp,
@@ -4630,17 +5323,33 @@ export default function App() {
     ]
   );
 
-  // Execute sequential per-member combat action with dark-fantasy pacing (Hitstop + VFX + Sequential Ally/Enemy Beats)
+  // Execute sequential per-member combat action with dark-fantasy pacing (Hitstop + VFX + Sequential Ally/Enemy Beats).
+  // ASYNC STATE & TARGET TRACKING FIX:
+  // 1) Reads initial & ongoing state from `playerRef`, `worldRef`, `activeEnemyUidRef`, `activeActorIdxRef`, and
+  //    `selectedLimbIdRef` instead of closed-over React render snapshots so `await sleepCombatStep()` never reads stale state.
+  // 2) Applies functional state updates (`setPlayer(prev => ...)` / `setWorld(prev => ...)`) and mirrors `playerRef.current`
+  //    synchronously on every combat beat so concurrent or chained updates never clobber prior deltas.
+  // 3) Synchronizes `selectedLimbIdRef.current` immediately before attacks and re-routes to the nearest intact limb via
+  //    `resolveNearestValidLimbId` if a targeted limb is severed mid-turn.
   const runCombatTurn = useCallback(
     async (
       action: CombatActionType,
       opts?: { limbId?: string; skillId?: string; itemId?: string }
     ) => {
-      if (!activeCombatEnemy || isResolvingTurnRef.current) return;
+      if (isResolvingTurnRef.current) return;
+      const startRoomId = worldRef.current.currentRoomId;
+      const startSeed = worldRef.current.seed;
+      const startEnemyUid = activeEnemyUidRef.current;
+      const startEnemy = worldRef.current.rooms[startRoomId]?.enemies.find(
+        (e) => e.uid === startEnemyUid
+      );
+      if (!startEnemy) return;
+
       isResolvingTurnRef.current = true;
       setIsResolvingTurn(true);
       const turnRunId = combatAbortRef.current;
 
+      // Helper to apply combat step state functionally while keeping playerRef synchronized
       const syncCombatState = (
         pState: PlayerState,
         eState: MapEnemyInstance,
@@ -4650,23 +5359,31 @@ export default function App() {
         const fallenNow = pruneDeadCompanions(pState, extraFallenLogs);
         const mergedLogs = extraFallenLogs.length > 0 ? [...newLogs, ...extraFallenLogs] : newLogs;
         const permadeathNotices = mergedLogs.filter((l) => l.startsWith('['));
-        if (permadeathNotices.length > 0) {
-          for (const notice of permadeathNotices) addLog(notice);
-        }
+        for (const notice of permadeathNotices) addLog(notice);
         if (fallenNow.length > 0 || permadeathNotices.length > 0) {
           setSelectedInvMemberIdx((prevIdx) => (prevIdx <= pState.party.length ? prevIdx : 0));
-          setActiveActorIdx((prevActor) => (prevActor <= pState.party.length ? prevActor : 0));
+          setActiveActorIdx((prevActor) => {
+            const nextActor = prevActor <= pState.party.length ? prevActor : 0;
+            activeActorIdxRef.current = nextActor;
+            return nextActor;
+          });
         }
 
-        setPlayer(pState);
+        const nextPlayerSnapshot: PlayerState = JSON.parse(JSON.stringify(pState));
+        playerRef.current = nextPlayerSnapshot;
+        setPlayer((prev) => ({
+          ...prev,
+          ...nextPlayerSnapshot,
+        }));
+
         setWorld((prev) => {
-          const curRoom = prev.rooms[currentRoom.id];
+          const curRoom = prev.rooms[startRoomId];
           if (!curRoom) return prev;
           return {
             ...prev,
             rooms: {
               ...prev.rooms,
-              [currentRoom.id]: {
+              [startRoomId]: {
                 ...curRoom,
                 enemies: curRoom.enemies.map((e) => (e.uid === eState.uid ? eState : e)),
               },
@@ -4674,26 +5391,45 @@ export default function App() {
           };
         });
         if (mergedLogs.length > 0) {
-          setCombatLogs((prev) => [...mergedLogs.slice().reverse(), ...prev.slice(0, 18)]);
+          setCombatLogs((prev) => appendCombatLogEntries(prev, mergedLogs));
         }
       };
 
+      const syncLimbAfterStrike = (enemyState: MapEnemyInstance, preferredLimbId: string): string => {
+        const tpl = CONFIG.ENEMIES[enemyState.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+        const nextValidLimb = resolveNearestValidLimbId(enemyState, tpl, preferredLimbId);
+        if (nextValidLimb !== selectedLimbIdRef.current) {
+          syncSelectedLimbId(nextValidLimb);
+        }
+        return nextValidLimb;
+      };
+
       try {
-        let pCur = player;
-        let eCur = activeCombatEnemy;
-        let lastTargetLimb = opts?.limbId || selectedLimbId;
+        let pCur: PlayerState = JSON.parse(JSON.stringify(playerRef.current));
+        let eCur: MapEnemyInstance = JSON.parse(JSON.stringify(startEnemy));
+        const startActorIdx = activeActorIdxRef.current;
+        const initTpl = CONFIG.ENEMIES[eCur.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+
+        // Synchronize target limb ref immediately before executing the attack
+        let lastTargetLimb = resolveNearestValidLimbId(
+          eCur,
+          initTpl,
+          opts?.limbId || selectedLimbIdRef.current
+        );
+        syncSelectedLimbId(lastTargetLimb);
+
         let finalEndingTrigger: ReturnType<CombatEngine['executeActorTurn']>['endingTrigger'] = undefined;
         let fledBattle = false;
 
-        // 1. Execute action for current actor (activeActorIdx)
+        // 1. Execute action for current actor (startActorIdx)
         const outcome = combatEngineRef.current.executeActorTurn(
           pCur,
           eCur,
-          world.seed,
-          activeActorIdx,
+          startSeed,
+          startActorIdx,
           action,
-          selectedLimbId,
-          opts
+          lastTargetLimb,
+          { ...opts, limbId: lastTargetLimb }
         );
         pCur = outcome.updatedPlayer;
         eCur = outcome.updatedEnemy;
@@ -4701,16 +5437,23 @@ export default function App() {
         if (outcome.result.fledSuccess) fledBattle = true;
         if (outcome.endingTrigger) finalEndingTrigger = outcome.endingTrigger;
 
+        const isMissedAttack = Boolean(outcome.result.missed);
         const isOffensiveAction =
           action === 'ATTACK' ||
           action === 'SKILL' ||
           (action === 'ITEM' && (outcome.result.lastDealtDmg || 0) > 0);
-        if (isOffensiveAction) {
+        if (isMissedAttack) {
+          sfx.playSfx('miss');
+          triggerCombatNotice(
+            outcome.result.logs[0] || 'Đòn tấn công sượt qua mục tiêu!',
+            'miss'
+          );
+        } else if (isOffensiveAction) {
           sfx.playSfx(outcome.result.weaponCategory || 'unarmed');
           if (outcome.result.severedAnyLimb) sfx.playSfx('sever_limb');
           const isHeavyStrike =
             Boolean(outcome.result.wasCrit) ||
-            (outcome.result.lastDealtDmg || 0) > 500 ||
+            (outcome.result.lastDealtDmg || 0) > COMBAT_TIMING_MS.HEAVY_DMG_THRESHOLD ||
             outcome.result.weaponCategory === 'heavy_axe';
           triggerCombatVfx(
             outcome.result.weaponCategory || 'sword',
@@ -4738,37 +5481,36 @@ export default function App() {
         setPendingAction(null);
         setPendingSkillId(null);
 
-        // Advance reticle early if limb severed during actor strike
-        const initTargetAfter = eCur.limbs.find((l) => l.id === lastTargetLimb);
-        if (!initTargetAfter || initTargetAfter.hp <= 0) {
-          const nextIntact =
-            eCur.limbs.find((l) => l.id === 'torso' && l.hp > 0) ||
-            eCur.limbs.find((l) => l.hp > 0);
-          if (nextIntact) setSelectedLimbId(nextIntact.id);
-        } else if (lastTargetLimb && lastTargetLimb !== selectedLimbId) {
-          setSelectedLimbId(lastTargetLimb);
-        }
+        // Immediately advance & sync target reticle if limb was severed during strike
+        lastTargetLimb = syncLimbAfterStrike(eCur, lastTargetLimb);
 
         if (fledBattle) {
-          await sleepCombatStep(350);
+          await sleepCombatStep(COMBAT_TIMING_MS.FLEE_EXIT_DELAY);
           if (combatAbortRef.current !== turnRunId) return;
           handleCombatEnd({ fled: true });
-          addLog('Cả đội đã thoát khỏi cuộc giao tranh trong gang tấc.');
+          addLog(LOG_TEXT.FLED_COMBAT);
           return;
         }
 
         if (isOffensiveAction) {
           const fastOk = shiftHeldRef.current && !outcome.result.severedAnyLimb;
-          await sleepCombatStep(fastOk ? 250 : 660);
+          await sleepCombatStep(
+            fastOk ? COMBAT_TIMING_MS.OFFENSE_FAST_DELAY : COMBAT_TIMING_MS.OFFENSE_NORMAL_DELAY
+          );
         } else {
-          await sleepCombatStep(shiftHeldRef.current ? 200 : 340);
+          await sleepCombatStep(
+            shiftHeldRef.current ? COMBAT_TIMING_MS.UTILITY_FAST_DELAY : COMBAT_TIMING_MS.UTILITY_NORMAL_DELAY
+          );
         }
         if (combatAbortRef.current !== turnRunId) return;
 
-        // 2. If still in battle, sequentially resolve any panicking / stunned living allies following activeActorIdx
+        // Re-read latest playerRef after await in case non-turn state changed cleanly
+        pCur = JSON.parse(JSON.stringify(playerRef.current));
+
+        // 2. Sequentially resolve panicking / stunned living allies following startActorIdx
         let nextControllableActor: number | null = null;
         if (!finalEndingTrigger && !eCur.defeated) {
-          let probeIdx = activeActorIdx + 1;
+          let probeIdx = startActorIdx + 1;
           while (probeIdx <= pCur.party.length) {
             const ally = pCur.party[probeIdx - 1];
             if (!ally || ally.hp <= 0) {
@@ -4780,41 +5522,53 @@ export default function App() {
               nextControllableActor = probeIdx;
               break;
             }
-            setActiveActorIdx(probeIdx);
+            syncActiveActorIdx(probeIdx);
+            lastTargetLimb = syncLimbAfterStrike(eCur, lastTargetLimb);
             const autoOut = combatEngineRef.current.executeActorTurn(
               pCur,
               eCur,
-              world.seed,
+              startSeed,
               probeIdx,
               'ATTACK',
               lastTargetLimb
             );
             pCur = autoOut.updatedPlayer;
             eCur = autoOut.updatedEnemy;
-            if ((autoOut.result.lastDealtDmg || 0) > 0) {
+            if (autoOut.result.missed) {
+              sfx.playSfx('miss');
+              triggerCombatNotice(
+                autoOut.result.logs[0] || 'Đòn tấn công sượt qua mục tiêu!',
+                'miss'
+              );
+            } else if ((autoOut.result.lastDealtDmg || 0) > 0) {
               sfx.playSfx(autoOut.result.weaponCategory || 'unarmed');
               if (autoOut.result.severedAnyLimb) sfx.playSfx('sever_limb');
               triggerCombatVfx(
                 autoOut.result.weaponCategory || 'sword',
                 autoOut.result.vfxColor || '#e2e8f0',
-                Boolean(autoOut.result.wasCrit) || (autoOut.result.lastDealtDmg || 0) > 500
+                Boolean(autoOut.result.wasCrit) ||
+                  (autoOut.result.lastDealtDmg || 0) > COMBAT_TIMING_MS.HEAVY_DMG_THRESHOLD
               );
             }
             syncCombatState(pCur, eCur, autoOut.result.logs);
+            lastTargetLimb = syncLimbAfterStrike(eCur, autoOut.result.targetLimbId || lastTargetLimb);
             if (autoOut.endingTrigger) {
               finalEndingTrigger = autoOut.endingTrigger;
               break;
             }
             if (eCur.defeated) break;
             const autoFastOk = shiftHeldRef.current && !autoOut.result.severedAnyLimb;
-            await sleepCombatStep(autoFastOk ? 250 : 660);
+            await sleepCombatStep(
+              autoFastOk ? COMBAT_TIMING_MS.OFFENSE_FAST_DELAY : COMBAT_TIMING_MS.OFFENSE_NORMAL_DELAY
+            );
             if (combatAbortRef.current !== turnRunId) return;
+            pCur = JSON.parse(JSON.stringify(playerRef.current));
             probeIdx++;
           }
 
-          // 3. If no more sane allies remain in this round, resolve Enemy Round after rhythmic beat and wrap back to Actor 0
+          // 3. Resolve Enemy Round if no more sane allies remain in this round, then wrap to Actor 0
           if (nextControllableActor === null && !eCur.defeated && !finalEndingTrigger) {
-            const enemyRound = combatEngineRef.current.resolveEnemyRound(pCur, eCur, world.seed);
+            const enemyRound = combatEngineRef.current.resolveEnemyRound(pCur, eCur, startSeed);
             pCur = enemyRound.updatedPlayer;
             eCur = enemyRound.updatedEnemy;
             if (enemyRound.endingTrigger) finalEndingTrigger = enemyRound.endingTrigger;
@@ -4823,27 +5577,41 @@ export default function App() {
               triggerCombatVfx(
                 enemyRound.result.weaponCategory || 'unarmed',
                 enemyRound.result.vfxColor || '#dc2626',
-                Boolean(enemyRound.result.wasCrit) || (enemyRound.result.lastTakenDmg || 0) > 35
+                Boolean(enemyRound.result.wasCrit) ||
+                  (enemyRound.result.lastTakenDmg || 0) > COMBAT_TIMING_MS.ENEMY_HEAVY_DMG_THRESHOLD
+              );
+            } else if (enemyRound.result.enemyMissed) {
+              sfx.playSfx('miss');
+              triggerCombatNotice(
+                enemyRound.result.logs.find(
+                  (l) => l.includes('TRƯỢT') || l.includes('sượt qua')
+                ) || 'Bạn đã né được đòn tấn công!',
+                'evade'
               );
             }
             syncCombatState(pCur, eCur, enemyRound.result.logs);
             const enemyFastOk = shiftHeldRef.current && !enemyRound.result.pendingCoinFlip;
-            await sleepCombatStep(enemyFastOk ? 250 : 700);
+            await sleepCombatStep(
+              enemyFastOk ? COMBAT_TIMING_MS.ENEMY_FAST_DELAY : COMBAT_TIMING_MS.ENEMY_NORMAL_DELAY
+            );
             if (combatAbortRef.current !== turnRunId) return;
 
             if (enemyRound.result.pendingCoinFlip && !finalEndingTrigger) {
               const cf = enemyRound.result.pendingCoinFlip;
               const enemySnapshot: MapEnemyInstance = JSON.parse(JSON.stringify(eCur));
-              const playerSnapshot: PlayerState = JSON.parse(JSON.stringify(pCur));
+              const playerSnapshot: PlayerState = JSON.parse(JSON.stringify(playerRef.current));
               const tpl = CONFIG.ENEMIES[enemySnapshot.templateId] || CONFIG.ENEMIES.fanatic_zealot;
 
               triggerCoinToss(
                 `NÉ ĐÒN TỬ THẦN: ${cf.skillName.toUpperCase()}`,
                 cf.telegraphText,
                 (won) => {
+                  if (combatAbortRef.current !== turnRunId) return;
                   const pAfter: PlayerState = JSON.parse(JSON.stringify(playerSnapshot));
                   const eAfter: MapEnemyInstance = JSON.parse(JSON.stringify(enemySnapshot));
-                  const cfRng = new SeededRNG(`${world.seed}_combat_cf_${eAfter.uid}_${eAfter.turnCount}_${Date.now()}`);
+                  const cfRng = new SeededRNG(
+                    `${worldRef.current.seed}_combat_cf_${eAfter.uid}_${eAfter.turnCount}_${Date.now()}`
+                  );
                   const cfRes = resolveCombatCoinFlipOutcome(
                     pAfter,
                     eAfter,
@@ -4865,6 +5633,7 @@ export default function App() {
                     sfx.playSfx('ui_confirm');
                   }
                   syncCombatState(pAfter, eAfter, cfRes.logs);
+                  syncLimbAfterStrike(eAfter, selectedLimbIdRef.current);
                   if (cfRes.playerDefeated) {
                     const nextRandomSeed = generateRandomSeed();
                     setSeedInput(nextRandomSeed);
@@ -4878,7 +5647,7 @@ export default function App() {
                     handleCombatEnd({ nextScreen: 'ending' });
                     return;
                   }
-                  setActiveActorIdx(0);
+                  syncActiveActorIdx(0);
                   setCombatActionCursor(0);
                   setCombatFocusPhase('action');
                   setPendingAction(null);
@@ -4893,23 +5662,16 @@ export default function App() {
         }
 
         if (nextControllableActor !== null) {
-          setActiveActorIdx(nextControllableActor);
-          const nextAlly = nextControllableActor > 0 ? pCur.party[nextControllableActor - 1] || null : null;
+          syncActiveActorIdx(nextControllableActor);
+          const nextAlly =
+            nextControllableActor > 0 ? pCur.party[nextControllableActor - 1] || null : null;
           setCombatActionCursor(nextAlly && isPureTankSummon(nextAlly) ? 2 : 0);
           setCombatFocusPhase('action');
           setPendingAction(null);
           setPendingSkillId(null);
         }
 
-        const activeTargetAfter = eCur.limbs.find((l) => l.id === lastTargetLimb);
-        if (!activeTargetAfter || activeTargetAfter.hp <= 0) {
-          const nextIntact =
-            eCur.limbs.find((l) => l.id === 'torso' && l.hp > 0) ||
-            eCur.limbs.find((l) => l.hp > 0);
-          if (nextIntact) setSelectedLimbId(nextIntact.id);
-        } else if (lastTargetLimb && lastTargetLimb !== selectedLimbId) {
-          setSelectedLimbId(lastTargetLimb);
-        }
+        syncLimbAfterStrike(eCur, lastTargetLimb);
 
         if (finalEndingTrigger) {
           if (finalEndingTrigger.id === 'VAELIS_CLIMAX_CHOICE') {
@@ -4931,697 +5693,667 @@ export default function App() {
         }
       } catch (err) {
         console.error('Combat turn execution error:', err);
-        setCombatLogs((prev) => ['Đòn kỹ năng va chạm dữ dội trong bóng tối!',...prev]);
+        setCombatLogs((prev) => ['Đòn kỹ năng va chạm dữ dội trong bóng tối!', ...prev]);
       } finally {
         isResolvingTurnRef.current = false;
         setIsResolvingTurn(false);
       }
     },
     [
-      activeCombatEnemy,
-      activeActorIdx,
-      player,
-      world.seed,
-      selectedLimbId,
-      currentRoom,
       addLog,
       handleCombatEnd,
       generateRandomSeed,
       openNpcRpgDialogue,
       triggerCombatVfx,
+      triggerCombatNotice,
       sleepCombatStep,
       triggerCoinToss,
+      syncSelectedLimbId,
+      syncActiveActorIdx,
     ]
   );
 
-  // Keyboard Controls (Exploration + 100% Keyboard-Driven 2-Step Combat + Settings [ESC])
-  useEffect(() => {
-    const SELF_UTILITY_SKILLS = new Set([
-      'blessed_heal',
-      'divine_aegis',
-      'purification',
-      'blood_pact',
-      'veil_of_blindness',
-      'necromancy',
-    ]);
+  const handleLightTorchOrLamp = useCallback(() => {
+    const latestInv = playerRef.current.inventory;
+    const hasTorch = (latestInv.torch || 0) > 0;
+    const hasOilLamp = (latestInv.oil_lamp || 0) > 0;
+    if (hasTorch) {
+      setPlayer((prev) => ({
+        ...prev,
+        torchTimer: EXPLORATION_CONSTANTS.TORCH_DURATION_SEC,
+        torchMaxTimer: EXPLORATION_CONSTANTS.TORCH_DURATION_SEC,
+        inventory: {
+          ...prev.inventory,
+          torch: Math.max(0, (prev.inventory.torch || 0) - 1),
+        },
+      }));
+      torchLowWarnedRef.current = false;
+      sfx.playHealOrChime();
+      addLog(LOG_TEXT.TORCH_LIT);
+      setLogOverlayVisible(true);
+    } else if (hasOilLamp) {
+      setPlayer((prev) => ({
+        ...prev,
+        torchTimer: EXPLORATION_CONSTANTS.OIL_LAMP_DURATION_SEC,
+        torchMaxTimer: EXPLORATION_CONSTANTS.OIL_LAMP_DURATION_SEC,
+        inventory: {
+          ...prev.inventory,
+          oil_lamp: Math.max(0, (prev.inventory.oil_lamp || 0) - 1),
+        },
+      }));
+      torchLowWarnedRef.current = false;
+      sfx.playHealOrChime();
+      addLog(LOG_TEXT.OIL_LAMP_LIT);
+      setLogOverlayVisible(true);
+    } else {
+      sfx.playSfx('ui_move');
+      addLog(LOG_TEXT.NO_LIGHT_SOURCE);
+      setLogOverlayVisible(true);
+    }
+  }, [addLog]);
 
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
+  // KEYBOARD LISTENER OPTIMIZATION:
+  // A mutable ref holds the latest keyboard handler so fast-changing state (`playerPos`, `player`,
+  // `combatActionCursor`, `selectedLimbId`, etc.) never forces DOM listener detach/re-attach churn.
+  const keydownHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keydownHandlerRef.current = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
+
+    if (coinToss) {
+      const cKey = e.key.toLowerCase();
       if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
+        !coinToss.isPanicAuto &&
+        !coinToss.chosenSide &&
+        !coinToss.flipping &&
+        !coinToss.resultSide
       ) {
-        return;
-      }
-
-      if (coinToss) {
-        const cKey = e.key.toLowerCase();
-        if (
-          !coinToss.isPanicAuto &&
-          !coinToss.chosenSide &&
-          !coinToss.flipping &&
-          !coinToss.resultSide
-        ) {
-          if (cKey === 'a' || cKey === 'w' || e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCoinCursorSide('HEADS');
-            return;
-          }
-          if (cKey === 'd' || cKey === 's' || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCoinCursorSide('TAILS');
-            return;
-          }
-          if (e.key === '1' || e.code === 'Digit1') {
-            e.preventDefault();
-            setCoinCursorSide('HEADS');
-            handleChooseCoinSide('HEADS', e.shiftKey || shiftHeld);
-            return;
-          }
-          if (e.key === '2' || e.code === 'Digit2') {
-            e.preventDefault();
-            setCoinCursorSide('TAILS');
-            handleChooseCoinSide('TAILS', e.shiftKey || shiftHeld);
-            return;
-          }
-          if (e.key === 'Enter' || cKey === 'f' || e.key === ' ') {
-            e.preventDefault();
-            handleChooseCoinSide(coinCursorSide, e.shiftKey || shiftHeld);
-            return;
-          }
-        }
-        if (
-          coinToss.outcomeText !== null &&
-          (e.key === 'Enter' || cKey === 'f' || e.key === ' ')
-        ) {
-          e.preventDefault();
-          confirmCoinTossOutcome();
-          return;
-        }
-        return;
-      }
-
-      // Victory screen keyboard confirmation in Combat
-      if (screen === 'combat' && activeCombatEnemy?.defeated && !activeModal) {
-        if (e.key === 'Enter' || e.key === ' ' || e.key.toLowerCase() === 'f') {
-          e.preventDefault();
-          sfx.playSfx('ui_confirm');
-          handleCombatEnd({ defeatedEnemyUid: activeCombatEnemy.uid });
-        }
-        return;
-      }
-
-      // 100% Keyboard-Driven 2-Step Combat Controls
-      if (
-        screen === 'combat' &&
-        activeCombatEnemy &&
-        !activeCombatEnemy.defeated &&
-        !activeModal &&
-        !isResolvingTurnRef.current
-      ) {
-        const key = e.key.toLowerCase();
-        const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
-        const reticleMap = getLimbReticlePositions(tpl.spriteKey);
-        const aliveLimbs = activeCombatEnemy.limbs.filter(
-          (l) => l.hp > 0 && !activeCombatEnemy.severedLimbs.includes(l.id)
-        );
-        if (aliveLimbs.length === 0) return;
-
-        const targetableLimbs = aliveLimbs.filter(
-          (l) => canTargetEnemyLimb(activeCombatEnemy, tpl, l.id).allowed
-        );
-        const cycleLimbs = targetableLimbs.length > 0 ? targetableLimbs : aliveLimbs;
-
-        // Early-return guard: lock ALL combat keyboard input to limb targeting while pendingAction is active
-        if (pendingAction !== null) {
-          e.preventDefault();
-          if (
-            ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(
-              key
-            )
-          ) {
-            sfx.playSfx('ui_move');
-            const len = cycleLimbs.length;
-            if (len <= 1) {
-              setSelectedLimbId(cycleLimbs[0].id);
-              return;
-            }
-            const curIdx = Math.max(0, cycleLimbs.findIndex((l) => l.id === selectedLimbId));
-            if (
-              key === 'tab' ||
-              key === 'a' ||
-              key === 'arrowleft' ||
-              key === 'd' ||
-              key === 'arrowright'
-            ) {
-              const delta = key === 'a' || key === 'arrowleft' ? -1 : 1;
-              const nextLimb = cycleLimbs[(curIdx + delta + len) % len];
-              setSelectedLimbId(nextLimb.id);
-              return;
-            }
-            const getCoords = (id: string, i: number) =>
-              reticleMap[id] || { nx: 0.25 + (i % 2) * 0.5, ny: 0.25 + Math.floor(i / 2) * 0.22 };
-            const curPos = getCoords(cycleLimbs[curIdx].id, curIdx);
-            const dirY = key === 'w' || key === 'arrowup' ? -1 : 1;
-
-            let bestLimb = cycleLimbs[curIdx];
-            let bestScore = Infinity;
-            cycleLimbs.forEach((cand, idx) => {
-              if (cand.id === cycleLimbs[curIdx].id) return;
-              const p = getCoords(cand.id, idx);
-              const dx = p.nx - curPos.nx;
-              const dy = p.ny - curPos.ny;
-              const primaryProj = dy * dirY;
-              const ortho = Math.abs(dx);
-              if (primaryProj > 0.02) {
-                const score = primaryProj + ortho * 1.6;
-                if (score < bestScore) {
-                  bestScore = score;
-                  bestLimb = cand;
-                }
-              }
-            });
-
-            if (bestLimb.id === cycleLimbs[curIdx].id) {
-              bestLimb = cycleLimbs[(curIdx + dirY + len) % len];
-            }
-
-            setSelectedLimbId(bestLimb.id);
-            return;
-          }
-
-          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
-            const targetLimbId = cycleLimbs.some((l) => l.id === selectedLimbId)
-              ? selectedLimbId
-              : cycleLimbs[0].id;
-            const targetCheck = canTargetEnemyLimb(activeCombatEnemy, tpl, targetLimbId);
-            if (!targetCheck.allowed) {
-              sfx.playSfx('ui_move');
-              setCombatLogs((prev) => [
-                `${targetCheck.reason || 'Bộ phận này đang bị che chắn!'}`,
-                ...prev.slice(0, 18),
-              ]);
-              return;
-            }
-            if (pendingAction === 'SKILL' && pendingSkillId) {
-              const skId = pendingSkillId;
-              setPendingAction(null);
-              setPendingSkillId(null);
-              runCombatTurn('SKILL', { limbId: targetLimbId, skillId: skId });
-            } else {
-              setPendingAction(null);
-              setPendingSkillId(null);
-              runCombatTurn('ATTACK', { limbId: targetLimbId });
-            }
-            return;
-          }
-
-          if (key === 'escape' || e.key === 'Backspace' || (e.key === '1' && pendingAction === 'ATTACK')) {
-            sfx.playSfx('ui_move');
-            const wasSkill = pendingAction === 'SKILL';
-            setPendingAction(null);
-            setPendingSkillId(null);
-            if (wasSkill && (key === 'escape' || e.key === 'Backspace')) {
-              setCombatMenuMode('skills');
-              setCombatFocusPhase('skills_menu');
-            } else {
-              setCombatMenuMode('main');
-              setCombatFocusPhase('action');
-            }
-            return;
-          }
-
-          return; // block ALL other keys from leaking to the main command menu
-        }
-
-        const snapLimbFocus = () => {
-          const curTargetable = cycleLimbs.find((l) => l.id === selectedLimbId);
-          const nextLimb = curTargetable || cycleLimbs[0];
-          if (nextLimb) {
-            setSelectedLimbId(nextLimb.id);
-          }
-        };
-
-        const activeAllyForKeys = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
-        const isPureTankKeyTurn = Boolean(activeAllyForKeys && isPureTankSummon(activeAllyForKeys));
-        const activeSkillIds = activeAllyForKeys
-          ? getAllyAvailableSkills(activeAllyForKeys)
-          : Object.entries(player.skillLevels)
-              .filter(([id, lv]) => lv > 0 && id !== 'necromancy')
-              .map(([id]) => id);
-        const usableItems = Object.entries(player.inventory).filter(
-          ([itemId, count]) => count > 0 && CONFIG.ITEMS[itemId]?.combatUsable
-        );
-        const maxActionIdx = activeActorIdx === 0 ? 5 : 3;
-
-        // ESC / Backspace cancels Sub-Menus cleanly back to Action Dock
-        if (key === 'escape' || e.key === 'Backspace') {
+        if (cKey === 'a' || cKey === 'w' || e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
           e.preventDefault();
           sfx.playSfx('ui_move');
-          if (combatFocusPhase === 'skills_menu' || combatFocusPhase === 'items_menu') {
-            setCombatMenuMode('main');
-            setCombatFocusPhase('action');
-          }
+          setCoinCursorSide('HEADS');
           return;
         }
-
-        // Number Hotkeys 1..6 for fast action selection
-        if (e.key === '1' && !isPureTankKeyTurn) {
+        if (cKey === 'd' || cKey === 's' || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
           e.preventDefault();
-          (document.activeElement as HTMLElement | null)?.blur?.();
-          sfx.playSfx('ui_confirm');
-          setCombatActionCursor(0);
-          setPendingSkillId(null);
-          setCombatMenuMode('main');
-          setCombatFocusPhase('action');
-          snapLimbFocus();
-          setPendingAction('ATTACK');
+          sfx.playSfx('ui_move');
+          setCoinCursorSide('TAILS');
           return;
         }
-        if (e.key === '2' && activeSkillIds.length > 0) {
+        if (e.key === '1' || e.code === 'Digit1') {
           e.preventDefault();
-          sfx.playSfx('ui_confirm');
-          setCombatActionCursor(1);
-          setCombatSubCursor(0);
-          setCombatMenuMode('skills');
-          setCombatFocusPhase('skills_menu');
+          setCoinCursorSide('HEADS');
+          handleChooseCoinSide('HEADS', e.shiftKey || shiftHeld);
           return;
         }
-        if (e.key === '3') {
+        if (e.key === '2' || e.code === 'Digit2') {
           e.preventDefault();
-          setCombatActionCursor(2);
-          setCombatMenuMode('main');
-          setCombatFocusPhase('action');
-          runCombatTurn('GUARD');
+          setCoinCursorSide('TAILS');
+          handleChooseCoinSide('TAILS', e.shiftKey || shiftHeld);
           return;
         }
-        if (e.key === '4' && usableItems.length > 0) {
+        if (e.key === 'Enter' || cKey === 'f' || e.key === ' ') {
           e.preventDefault();
-          sfx.playSfx('ui_confirm');
-          setCombatActionCursor(3);
-          setCombatSubCursor(0);
-          setCombatMenuMode('items');
-          setCombatFocusPhase('items_menu');
+          handleChooseCoinSide(coinCursorSide, e.shiftKey || shiftHeld);
           return;
         }
-        if (e.key === '5' && activeActorIdx === 0) {
-          e.preventDefault();
-          setCombatActionCursor(4);
-          setCombatMenuMode('main');
-          setCombatFocusPhase('action');
-          runCombatTurn('TALK');
-          return;
-        }
-        if (e.key === '6' && activeActorIdx === 0) {
-          e.preventDefault();
-          setCombatActionCursor(5);
-          setCombatMenuMode('main');
-          setCombatFocusPhase('action');
-          runCombatTurn('FLEE');
-          return;
-        }
-
-        // PHASE 1: Left Action Dock Navigation (A/D/ArrowLeft/ArrowRight are strict no-ops; only ESC/Backspace cancels sub-menus)
-        if (combatFocusPhase === 'action') {
-          if (
-            key === 'a' ||
-            key === 'd' ||
-            e.key === 'ArrowLeft' ||
-            e.key === 'ArrowRight' ||
-            e.key === 'Tab'
-          ) {
-            e.preventDefault();
-            return;
-          }
-          if (key === 'w' || e.key === 'ArrowUp') {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCombatActionCursor((c) => {
-              let next = (c - 1 + maxActionIdx + 1) % (maxActionIdx + 1);
-              if (isPureTankKeyTurn && next === 0) next = maxActionIdx;
-              return next;
-            });
-            return;
-          }
-          if (key === 's' || e.key === 'ArrowDown') {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCombatActionCursor((c) => {
-              let next = (c + 1) % (maxActionIdx + 1);
-              if (isPureTankKeyTurn && next === 0) next = 1;
-              return next;
-            });
-            return;
-          }
-          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
-            e.preventDefault();
-            if (combatActionCursor === 0 && !isPureTankKeyTurn) {
-              (document.activeElement as HTMLElement | null)?.blur?.();
-              sfx.playSfx('ui_confirm');
-              setPendingSkillId(null);
-              setCombatMenuMode('main');
-              snapLimbFocus();
-              setPendingAction('ATTACK');
-            } else if (combatActionCursor === 1) {
-              if (activeSkillIds.length === 0) return;
-              sfx.playSfx('ui_confirm');
-              setCombatSubCursor(0);
-              setCombatMenuMode('skills');
-              setCombatFocusPhase('skills_menu');
-            } else if (combatActionCursor === 2) {
-              setCombatMenuMode('main');
-              runCombatTurn('GUARD');
-            } else if (combatActionCursor === 3) {
-              if (usableItems.length === 0) return;
-              sfx.playSfx('ui_confirm');
-              setCombatSubCursor(0);
-              setCombatMenuMode('items');
-              setCombatFocusPhase('items_menu');
-            } else if (combatActionCursor === 4 && activeActorIdx === 0) {
-              runCombatTurn('TALK');
-            } else if (combatActionCursor === 5 && activeActorIdx === 0) {
-              runCombatTurn('FLEE');
-            }
-            return;
-          }
-          return;
-        }
-
-        // PHASE 1B: Skills Sub-Menu Navigation
-        if (combatFocusPhase === 'skills_menu') {
-          if (activeSkillIds.length === 0) {
-            setCombatMenuMode('main');
-            setCombatFocusPhase('action');
-            return;
-          }
-          if (
-            key === 'w' ||
-            key === 'a' ||
-            e.key === 'ArrowUp' ||
-            e.key === 'ArrowLeft'
-          ) {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCombatSubCursor((c) => (c - 1 + activeSkillIds.length) % activeSkillIds.length);
-            return;
-          }
-          if (
-            key === 's' ||
-            key === 'd' ||
-            e.key === 'ArrowDown' ||
-            e.key === 'ArrowRight' ||
-            e.key === 'Tab'
-          ) {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCombatSubCursor((c) => (c + 1) % activeSkillIds.length);
-            return;
-          }
-          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
-            e.preventDefault();
-            const skId = activeSkillIds[combatSubCursor % activeSkillIds.length];
-            const sk = CONFIG.SKILLS.find((s) => s.id === skId);
-            if (!sk) return;
-            const curMind = activeAllyForKeys ? activeAllyForKeys.mind : player.mind;
-            const holyCheck = !activeAllyForKeys ? canUseHolySkill(player, sk) : { allowed: true };
-            const lockedByHoly = !holyCheck.allowed;
-            if (curMind < sk.mindCost || lockedByHoly) {
-              setCombatLogs((prev) => [
-                lockedByHoly? holyCheck.reason || HOLY_MOTHER_REFUSAL_MSG: 'Không đủ Lý Trí để thi triển kỹ năng này!',
-                ...prev.slice(0, 18),
-              ]);
-              return;
-            }
-            if (SELF_UTILITY_SKILLS.has(sk.id)) {
-              setCombatMenuMode('main');
-              setCombatFocusPhase('action');
-              runCombatTurn('SKILL', { limbId: selectedLimbId, skillId: sk.id });
-            } else {
-              (document.activeElement as HTMLElement | null)?.blur?.();
-              sfx.playSfx('ui_confirm');
-              setPendingSkillId(sk.id);
-              setCombatMenuMode('main');
-              setCombatFocusPhase('action');
-              snapLimbFocus();
-              setPendingAction('SKILL');
-            }
-            return;
-          }
-          return;
-        }
-
-        // PHASE 1C: Items Sub-Menu Navigation
-        if (combatFocusPhase === 'items_menu') {
-          if (usableItems.length === 0) {
-            setCombatMenuMode('main');
-            setCombatFocusPhase('action');
-            return;
-          }
-          if (
-            key === 'w' ||
-            key === 'a' ||
-            e.key === 'ArrowUp' ||
-            e.key === 'ArrowLeft'
-          ) {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCombatSubCursor((c) => (c - 1 + usableItems.length) % usableItems.length);
-            return;
-          }
-          if (
-            key === 's' ||
-            key === 'd' ||
-            e.key === 'ArrowDown' ||
-            e.key === 'ArrowRight' ||
-            e.key === 'Tab'
-          ) {
-            e.preventDefault();
-            sfx.playSfx('ui_move');
-            setCombatSubCursor((c) => (c + 1) % usableItems.length);
-            return;
-          }
-          if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
-            e.preventDefault();
-            const picked = usableItems[combatSubCursor % usableItems.length];
-            if (!picked) return;
-            setCombatMenuMode('main');
-            setCombatFocusPhase('action');
-            runCombatTurn('ITEM', { limbId: selectedLimbId, itemId: picked[0] });
-            return;
-          }
-          return;
-        }
+      }
+      if (
+        coinToss.outcomeText !== null &&
+        (e.key === 'Enter' || cKey === 'f' || e.key === ' ')
+      ) {
+        e.preventDefault();
+        confirmCoinTossOutcome();
         return;
       }
+      return;
+    }
 
-      if (screen === 'prologue') {
-        const pKey = e.key.toLowerCase();
-        if (prologueFrame < 2) {
-          if (e.key === 'Enter' || e.key === ' ' || pKey === 'f') {
-            e.preventDefault();
-            sfx.playSfx('ui_confirm');
-            setPrologueFrame((f) => (f + 1) as 0 | 1 | 2);
-          }
-          return;
-        }
-        if (prologueFrame === 2 && introStepOutcome) {
-          if (e.key === 'Enter' || e.key === ' ' || pKey === 'f') {
-            e.preventDefault();
-            confirmIntroOutcome();
-          }
-          return;
-        }
+    // Victory screen keyboard confirmation in Combat
+    if (screen === 'combat' && activeCombatEnemy?.defeated && !activeModal) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        sfx.playSfx('ui_confirm');
+        handleCombatEnd({ defeatedEnemyUid: activeCombatEnemy.uid });
       }
+      return;
+    }
 
-      if (e.key.toLowerCase() === 'escape' && showSkipProloguePrompt) {
-        setShowSkipProloguePrompt(false);
-        return;
-      }
-
-      if (e.key.toLowerCase() === 'escape' && titleSettingsOpen) {
-        setTitleSettingsOpen(false);
-        return;
-      }
-
-      if (e.key.toLowerCase() === 'escape' && titleSaveModalOpen) {
-        setTitleSaveModalOpen(false);
-        return;
-      }
-
-      if (e.key.toLowerCase() === 'escape' && screen === 'title' && titleStep === 'char_select') {
-        setTitleStep('menu');
-        return;
-      }
-
-      if (screen !== 'playing') return;
+    // 100% Keyboard-Driven 2-Step Combat Controls
+    if (
+      screen === 'combat' &&
+      activeCombatEnemy &&
+      !activeCombatEnemy.defeated &&
+      !activeModal &&
+      !isResolvingTurnRef.current
+    ) {
       const key = e.key.toLowerCase();
+      const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+      const reticleMap = getLimbReticlePositions(tpl.spriteKey);
+      const aliveLimbs = activeCombatEnemy.limbs.filter(
+        (l) => l.hp > 0 && !activeCombatEnemy.severedLimbs.includes(l.id)
+      );
+      if (aliveLimbs.length === 0) return;
 
-      if (key === 'escape') {
-        if (interactionMenu || logOverlayVisible) {
-          setInteractionMenu(null);
-          setLogOverlayVisible(false);
+      const targetableLimbs = aliveLimbs.filter(
+        (l) => canTargetEnemyLimb(activeCombatEnemy, tpl, l.id).allowed
+      );
+      const cycleLimbs = targetableLimbs.length > 0 ? targetableLimbs : aliveLimbs;
+
+      // Early-return guard: lock ALL combat keyboard input to limb targeting while pendingAction is active
+      if (pendingAction !== null) {
+        e.preventDefault();
+        if (
+          ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(
+            key
+          )
+        ) {
+          sfx.playSfx('ui_move');
+          const len = cycleLimbs.length;
+          if (len <= 1) {
+            if (cycleLimbs[0]) syncSelectedLimbId(cycleLimbs[0].id);
+            return;
+          }
+          const curIdx = Math.max(0, cycleLimbs.findIndex((l) => l.id === selectedLimbIdRef.current));
+          if (
+            key === 'tab' ||
+            key === 'a' ||
+            key === 'arrowleft' ||
+            key === 'd' ||
+            key === 'arrowright'
+          ) {
+            const delta = key === 'a' || key === 'arrowleft' ? -1 : 1;
+            const nextLimb = cycleLimbs[(curIdx + delta + len) % len];
+            if (nextLimb) syncSelectedLimbId(nextLimb.id);
+            return;
+          }
+          const getCoords = (id: string, i: number) =>
+            reticleMap[id] || { nx: 0.25 + (i % 2) * 0.5, ny: 0.25 + Math.floor(i / 2) * 0.22 };
+          const currentLimb = cycleLimbs[curIdx];
+          if (!currentLimb) return;
+          const curPos = getCoords(currentLimb.id, curIdx);
+          const dirY = key === 'w' || key === 'arrowup' ? -1 : 1;
+
+          let bestLimb = currentLimb;
+          let bestScore = Infinity;
+          cycleLimbs.forEach((cand, idx) => {
+            if (cand.id === currentLimb.id) return;
+            const p = getCoords(cand.id, idx);
+            const dx = p.nx - curPos.nx;
+            const dy = p.ny - curPos.ny;
+            const primaryProj = dy * dirY;
+            const ortho = Math.abs(dx);
+            if (primaryProj > 0.02) {
+              const score = primaryProj + ortho * 1.6;
+              if (score < bestScore) {
+                bestScore = score;
+                bestLimb = cand;
+              }
+            }
+          });
+
+          if (bestLimb.id === currentLimb.id) {
+            bestLimb = cycleLimbs[(curIdx + dirY + len) % len] || currentLimb;
+          }
+
+          syncSelectedLimbId(bestLimb.id);
           return;
         }
-        if (activeModal) {
-          setConfirmReturnTitle(false);
-          setActiveModal(null);
+
+        // Pressing Key 1 during pendingAction === 'ATTACK' confirms the attack on the targeted limb
+        const isConfirmAttackKey =
+          pendingAction === 'ATTACK' && (e.key === '1' || e.code === 'Digit1');
+        if (e.key === 'Enter' || e.key === ' ' || key === 'f' || isConfirmAttackKey) {
+          const targetLimbId = resolveNearestValidLimbId(
+            activeCombatEnemy,
+            tpl,
+            selectedLimbIdRef.current
+          );
+          const targetCheck = canTargetEnemyLimb(activeCombatEnemy, tpl, targetLimbId);
+          if (!targetCheck.allowed) {
+            sfx.playSfx('ui_move');
+            setCombatLogs((prev) =>
+              appendCombatLogEntries(prev, [
+                targetCheck.reason || LOG_TEXT.SHIELDED_LIMB_FALLBACK,
+              ])
+            );
+            return;
+          }
+          syncSelectedLimbId(targetLimbId);
+          if (pendingAction === 'SKILL' && pendingSkillId) {
+            const skId = pendingSkillId;
+            setPendingAction(null);
+            setPendingSkillId(null);
+            runCombatTurn('SKILL', { limbId: targetLimbId, skillId: skId });
+          } else {
+            setPendingAction(null);
+            setPendingSkillId(null);
+            runCombatTurn('ATTACK', { limbId: targetLimbId });
+          }
           return;
         }
-        setConfirmReturnTitle(false);
-        setActiveModal('settings');
+
+        if (key === 'escape' || e.key === 'Backspace') {
+          sfx.playSfx('ui_move');
+          const wasSkill = pendingAction === 'SKILL';
+          setPendingAction(null);
+          setPendingSkillId(null);
+          if (wasSkill) {
+            setCombatMenuMode('skills');
+            setCombatFocusPhase('skills_menu');
+          } else {
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+          }
+          return;
+        }
+
+        return; // block ALL other keys from leaking to the main command menu
+      }
+
+      const snapLimbFocus = () => {
+        const nextLimbId = resolveNearestValidLimbId(
+          activeCombatEnemy,
+          tpl,
+          selectedLimbIdRef.current
+        );
+        syncSelectedLimbId(nextLimbId);
+      };
+
+      const activeAllyForKeys = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
+      const isPureTankKeyTurn = Boolean(activeAllyForKeys && isPureTankSummon(activeAllyForKeys));
+      const activeSkillIds = activeAllyForKeys
+        ? getAllyAvailableSkills(activeAllyForKeys)
+        : Object.entries(player.skillLevels)
+            .filter(([id, lv]) => lv > 0 && id !== 'necromancy')
+            .map(([id]) => id);
+      const usableItems = Object.entries(player.inventory).filter(
+        ([itemId, count]) => count > 0 && CONFIG.ITEMS[itemId]?.combatUsable
+      );
+      const maxActionIdx = activeActorIdx === 0 ? 5 : 3;
+
+      // ESC / Backspace cancels Sub-Menus cleanly back to Action Dock
+      if (key === 'escape' || e.key === 'Backspace') {
+        e.preventDefault();
+        sfx.playSfx('ui_move');
+        if (combatFocusPhase === 'skills_menu' || combatFocusPhase === 'items_menu') {
+          setCombatMenuMode('main');
+          setCombatFocusPhase('action');
+        }
         return;
       }
 
-      if (interactionMenu && !activeModal) {
+      // Number Hotkeys 1..6 for fast action selection
+      if ((e.key === '1' || e.code === 'Digit1') && !isPureTankKeyTurn) {
+        e.preventDefault();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        sfx.playSfx('ui_confirm');
+        setCombatActionCursor(0);
+        setPendingSkillId(null);
+        setCombatMenuMode('main');
+        setCombatFocusPhase('action');
+        snapLimbFocus();
+        setPendingAction('ATTACK');
+        return;
+      }
+      if ((e.key === '2' || e.code === 'Digit2') && activeSkillIds.length > 0) {
+        e.preventDefault();
+        sfx.playSfx('ui_confirm');
+        setCombatActionCursor(1);
+        setCombatSubCursor(0);
+        setCombatMenuMode('skills');
+        setCombatFocusPhase('skills_menu');
+        return;
+      }
+      if (e.key === '3' || e.code === 'Digit3') {
+        e.preventDefault();
+        setCombatActionCursor(2);
+        setCombatMenuMode('main');
+        setCombatFocusPhase('action');
+        runCombatTurn('GUARD');
+        return;
+      }
+      if ((e.key === '4' || e.code === 'Digit4') && usableItems.length > 0) {
+        e.preventDefault();
+        sfx.playSfx('ui_confirm');
+        setCombatActionCursor(3);
+        setCombatSubCursor(0);
+        setCombatMenuMode('items');
+        setCombatFocusPhase('items_menu');
+        return;
+      }
+      if ((e.key === '5' || e.code === 'Digit5') && activeActorIdx === 0) {
+        e.preventDefault();
+        setCombatActionCursor(4);
+        setCombatMenuMode('main');
+        setCombatFocusPhase('action');
+        runCombatTurn('TALK');
+        return;
+      }
+      if ((e.key === '6' || e.code === 'Digit6') && activeActorIdx === 0) {
+        e.preventDefault();
+        setCombatActionCursor(5);
+        setCombatMenuMode('main');
+        setCombatFocusPhase('action');
+        runCombatTurn('FLEE');
+        return;
+      }
+
+      // PHASE 1: Left Action Dock Navigation (A/D/ArrowLeft/ArrowRight are strict no-ops; only ESC/Backspace cancels sub-menus)
+      if (combatFocusPhase === 'action') {
+        if (
+          key === 'a' ||
+          key === 'd' ||
+          e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight' ||
+          e.key === 'Tab'
+        ) {
+          e.preventDefault();
+          return;
+        }
         if (key === 'w' || e.key === 'ArrowUp') {
           e.preventDefault();
           sfx.playSfx('ui_move');
-          setInteractionMenu((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  selectedIndex:
-                    (prev.selectedIndex - 1 + prev.choices.length) % prev.choices.length,
-                }
-              : null
-          );
+          setCombatActionCursor((c) => {
+            let next = (c - 1 + maxActionIdx + 1) % (maxActionIdx + 1);
+            if (isPureTankKeyTurn && next === 0) next = maxActionIdx;
+            return next;
+          });
           return;
         }
         if (key === 's' || e.key === 'ArrowDown') {
           e.preventDefault();
           sfx.playSfx('ui_move');
-          setInteractionMenu((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  selectedIndex: (prev.selectedIndex + 1) % prev.choices.length,
-                }
-              : null
-          );
+          setCombatActionCursor((c) => {
+            let next = (c + 1) % (maxActionIdx + 1);
+            if (isPureTankKeyTurn && next === 0) next = 1;
+            return next;
+          });
           return;
         }
-        if (key === 'f' || key === 'e' || e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
+          e.preventDefault();
+          if (combatActionCursor === 0 && !isPureTankKeyTurn) {
+            (document.activeElement as HTMLElement | null)?.blur?.();
+            sfx.playSfx('ui_confirm');
+            setPendingSkillId(null);
+            setCombatMenuMode('main');
+            snapLimbFocus();
+            setPendingAction('ATTACK');
+          } else if (combatActionCursor === 1) {
+            if (activeSkillIds.length === 0) return;
+            sfx.playSfx('ui_confirm');
+            setCombatSubCursor(0);
+            setCombatMenuMode('skills');
+            setCombatFocusPhase('skills_menu');
+          } else if (combatActionCursor === 2) {
+            setCombatMenuMode('main');
+            runCombatTurn('GUARD');
+          } else if (combatActionCursor === 3) {
+            if (usableItems.length === 0) return;
+            sfx.playSfx('ui_confirm');
+            setCombatSubCursor(0);
+            setCombatMenuMode('items');
+            setCombatFocusPhase('items_menu');
+          } else if (combatActionCursor === 4 && activeActorIdx === 0) {
+            runCombatTurn('TALK');
+          } else if (combatActionCursor === 5 && activeActorIdx === 0) {
+            runCombatTurn('FLEE');
+          }
+          return;
+        }
+        return;
+      }
+
+      // PHASE 1B: Skills Sub-Menu Navigation
+      if (combatFocusPhase === 'skills_menu') {
+        if (activeSkillIds.length === 0) {
+          setCombatMenuMode('main');
+          setCombatFocusPhase('action');
+          return;
+        }
+        if (key === 'w' || key === 'a' || e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          sfx.playSfx('ui_move');
+          setCombatSubCursor((c) => (c - 1 + activeSkillIds.length) % activeSkillIds.length);
+          return;
+        }
+        if (
+          key === 's' ||
+          key === 'd' ||
+          e.key === 'ArrowDown' ||
+          e.key === 'ArrowRight' ||
+          e.key === 'Tab'
+        ) {
+          e.preventDefault();
+          sfx.playSfx('ui_move');
+          setCombatSubCursor((c) => (c + 1) % activeSkillIds.length);
+          return;
+        }
+        if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
+          e.preventDefault();
+          const skId = activeSkillIds[combatSubCursor % activeSkillIds.length];
+          const sk = CONFIG.SKILLS.find((s) => s.id === skId);
+          if (!sk) return;
+          const curMind = activeAllyForKeys ? activeAllyForKeys.mind : player.mind;
+          const holyCheck = !activeAllyForKeys ? canUseHolySkill(player, sk) : { allowed: true };
+          const lockedByHoly = !holyCheck.allowed;
+          if (curMind < sk.mindCost || lockedByHoly) {
+            setCombatLogs((prev) =>
+              appendCombatLogEntries(prev, [
+                lockedByHoly
+                  ? holyCheck.reason || HOLY_MOTHER_REFUSAL_MSG
+                  : LOG_TEXT.NO_ENOUGH_MIND,
+              ])
+            );
+            return;
+          }
+          if (SELF_UTILITY_SKILLS.has(sk.id)) {
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+            runCombatTurn('SKILL', { limbId: selectedLimbIdRef.current, skillId: sk.id });
+          } else {
+            (document.activeElement as HTMLElement | null)?.blur?.();
+            sfx.playSfx('ui_confirm');
+            setPendingSkillId(sk.id);
+            setCombatMenuMode('main');
+            setCombatFocusPhase('action');
+            snapLimbFocus();
+            setPendingAction('SKILL');
+          }
+          return;
+        }
+        return;
+      }
+
+      // PHASE 1C: Items Sub-Menu Navigation
+      if (combatFocusPhase === 'items_menu') {
+        if (usableItems.length === 0) {
+          setCombatMenuMode('main');
+          setCombatFocusPhase('action');
+          return;
+        }
+        if (key === 'w' || key === 'a' || e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          sfx.playSfx('ui_move');
+          setCombatSubCursor((c) => (c - 1 + usableItems.length) % usableItems.length);
+          return;
+        }
+        if (
+          key === 's' ||
+          key === 'd' ||
+          e.key === 'ArrowDown' ||
+          e.key === 'ArrowRight' ||
+          e.key === 'Tab'
+        ) {
+          e.preventDefault();
+          sfx.playSfx('ui_move');
+          setCombatSubCursor((c) => (c + 1) % usableItems.length);
+          return;
+        }
+        if (e.key === 'Enter' || e.key === ' ' || key === 'f') {
+          e.preventDefault();
+          const picked = usableItems[combatSubCursor % usableItems.length];
+          if (!picked) return;
+          setCombatMenuMode('main');
+          setCombatFocusPhase('action');
+          runCombatTurn('ITEM', { limbId: selectedLimbIdRef.current, itemId: picked[0] });
+          return;
+        }
+        return;
+      }
+      return;
+    }
+
+    if (screen === 'prologue') {
+      const pKey = e.key.toLowerCase();
+      if (prologueFrame < 2) {
+        if (e.key === 'Enter' || e.key === ' ' || pKey === 'f') {
           e.preventDefault();
           sfx.playSfx('ui_confirm');
-          const chosen = interactionMenu.choices[interactionMenu.selectedIndex];
-          if (chosen) chosen.onSelect();
-          return;
+          setPrologueFrame((f) => (f + 1) as 0 | 1 | 2);
         }
         return;
       }
+      if (prologueFrame === 2 && introStepOutcome) {
+        if (e.key === 'Enter' || e.key === ' ' || pKey === 'f') {
+          e.preventDefault();
+          confirmIntroOutcome();
+        }
+        return;
+      }
+    }
 
-      if (key === 'i') {
-        setActiveModal((m) => (m === 'inventory' ? null : 'inventory'));
-        return;
-      }
-      if (key === 'l') {
-        setActiveModal((m) => (m === 'lore' ? null : 'lore'));
-        return;
-      }
-      if (e.key === '?' || e.key === '/') {
-        e.preventDefault();
-        setActiveModal((m) => (m === 'guide' ? null : 'guide'));
-        return;
-      }
-      if (activeModal) return;
+    if (e.key.toLowerCase() === 'escape' && showSkipProloguePrompt) {
+      setShowSkipProloguePrompt(false);
+      return;
+    }
 
+    if (e.key.toLowerCase() === 'escape' && titleSettingsOpen) {
+      setTitleSettingsOpen(false);
+      return;
+    }
+
+    if (e.key.toLowerCase() === 'escape' && titleSaveModalOpen) {
+      setTitleSaveModalOpen(false);
+      return;
+    }
+
+    if (e.key.toLowerCase() === 'escape' && screen === 'title' && titleStep === 'char_select') {
+      setTitleStep('menu');
+      return;
+    }
+
+    if (screen !== 'playing') return;
+    const key = e.key.toLowerCase();
+
+    if (key === 'escape') {
+      if (interactionMenu || logOverlayVisible) {
+        setInteractionMenu(null);
+        setLogOverlayVisible(false);
+        return;
+      }
+      if (activeModal) {
+        setConfirmReturnTitle(false);
+        setActiveModal(null);
+        return;
+      }
+      setConfirmReturnTitle(false);
+      setActiveModal('settings');
+      return;
+    }
+
+    if (interactionMenu && !activeModal) {
       if (key === 'w' || e.key === 'ArrowUp') {
         e.preventDefault();
-        attemptMove(0, -1);
-      } else if (key === 's' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        attemptMove(0, 1);
-      } else if (key === 'a' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-        attemptMove(-1, 0);
-      } else if (key === 'd' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        attemptMove(1, 0);
-      } else if (key === 'f' || key === 'e' || e.key === ' ') {
-        e.preventDefault();
-        handleTileInteraction();
-      } else if (key === 'b') {
-        e.preventDefault();
-        promptCrackedWallExplosion();
-      } else if (key === 't') {
-        e.preventDefault();
-        const hasTorch = (player.inventory.torch || 0) > 0;
-        const hasOilLamp = (player.inventory.oil_lamp || 0) > 0;
-        if (hasTorch) {
-          setPlayer((prev) => ({
-            ...prev,
-            torchTimer: 120,
-            torchMaxTimer: 120,
-            inventory: {
-              ...prev.inventory,
-              torch: Math.max(0, (prev.inventory.torch || 0) - 1),
-            },
-          }));
-          torchLowWarnedRef.current = false;
-          sfx.playHealOrChime();
-          addLog('Bạn châm ngọn đuốc mới, ánh lửa bập bùng đẩy lùi bóng tối.');
-          setLogOverlayVisible(true);
-        } else if (hasOilLamp) {
-          setPlayer((prev) => ({
-            ...prev,
-            torchTimer: 240,
-            torchMaxTimer: 240,
-            inventory: {
-              ...prev.inventory,
-              oil_lamp: Math.max(0, (prev.inventory.oil_lamp || 0) - 1),
-            },
-          }));
-          torchLowWarnedRef.current = false;
-          sfx.playHealOrChime();
-          addLog('Bạn châm lửa Đèn Dầu Cổ, ánh sáng ổn định đẩy lùi bóng tối đặc quánh.');
-          setLogOverlayVisible(true);
-        } else {
-          sfx.playSfx('ui_move');
-          addLog('Trong hành trang không còn Đuốc hay Đèn Dầu nào!');
-          setLogOverlayVisible(true);
-        }
+        sfx.playSfx('ui_move');
+        setInteractionMenu((prev) =>
+          prev
+            ? {
+                ...prev,
+                selectedIndex:
+                  (prev.selectedIndex - 1 + prev.choices.length) % prev.choices.length,
+              }
+            : null
+        );
+        return;
       }
-    };
+      if (key === 's' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        sfx.playSfx('ui_move');
+        setInteractionMenu((prev) =>
+          prev
+            ? {
+                ...prev,
+                selectedIndex: (prev.selectedIndex + 1) % prev.choices.length,
+              }
+            : null
+        );
+        return;
+      }
+      if (key === 'f' || key === 'e' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        sfx.playSfx('ui_confirm');
+        const chosen = interactionMenu.choices[interactionMenu.selectedIndex];
+        if (chosen) chosen.onSelect();
+        return;
+      }
+      return;
+    }
 
+    if (key === 'i') {
+      setActiveModal((m) => (m === 'inventory' ? null : 'inventory'));
+      return;
+    }
+    if (key === 'l') {
+      setActiveModal((m) => (m === 'lore' ? null : 'lore'));
+      return;
+    }
+    if (e.key === '?' || e.key === '/') {
+      e.preventDefault();
+      setActiveModal((m) => (m === 'guide' ? null : 'guide'));
+      return;
+    }
+    if (activeModal) return;
+
+    if (key === 'w' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      attemptMove(0, -1);
+    } else if (key === 's' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      attemptMove(0, 1);
+    } else if (key === 'a' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      attemptMove(-1, 0);
+    } else if (key === 'd' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      attemptMove(1, 0);
+    } else if (key === 'f' || key === 'e' || e.key === ' ') {
+      e.preventDefault();
+      handleTileInteraction();
+    } else if (key === 'b') {
+      e.preventDefault();
+      promptCrackedWallExplosion();
+    } else if (key === 't') {
+      e.preventDefault();
+      handleLightTorchOrLamp();
+    }
+  };
+
+  // Bind global keydown listener exactly once to avoid re-binding on every render/tick
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => keydownHandlerRef.current(e);
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    screen,
-    prologueFrame,
-    introStepOutcome,
-    confirmIntroOutcome,
-    activeCombatEnemy,
-    activeModal,
-    activeActorIdx,
-    player,
-    combatFocusPhase,
-    combatActionCursor,
-    combatSubCursor,
-    pendingAction,
-    pendingSkillId,
-    titleSaveModalOpen,
-    titleSettingsOpen,
-    titleStep,
-    showSkipProloguePrompt,
-    interactionMenu,
-    logOverlayVisible,
-    coinToss,
-    coinCursorSide,
-    shiftHeld,
-    handleChooseCoinSide,
-    confirmCoinTossOutcome,
-    selectedLimbId,
-    attemptMove,
-    handleTileInteraction,
-    handleCombatEnd,
-    promptCrackedWallExplosion,
-    runCombatTurn,
-  ]);
+  }, []);
 
   // Delta-Time Driven RequestAnimationFrame Combat Loop (Particles, Eased Slash Arcs, Screen Shake, Per-Limb Breathing)
   useEffect(() => {
@@ -5640,8 +6372,8 @@ export default function App() {
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          const w = 640;
-          const h = 440;
+          const w = CANVAS_STAGE_DIMS.WIDTH;
+          const h = CANVAS_STAGE_DIMS.HEIGHT;
           const scaleX = canvas.width / w;
           const scaleY = canvas.height / h;
 
@@ -5674,22 +6406,9 @@ export default function App() {
           }
           const animState = engine.getStageAnimState();
 
-          const enemyW =
-            tpl.spriteScale === '3x3'
-              ? 500
-              : tpl.spriteScale === '2x3'
-              ? 465
-              : tpl.spriteScale === '2x2'
-              ? 425
-              : 375;
-          const enemyH =
-            tpl.spriteScale === '3x3'
-              ? 430
-              : tpl.spriteScale === '2x3'
-              ? 420
-              : tpl.spriteScale === '2x2'
-              ? 405
-              : 395;
+          const scaleDims = CANVAS_STAGE_DIMS.ENEMY_BY_SCALE[tpl.spriteScale];
+          const enemyW = scaleDims.w;
+          const enemyH = scaleDims.h;
           const enemyX = w * 0.5 - enemyW * 0.5;
           const enemyY = h * 0.015;
 
@@ -5727,7 +6446,9 @@ export default function App() {
           // Render Eased Blade Slash Arcs & Physics Particles (gravity = 0.5)
           engine.renderCanvasEffects(ctx);
 
-          // 3. Foreground Party Back-Sprites (High-Res Transparent PNG Back-Sprite or Smooth Dark Gothic Canvas fallback)
+          // 3. Foreground Party Back-Sprites (read via refs so RAF loop avoids restarting on stat ticks)
+          const livePlayer = playerRef.current;
+          const liveActorIdx = activeActorIdxRef.current;
           const partyShakeX = animState === 'playerHit' ? Math.sin(now * 0.08) * 10 : 0;
           const livingSprites: Array<{
             spriteKey: string;
@@ -5735,11 +6456,11 @@ export default function App() {
             actorIdx: number;
           }> = [
             {
-              spriteKey: player.classId,
-              arms: { leftArm: player.limbs.leftArm, rightArm: player.limbs.rightArm },
+              spriteKey: livePlayer.classId,
+              arms: { leftArm: livePlayer.limbs.leftArm, rightArm: livePlayer.limbs.rightArm },
               actorIdx: 0,
             },
-            ...player.party
+            ...livePlayer.party
               .map((ally, i) => ({ ally, actorIdx: i + 1 }))
               .filter(({ ally }) => ally.hp > 0)
               .map(({ ally, actorIdx }) => ({
@@ -5762,7 +6483,7 @@ export default function App() {
           livingSprites.forEach((member, slotIdx) => {
             const bx = w * (xNorms[slotIdx] ?? 0.14) + partyShakeX;
             const by = h * (slotIdx === 0 ? 0.54 : 0.56);
-            if (member.actorIdx === activeActorIdx) {
+            if (member.actorIdx === liveActorIdx) {
               ctx.save();
               ctx.strokeStyle = 'rgba(251, 191, 36, 0.78)';
               ctx.lineWidth = 2.5;
@@ -5780,7 +6501,7 @@ export default function App() {
               spriteScaleW,
               spriteScaleH,
               member.arms,
-              animState === 'playerAttack' && member.actorIdx === activeActorIdx,
+              animState === 'playerAttack' && member.actorIdx === liveActorIdx,
               animState === 'playerHit',
               currentRoom.floor,
               nowSec,
@@ -5811,14 +6532,17 @@ export default function App() {
             ctx.restore();
           }
 
-          // 4. Render Floating Combat Damage Numbers with smooth delta-time fade
+          // 4. Render Floating Combat Damage Numbers / Miss Callouts with smooth delta-time fade
           for (const ft of engine.floatingTexts) {
             const alpha = Math.max(0, Math.min(1, ft.lifeMs / ft.maxLifeMs));
             ctx.save();
             ctx.globalAlpha = alpha;
-            ctx.font = "bold 19px 'Noto Serif', serif";
-            ctx.fillStyle = '#000000';
-            ctx.fillText(ft.text, ft.x + 2, ft.y + 2);
+            ctx.font = "bold 20px 'Noto Serif', serif";
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
+            ctx.strokeText(ft.text, ft.x, ft.y);
             ctx.fillStyle = ft.color;
             ctx.fillText(ft.text, ft.x, ft.y);
             ctx.restore();
@@ -5839,8 +6563,6 @@ export default function App() {
     currentRoom.floor,
     currentRoom.id,
     currentRoom.isExterior,
-    player,
-    activeActorIdx,
   ]);
 
   const renderCoinTossModal = () => (
@@ -5960,6 +6682,7 @@ export default function App() {
         player={player}
         combatLogs={combatLogs}
         activeVfx={activeVfx}
+        combatNotice={combatNotice}
         screenShakeMode={screenShakeMode}
         isResolvingTurn={isResolvingTurn}
         selectedLimbId={selectedLimbId}
@@ -5972,18 +6695,20 @@ export default function App() {
         pendingSkillId={pendingSkillId}
         coinTossNode={renderCoinTossModal()}
         onHoverLimb={(limbId) => {
-          if (isResolvingTurn || activeCombatEnemy.defeated) return;
-          setSelectedLimbId(limbId);
+          if (isResolvingTurnRef.current || activeCombatEnemy.defeated) return;
+          syncSelectedLimbId(limbId);
         }}
         onClickLimb={(limbId) => {
-          if (isResolvingTurn || activeCombatEnemy.defeated) return;
+          if (isResolvingTurnRef.current || activeCombatEnemy.defeated) return;
           const activeAllyClick = activeActorIdx > 0 ? player.party[activeActorIdx - 1] || null : null;
           if (pendingAction === null && activeAllyClick && isPureTankSummon(activeAllyClick)) {
             return;
           }
           (document.activeElement as HTMLElement | null)?.blur?.();
-          setSelectedLimbId(limbId);
+          const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
           if (pendingAction === null) {
+            const validLimbId = resolveNearestValidLimbId(activeCombatEnemy, tpl, limbId);
+            syncSelectedLimbId(validLimbId);
             sfx.playSfx('ui_confirm');
             setCombatMenuMode('main');
             setCombatFocusPhase('action');
@@ -5991,16 +6716,17 @@ export default function App() {
             setPendingAction('ATTACK');
             return;
           }
-          const tpl = CONFIG.ENEMIES[activeCombatEnemy.templateId] || CONFIG.ENEMIES.fanatic_zealot;
           const targetCheck = canTargetEnemyLimb(activeCombatEnemy, tpl, limbId);
           if (!targetCheck.allowed) {
             sfx.playSfx('ui_move');
-            setCombatLogs((prev) => [
-              `${targetCheck.reason || 'Bộ phận này đang bị che chắn!'}`,
-              ...prev.slice(0, 18),
-            ]);
+            setCombatLogs((prev) =>
+              appendCombatLogEntries(prev, [
+                targetCheck.reason || LOG_TEXT.SHIELDED_LIMB_FALLBACK,
+              ])
+            );
             return;
           }
+          syncSelectedLimbId(limbId);
           if (pendingAction === 'SKILL' && pendingSkillId) {
             const skId = pendingSkillId;
             setPendingAction(null);
@@ -6020,158 +6746,34 @@ export default function App() {
   // ============================================================================
   // RENDER: EXPLORATION MODE (PLAYING)
   // ============================================================================
-  const computedStats = getComputedPlayerStats(player);
-
   return (
     <div className="h-screen w-screen bg-[#070609] text-[#e7dcc8] flex flex-col overflow-hidden select-none">
-      {/* Minimalist Gothic Top Status Bar */}
-      <header className="bg-[#0d0b0f] border-b border-[#3a3a3a] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <div
-            className={`w-36 sm:w-44 h-2.5 overflow-hidden border ${
-              player.corruption >= 60
-                ? 'bg-[#170b1c] border-[#8b0000]'
-                : player.corruption > 0
-                ? 'bg-[#1c0d12] border-[#8b0000]'
-                : 'bg-[#0e1410] border-[#3a3a3a]'
-            }`}
-          >
-            <div
-              className="h-full transition-all duration-300"
-              style={{
-                width: `${Math.max(10, Math.min(100, player.corruption))}%`,
-                backgroundColor: '#2d4530',
-                backgroundImage:
-                  player.corruption <= 0
-                    ? 'none'
-                    : 'linear-gradient(90deg, #2d4530 0%, #8b0000 55%, #5b2e6e 100%)',
-                backgroundSize: '176px 100%',
-              }}
-            />
-          </div>
-          {!currentRoom.isExterior && (() => {
-            const tCur = player.torchTimer ?? 120;
-            const tMax = Math.max(1, player.torchMaxTimer ?? 120);
-            const tPct = Math.round((tCur / tMax) * 100);
-            return (
-              <button
-                type="button"
-                onClick={() => {
-                  const hasTorch = (player.inventory.torch || 0) > 0;
-                  const hasOilLamp = (player.inventory.oil_lamp || 0) > 0;
-                  if (hasTorch) {
-                    setPlayer((prev) => ({
-                      ...prev,
-                      torchTimer: 120,
-                      torchMaxTimer: 120,
-                      inventory: {
-                        ...prev.inventory,
-                        torch: Math.max(0, (prev.inventory.torch || 0) - 1),
-                      },
-                    }));
-                    torchLowWarnedRef.current = false;
-                    sfx.playHealOrChime();
-                    addLog('Bạn châm ngọn đuốc mới, ánh lửa bập bùng đẩy lùi bóng tối.');
-                    setLogOverlayVisible(true);
-                  } else if (hasOilLamp) {
-                    setPlayer((prev) => ({
-                      ...prev,
-                      torchTimer: 240,
-                      torchMaxTimer: 240,
-                      inventory: {
-                        ...prev.inventory,
-                        oil_lamp: Math.max(0, (prev.inventory.oil_lamp || 0) - 1),
-                      },
-                    }));
-                    torchLowWarnedRef.current = false;
-                    sfx.playHealOrChime();
-                    addLog('Bạn châm lửa Đèn Dầu Cổ, ánh sáng ổn định đẩy lùi bóng tối đặc quánh.');
-                    setLogOverlayVisible(true);
-                  } else {
-                    sfx.playSfx('ui_move');
-                    addLog('Trong hành trang không còn Đuốc hay Đèn Dầu nào!');
-                    setLogOverlayVisible(true);
-                  }
-                }}
-                title="Nhiên liệu ánh sáng — Bấm [T] hoặc nhấp để thắp nhanh Đuốc Sáng / Đèn Dầu"
-                className={`px-2 py-0.5 border font-mono text-xs leading-none flex items-center gap-1 cursor-pointer transition-opacity hover:opacity-90 ${
-                  tCur <= 0
-                    ? 'bg-[#1a090c] border-[#8b0000] text-[#c96b6b] animate-pulse'
-                    : tPct < 30
-                    ? 'bg-[#241608] border-[#d97706] text-[#fbbf24]'
-                    : 'bg-[#17120c] border-[#5e4b30] text-[#dfd2b4]'
-                }`}
-              >
-                {tCur <= 0 ? (
-                  <span>[TẮT ĐUỐC] [T]</span>
-                ) : (
-                  <>
-                    <Flame className="w-3 h-3 text-[#c5a059] shrink-0" />
-                    <span>[ĐUỐC {tPct}%] [T]</span>
-                  </>
-                )}
-              </button>
-            );
-          })()}
-          {(isPlayerPanicking(player) || player.party.some((a) => a.hp > 0 && a.mind < 30)) && (
-            <span className="px-2 py-0.5 bg-[#2e0b0f] border border-[#8b0000] text-[#fca5a5] font-mono text-xs font-bold animate-pulse">
-              [HOẢNG LOẠN]
-            </span>
-          )}
-        </div>
-
-        {/* Quick Modal Action Buttons (Hexen & Save/Load are strictly world interactions) */}
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setActiveModal('inventory')}
-            className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-          >
-            <Backpack className="w-3.5 h-3.5 text-[#c5a059]" /> Túi [I]
-          </button>
-          <button
-            onClick={() => setActiveModal('lore')}
-            className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-[#c5a059]" /> Sách ({player.readBookIds.length}/{CONFIG.BOOKS.length}) [L]
-          </button>
-          <button
-            onClick={() => setActiveModal('guide')}
-            className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-            title="Sách Hướng Dẫn Sinh Tồn [?]"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-[#c5a059]" /> Cẩm Nang [?]
-          </button>
-          <button
-            onClick={() => {
-              setConfirmReturnTitle(false);
-              setActiveModal('settings');
-            }}
-            className="df-btn px-2.5 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-            title="Cài Đặt Hệ Thống [ESC]"
-          >
-            <Settings className="w-3.5 h-3.5 text-[#c5a059]" /> Cài Đặt [ESC]
-          </button>
-          <button
-            onClick={() => {
-              const nextMuted = !muted;
-              const updated = sfx.updateSettings({ muted: nextMuted });
-              setAudioSettings(updated);
-              setMuted(nextMuted);
-            }}
-            className="df-btn p-1.5 text-xs cursor-pointer"
-            title="Bật/Tắt Âm Thanh"
-          >
-            {muted ? <VolumeX className="w-3.5 h-3.5 text-[#d3d3d3]" /> : <Volume2 className="w-3.5 h-3.5 text-[#c5a059]" />}
-          </button>
-        </div>
-      </header>
+      <ExplorationHeaderBar
+        player={player}
+        currentRoom={currentRoom}
+        muted={muted}
+        onLightTorch={handleLightTorchOrLamp}
+        onOpenInventory={() => setActiveModal('inventory')}
+        onOpenLore={() => setActiveModal('lore')}
+        onOpenGuide={() => setActiveModal('guide')}
+        onOpenSettings={() => {
+          setConfirmReturnTitle(false);
+          setActiveModal('settings');
+        }}
+        onToggleMute={() => {
+          const nextMuted = !muted;
+          const updated = sfx.updateSettings({ muted: nextMuted });
+          setAudioSettings(updated);
+          setMuted(nextMuted);
+        }}
+      />
 
       {/* Main Content: Full-Bleed 16:9 Dungeon Stage (94vw, max 1680px) */}
       <div className="flex-1 min-h-0 w-[94vw] max-w-[1680px] mx-auto py-1.5 flex flex-col">
         <div className="w-full h-full min-h-0 flex flex-col gap-2">
           {/* Canvas Container */}
           <div className="relative flex-1 min-h-0 flex flex-col df-panel overflow-hidden">
-            {/* Minimalist Fading Top-Left Area Typography (No heavy opaque box) */}
+            {/* Minimalist Fading Top-Left Area Typography */}
             <div
               key={areaBannerKey}
               className="zone-title-toast absolute top-3.5 left-4 z-10 pointer-events-none select-none"
@@ -6237,128 +6839,15 @@ export default function App() {
               />
             </div>
 
-            {/* Fear & Hunger / Termina Style RPG Bottom Dialogue Box + Docked Right-Side Choice Window */}
-            {(interactionMenu || logOverlayVisible) && (
-              <div className="absolute inset-x-4 bottom-8 z-30">
-                {/* Docked Right-Side Choice Window (Flush above the right side of the bottom dialogue box) */}
-                {interactionMenu ? (
-                  <div className="ml-auto w-fit min-w-[310px] max-w-[540px] mb-[2px] df-panel px-3.5 py-2.5 space-y-1">
-                    {interactionMenu.choices.map((choice, idx) => {
-                      const isSelected = idx === interactionMenu.selectedIndex;
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onMouseEnter={() =>
-                            setInteractionMenu((prev) =>
-                              prev ? { ...prev, selectedIndex: idx } : null
-                            )
-                          }
-                          onClick={() => choice.onSelect()}
-                          className={`w-full text-left px-4 py-1.5 font-serif text-sm sm:text-base tracking-wide transition cursor-pointer ${
-                            choice.muted
-                              ? isSelected
-                                ? 'text-[#b5aba0] font-semibold'
-                                : 'text-[#847c74] hover:text-[#b5aba0]'
-                              : isSelected
-                              ? 'text-[#f3e6c4] font-semibold'
-                              : 'text-[#d3d3d3]/75 hover:text-[#f3e6c4]'
-                          }`}
-                          style={
-                            isSelected
-                              ? {
-                                  background: choice.muted
-                                    ? 'radial-gradient(ellipse at center, rgba(64, 56, 54, 0.72) 0%, rgba(30, 26, 26, 0.45) 55%, rgba(15, 10, 12, 0) 100%)'
-                                    : 'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
-                                  textShadow: choice.muted ? undefined : '0 0 8px rgba(197, 160, 89, 0.55)',
-                                }
-                              : undefined
-                          }
-                        >
-                          <div>{choice.label}</div>
-                          {choice.hint && (
-                            <div className="text-[11px] font-sans font-normal text-[#968d85] mt-0.5 leading-snug">
-                              ↳ {choice.hint}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="ml-auto w-fit min-w-[230px] mb-[2px] df-panel px-3.5 py-2">
-                    <button
-                      type="button"
-                      onClick={() => setLogOverlayVisible(false)}
-                      className="w-full text-left px-4 py-1 font-serif text-sm sm:text-base tracking-wide text-[#f3e6c4] font-semibold cursor-pointer"
-                      style={{
-                        background:
-                          'radial-gradient(ellipse at center, rgba(139, 0, 0, 0.92) 0%, rgba(90, 8, 12, 0.65) 55%, rgba(15, 10, 12, 0) 100%)',
-                        textShadow: '0 0 8px rgba(197, 160, 89, 0.55)',
-                      }}
-                    >
-                      Tiếp tục hành trình [F]
-                    </button>
-                  </div>
-                )}
-
-                {/* Bottom RPG Dialogue Box with Gothic Illuminated Drop-Cap Nameplate ([L]EVI style) */}
-                <div className="df-panel px-5 py-3.5 min-h-[112px] flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      {(() => {
-                        const rawSpeaker = (interactionMenu?.title || 'NHẬT KÝ HÀNH TRÌNH').trim();
-                        const firstChar = rawSpeaker.charAt(0).toUpperCase();
-                        const restChars = rawSpeaker.slice(1).toUpperCase();
-                        return (
-                          <div className="inline-flex items-end gap-1 select-none">
-                            <span
-                              className="w-6 h-6 bg-[#d3d3d3] text-[#09070a] border border-[#c5a059] font-black text-base flex items-center justify-center leading-none shadow-sm"
-                              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                            >
-                              {firstChar}
-                            </span>
-                            <span
-                              className="text-xs sm:text-sm font-bold tracking-[0.14em] text-[#c5a059] uppercase leading-none pb-0.5"
-                              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                            >
-                              {restChars}
-                            </span>
-                          </div>
-                        );
-                      })()}
-                      <span className="text-[10px] text-[#9b8f82] font-mono">
-                        {interactionMenu
-                          ? '[W/S] Chọn • [F / Enter] Xác nhận • [ESC] Đóng'
-                          : '[F / ESC] Đóng'}
-                      </span>
-                    </div>
-
-                    {interactionMenu ? (
-                      <div className="text-sm sm:text-base font-serif text-[#d3d3d3] leading-relaxed">
-                        {interactionMenu.description.startsWith('“') ||
-                        interactionMenu.description.startsWith('"')
-                          ? interactionMenu.description
-                          : `“${interactionMenu.description}”`}
-                      </div>
-                    ) : (
-                      <div className="max-h-20 overflow-y-auto space-y-1 pr-1 text-xs sm:text-sm font-serif">
-                        {narrativeLogs.slice(0, 4).map((log, i) => (
-                          <div
-                            key={i}
-                            className={`leading-snug ${
-                              i === 0 ? 'text-[#d3d3d3] font-semibold' : 'text-[#9b8f82] text-xs'
-                            }`}
-                          >
-                            • {log}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+            <ExplorationDialogueOverlay
+              interactionMenu={interactionMenu}
+              logOverlayVisible={logOverlayVisible}
+              narrativeLogs={narrativeLogs}
+              onHoverChoice={(idx) =>
+                setInteractionMenu((prev) => (prev ? { ...prev, selectedIndex: idx } : null))
+              }
+              onDismissLogOverlay={() => setLogOverlayVisible(false)}
+            />
 
             {/* Slim Bottom Sensory Line */}
             <div
@@ -6374,175 +6863,125 @@ export default function App() {
         </div>
       </div>
 
-      {/* ========================================================================
-          MODAL 1: 4-MEMBER PARTY EQUIPMENT, 6 STATS & ALCHEMY ([I])
-      ======================================================================== */}
-      {activeModal === 'inventory' && (
-        <InventoryModal
-          player={player}
-          setPlayer={setPlayer}
-          world={world}
-          setWorld={setWorld}
-          playerPos={playerPos}
-          computedStats={computedStats}
-          invTab={invTab}
-          setInvTab={setInvTab}
-          isAmputating={isAmputating}
-          setIsAmputating={setIsAmputating}
-          sawTargetMemberIdx={sawTargetMemberIdx}
-          setSawTargetMemberIdx={setSawTargetMemberIdx}
-          selectedInvMemberIdx={selectedInvMemberIdx}
-          setSelectedInvMemberIdx={setSelectedInvMemberIdx}
-          selectedEquipSlot={selectedEquipSlot}
-          setSelectedEquipSlot={setSelectedEquipSlot}
-          previewItemId={previewItemId}
-          setPreviewItemId={setPreviewItemId}
-          invFeedback={invFeedback}
-          setInvFeedback={setInvFeedback}
-          torchLowWarnedRef={torchLowWarnedRef}
-          onClose={() => setActiveModal(null)}
-          onOpenHunterNote={() => setActiveModal('hunter_note')}
-          onAddLog={addLog}
-          onShowLogOverlay={() => setLogOverlayVisible(true)}
-          onPromptCrackedWallExplosion={() => {
-            setActiveModal(null);
-            promptCrackedWallExplosion();
-          }}
-          onTriggerNightHunterElixirEnding={(pCopy) => {
-            setActiveModal(null);
-            setInteractionMenu({
-              title: 'ĐỘC HÓA ĐÁ ĐÃ TAN',
-              description:
-                'Bạn uống cạn [Tiên Dược Nguyên Sơ], lớp vảy đá xám rạn vỡ rơi xuống nền đá và Kết Giới Chướng Khí đã tan biến. Bạn muốn rời khỏi Thung Lũng hay ở lại đáy Vực Sao?',
-              selectedIndex: 0,
-              choices: [
-                {
-                  label: 'Rời khỏi Thung Lũng Xương Tàn',
-                  onSelect: () => {
-                    const res = evaluateCanonEnding({
-                      classId: pCopy.classId,
-                      corruption: pCopy.corruption,
-                      holyMotherBanned: isHolyMotherBanned(pCopy),
-                      readBookIds: pCopy.readBookIds,
-                      inventory: pCopy.inventory,
-                      learnedSkillIds: Object.keys(pCopy.skillLevels),
-                      vaelisTalked: Boolean(pCopy.questFlags?.vaelisTalked),
-                      vaelisDefeated: true,
-                      curedPetrification: true,
-                      child13Rescued: Boolean(pCopy.questFlags?.child13Rescued),
-                      child13InParty: pCopy.party.some((a) => a.id === 'child_13' && a.hp > 0),
-                      endingAction: 'ESCAPE_EXTERIOR_GATE',
-                    });
-                    setInteractionMenu(null);
-                    setEndingInfo(res);
-                    setScreen('ending');
-                  },
+      <ExplorationModalLayer
+        activeModal={activeModal}
+        player={player}
+        setPlayer={setPlayer}
+        world={world}
+        setWorld={setWorld}
+        currentRoom={currentRoom}
+        playerPos={playerPos}
+        invTab={invTab}
+        setInvTab={setInvTab}
+        isAmputating={isAmputating}
+        setIsAmputating={setIsAmputating}
+        sawTargetMemberIdx={sawTargetMemberIdx}
+        setSawTargetMemberIdx={setSawTargetMemberIdx}
+        selectedInvMemberIdx={selectedInvMemberIdx}
+        setSelectedInvMemberIdx={setSelectedInvMemberIdx}
+        selectedEquipSlot={selectedEquipSlot}
+        setSelectedEquipSlot={setSelectedEquipSlot}
+        previewItemId={previewItemId}
+        setPreviewItemId={setPreviewItemId}
+        invFeedback={invFeedback}
+        setInvFeedback={setInvFeedback}
+        torchLowWarnedRef={torchLowWarnedRef}
+        loreModalTab={loreModalTab}
+        setLoreModalTab={setLoreModalTab}
+        selectedLoreBookId={selectedLoreBookId}
+        setSelectedLoreBookId={setSelectedLoreBookId}
+        hexenTab={hexenTab}
+        setHexenTab={setHexenTab}
+        selectedHexenSkillId={selectedHexenSkillId}
+        setSelectedHexenSkillId={setSelectedHexenSkillId}
+        hexenFeedback={hexenFeedback}
+        setHexenFeedback={setHexenFeedback}
+        saveSlots={saveSlots}
+        guideTab={guideTab}
+        setGuideTab={setGuideTab}
+        audioSettings={audioSettings}
+        setAudioSettings={setAudioSettings}
+        setMuted={setMuted}
+        confirmReturnTitle={confirmReturnTitle}
+        setConfirmReturnTitle={setConfirmReturnTitle}
+        onSetActiveModal={setActiveModal}
+        onAddLog={addLog}
+        onShowLogOverlay={() => setLogOverlayVisible(true)}
+        onPromptCrackedWallExplosion={() => {
+          setActiveModal(null);
+          promptCrackedWallExplosion();
+        }}
+        onTriggerNightHunterElixirEnding={(pCopy) => {
+          setActiveModal(null);
+          setInteractionMenu({
+            title: 'ĐỘC HÓA ĐÁ ĐÃ TAN',
+            description:
+              'Bạn uống cạn [Tiên Dược Nguyên Sơ], lớp vảy đá xám rạn vỡ rơi xuống nền đá và Kết Giới Chướng Khí đã tan biến. Bạn muốn rời khỏi Thung Lũng hay ở lại đáy Vực Sao?',
+            selectedIndex: 0,
+            choices: [
+              {
+                label: 'Rời khỏi Thung Lũng Xương Tàn',
+                onSelect: () => {
+                  const res = evaluateCanonEnding({
+                    classId: pCopy.classId,
+                    corruption: pCopy.corruption,
+                    holyMotherBanned: isHolyMotherBanned(pCopy),
+                    readBookIds: pCopy.readBookIds,
+                    inventory: pCopy.inventory,
+                    learnedSkillIds: Object.keys(pCopy.skillLevels),
+                    vaelisTalked: Boolean(pCopy.questFlags?.vaelisTalked),
+                    vaelisDefeated: true,
+                    curedPetrification: true,
+                    child13Rescued: Boolean(pCopy.questFlags?.child13Rescued),
+                    child13InParty: pCopy.party.some((a) => a.id === 'child_13' && a.hp > 0),
+                    endingAction: 'ESCAPE_EXTERIOR_GATE',
+                  });
+                  setInteractionMenu(null);
+                  setEndingInfo(res);
+                  setScreen('ending');
                 },
-                {
-                  label: 'Ở lại đáy Vực Sao',
-                  onSelect: () => {
-                    setInteractionMenu(null);
-                    addLog('Bạn quyết định ở lại đáy Vực Sao để đối mặt với Vết Rách Không Gian.');
-                    setLogOverlayVisible(true);
-                  },
+              },
+              {
+                label: 'Ở lại đáy Vực Sao',
+                onSelect: () => {
+                  setInteractionMenu(null);
+                  addLog('Bạn quyết định ở lại đáy Vực Sao để đối mặt với Vết Rách Không Gian.');
+                  setLogOverlayVisible(true);
                 },
-              ],
-            });
-          }}
-        />
-      )}
-
-      {activeModal === 'lore' && (
-        <LoreModal
-          player={player}
-          loreModalTab={loreModalTab}
-          setLoreModalTab={setLoreModalTab}
-          selectedLoreBookId={selectedLoreBookId}
-          setSelectedLoreBookId={setSelectedLoreBookId}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
-
-      {activeModal === 'hunter_note' && (
-        <HunterNoteModal onClose={() => setActiveModal(null)} />
-      )}
-
-      {activeModal === 'hexen' && (
-        <HexenModal
-          player={player}
-          setPlayer={setPlayer}
-          currentRoom={currentRoom}
-          hexenTab={hexenTab}
-          setHexenTab={setHexenTab}
-          selectedHexenSkillId={selectedHexenSkillId}
-          setSelectedHexenSkillId={setSelectedHexenSkillId}
-          hexenFeedback={hexenFeedback}
-          setHexenFeedback={setHexenFeedback}
-          onClose={() => setActiveModal(null)}
-          onAddLog={addLog}
-          onTriggerVoidPortal={(destId) => {
-            setActiveModal(null);
-            triggerCoinToss('CỔNG HƯ VÔ', '', (won) => {
-              if (!won) {
-                setPlayer((prev) => ({
-                  ...prev,
-                  hp: Math.max(5, prev.hp - 12),
-                  mind: Math.max(0, prev.mind - 15),
-                }));
-                addLog(
-                  'Khe nứt Hư Vô cào rách da thịt trong khoảnh khắc xuyên qua không gian!'
-                );
-              } else {
-                addLog('Bước qua Cổng Hư Vô bình yên vô sự!');
-              }
-              movePlayerToRoom(destId, 'spawn');
-            });
-          }}
-        />
-      )}
-
-      {activeModal === 'saves' && (
-        <SavesModal
-          worldSeed={world.seed}
-          saveSlots={saveSlots}
-          onSaveSlot={(idx) => {
-            saveToSlot(idx);
-            setActiveModal(null);
-            setLogOverlayVisible(true);
-          }}
-          onLoadSlot={(idx) => loadFromSlot(idx)}
-          onDeleteSlot={(idx) => deleteSaveSlot(idx)}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
-
-      {activeModal === 'guide' && (
-        <GuideModal
-          guideTab={guideTab}
-          setGuideTab={setGuideTab}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
-
-      {activeModal === 'settings' && (
-        <SettingsModal
-          world={world}
-          playerPos={playerPos}
-          audioSettings={audioSettings}
-          setAudioSettings={setAudioSettings}
-          setMuted={setMuted}
-          confirmReturnTitle={confirmReturnTitle}
-          setConfirmReturnTitle={setConfirmReturnTitle}
-          onOpenSaves={() => setActiveModal('saves')}
-          onReturnToTitle={() => {
-            setConfirmReturnTitle(false);
-            setActiveModal(null);
-            setInteractionMenu(null);
-            setScreen('title');
-          }}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
+              },
+            ],
+          });
+        }}
+        onTriggerVoidPortal={(destId) => {
+          setActiveModal(null);
+          triggerCoinToss('CỔNG HƯ VÔ', '', (won) => {
+            if (!won) {
+              setPlayer((prev) => ({
+                ...prev,
+                hp: Math.max(5, prev.hp - 12),
+                mind: Math.max(0, prev.mind - 15),
+              }));
+              addLog('Khe nứt Hư Vô cào rách da thịt trong khoảnh khắc xuyên qua không gian!');
+            } else {
+              addLog('Bước qua Cổng Hư Vô bình yên vô sự!');
+            }
+            movePlayerToRoom(destId, 'spawn');
+          });
+        }}
+        onSaveSlot={(idx) => {
+          saveToSlot(idx);
+          setActiveModal(null);
+          setLogOverlayVisible(true);
+        }}
+        onLoadSlot={(idx) => loadFromSlot(idx)}
+        onDeleteSlot={(idx) => deleteSaveSlot(idx)}
+        onReturnToTitle={() => {
+          setConfirmReturnTitle(false);
+          setActiveModal(null);
+          setInteractionMenu(null);
+          setScreen('title');
+        }}
+      />
 
       {renderCoinTossModal()}
     </div>

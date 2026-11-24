@@ -2807,3 +2807,90 @@ test('Overworld 0-Mind Suicide/Despair Check, Easy Difficulty Damage Multiplier,
     }
   }
 });
+
+test('all chests and wooden crates spawn adjacent to walls, corners, or obstacles across seeds', () => {
+  const wallOrObstacleTiles = new Set<TILE>([
+    TILE.WALL,
+    TILE.CRACKED_WALL,
+    TILE.VOID,
+    TILE.BARS,
+    TILE.CHASM,
+    TILE.BOOKSHELF,
+    TILE.CRATE,
+    TILE.CHEST,
+    TILE.BED_SAVE,
+  ]);
+
+  const seeds = ['VAELIS-666', 'WALL-ALIGN-01', 'CORNER-LOOT-99', 'ABYSS-2026'];
+  for (const seed of seeds) {
+    const world = generateWorld(seed);
+    for (const room of Object.values(world.rooms)) {
+      const h = room.grid.length;
+      const w = room.grid[0].length;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const tile = room.grid[y][x];
+          if (tile !== TILE.CRATE && tile !== TILE.CHEST) continue;
+          const dirs = [
+            [0, -1],
+            [0, 1],
+            [-1, 0],
+            [1, 0],
+          ];
+          const hasAdjacentSupport = dirs.some(([dx, dy]) => {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (ny < 0 || ny >= h || nx < 0 || nx >= w) return true;
+            return wallOrObstacleTiles.has(room.grid[ny][nx]);
+          });
+          assert.ok(
+            hasAdjacentSupport,
+            `Seed ${seed} room ${room.id}: ${tile === TILE.CRATE ? 'CRATE' : 'CHEST'} at (${x}, ${y}) is isolated in open floor`
+          );
+        }
+      }
+    }
+  }
+});
+
+test('missed attacks set missed flag, log [HỤT ĐÒN], and spawn HỤT ĐÒN! floating text without enemy hit flash', async () => {
+  const { CombatEngine } = await import('./combatEngine');
+  const p = createInitialPlayer('knight', 'miss_test', 'normal');
+  p.statuses.blindedTurns = 2; // Lower accuracy so head miss occurs cleanly across seeds
+
+  let sawMissOutcome = false;
+  for (let i = 0; i < 40; i++) {
+    const enemy = createMapEnemyInstance(`e_miss_${i}`, 'fanatic_zealot', 4, 4);
+    const rng = new SeededRNG(`MISS_CHECK_${i}`);
+    const res = executeSingleActorCombatAction(p, enemy, 0, 'ATTACK', 'head', undefined, rng);
+    if (res.missed) {
+      sawMissOutcome = true;
+      assert.equal(res.lastDealtDmg, 0);
+      assert.equal(res.logs.some((l) => l.includes('[HỤT ĐÒN]')), true);
+      break;
+    }
+  }
+  assert.equal(sawMissOutcome, true, 'Expected at least one missed attack against blinded head target');
+
+  // Verify CombatEngine floatingTexts behavior when an attack misses
+  const engine = new CombatEngine();
+  const baseEnemy = createMapEnemyInstance('e_engine_miss', 'fanatic_zealot', 4, 4);
+  let engineSawMiss = false;
+  for (let i = 0; i < 60; i++) {
+    engine.resetStageEffects();
+    const out = engine.executeActorTurn(p, baseEnemy, `ENG_MISS_${i}`, 0, 'ATTACK', 'head');
+    if (out.result.missed) {
+      engineSawMiss = true;
+      assert.equal(engine.enemyHitDelayTimerMs, 0, 'Missed attack should not flash enemy as hit');
+      assert.equal(
+        engine.floatingTexts.some((ft) => ft.text === 'HỤT ĐÒN!'),
+        true,
+        'Missed attack must push HỤT ĐÒN! floating text'
+      );
+      break;
+    }
+  }
+  assert.equal(engineSawMiss, true);
+});
+
+

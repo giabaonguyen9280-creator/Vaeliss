@@ -2511,6 +2511,8 @@ export interface CombatTurnResult {
   fledSuccess?: boolean;
   severedAnyLimb?: boolean;
   wasCrit?: boolean;
+  missed?: boolean;
+  enemyMissed?: boolean;
   lastDealtDmg?: number;
   lastTakenDmg?: number;
   particleType?: 'blood' | 'fire' | 'spark';
@@ -2974,11 +2976,13 @@ export function executePlayerWeaponAttack(
   player.statuses.guarding = false;
   let severedAnyLimb = false;
   let wasCrit = false;
+  let didMiss = false;
   let totalDealt = 0;
   let particleType: 'blood' | 'fire' | 'spark' = 'blood';
 
   if (!rng.chance(hitChance)) {
-    logs.push(`Bạn vung [${wpn.name}] nhắm vào [${limb.name}] nhưng sượt qua khoảng không!`);
+    didMiss = true;
+    logs.push(`[HỤT ĐÒN] Bạn vung [${wpn.name}] nhắm vào [${limb.name}] nhưng sượt qua khoảng không!`);
   } else {
     let dmg = rng.int(wpn.dmg[0], wpn.dmg[1]);
 
@@ -3193,6 +3197,7 @@ export function executePlayerWeaponAttack(
   const out = finishCombatRoundWithEnemyTurn(player, enemy, tpl, rng, logs, severedAnyLimb, wasCrit);
   const wpnVfx = getWeaponVfxMeta(wpn.id);
   out.lastDealtDmg = totalDealt;
+  out.missed = didMiss && totalDealt === 0;
   out.particleType = particleType;
   out.targetLimbId = effectiveLimbId;
   out.weaponCategory = wpnVfx.weaponCategory;
@@ -3341,7 +3346,15 @@ export function executePlayerSkill(
       const finalTargets = targets.length > 0 ? targets : limb ? [limb] : [];
       logs.push(`Thi triển [Nhát Chém Xoáy] quét qua ${finalTargets.length} bộ phận!`);
       for (const t of finalTargets) {
-        const res = applyLimbDamageToEnemy(player, enemy, tpl, t, baseDmg, false, logs);
+        if (isEnemyDead(enemy)) break;
+        const activeTarget =
+          t.hp > 0
+            ? t
+            : enemy.limbs.find(
+                (l) => l.hp > 0 && canTargetEnemyLimb(enemy, tpl, l.id).allowed
+              ) || enemy.limbs.find((l) => l.hp > 0);
+        if (!activeTarget) break;
+        const res = applyLimbDamageToEnemy(player, enemy, tpl, activeTarget, baseDmg, false, logs);
         dealt += res.actualDmg;
         if (res.severedNow) severedAny = true;
       }
@@ -3542,6 +3555,7 @@ export function executeCombatItem(
   let severedAny = false;
   let dealt = 0;
   let wasCrit = false;
+  let didMiss = false;
 
   if (itemId === 'brown_vial') {
     const dmg = rng.int(CONFIG.BROWN_VIAL_MIN_DMG, CONFIG.BROWN_VIAL_MAX_DMG);
@@ -3699,7 +3713,8 @@ export function executeCombatItem(
         `Bạn bắn [Mũi Tên Săn] xuyên vào [${headOrTorso.name}] gây ${sub.actualDmg} sát thương${wasCrit ? ' (CHÍ MẠNG!)' : ''}!`
       );
     } else {
-      logs.push('Mũi tên săn sượt qua bóng tối!');
+      didMiss = true;
+      logs.push('[HỤT ĐÒN] Mũi tên săn sượt qua bóng tối!');
     }
   } else {
     applySupportItemEffects(player, itemId, logs);
@@ -3708,6 +3723,7 @@ export function executeCombatItem(
   const out = finishCombatRoundWithEnemyTurn(player, enemy, tpl, rng, logs, severedAny, wasCrit);
   const itmVfx = getWeaponVfxMeta(itemId, 'dagger');
   out.lastDealtDmg = dealt;
+  out.missed = didMiss;
   out.weaponCategory = itmVfx.weaponCategory;
   out.vfxColor = itmVfx.vfxColor;
   out.actorIdx = 0;
@@ -3899,6 +3915,7 @@ function finishCombatRoundWithEnemyTurn(
 
   enemy.turnCount += 1;
   let lastTakenDmg = 0;
+  let enemyMissed = false;
   let pendingCoinFlip: CombatPendingCoinFlip | undefined = undefined;
 
   const lockedMap = enemy.lockedLimbIds || {};
@@ -4139,6 +4156,7 @@ function finishCombatRoundWithEnemyTurn(
         }
 
         if (!rng.chance(Math.max(0.10, hitProb))) {
+          enemyMissed = true;
           logs.push(`Đòn chí mạng [${tpl.telegraphName}] của ${enemy.customName || tpl.name} ĐÁNH TRƯỢT!`);
         } else {
           const rawDmg = rng.int(tpl.telegraphDmg[0], tpl.telegraphDmg[1]);
@@ -4166,6 +4184,7 @@ function finishCombatRoundWithEnemyTurn(
           hitProb *= 1 - CONFIG.RED_VIAL_BLIND_ACC_PENALTY;
         }
         if (!rng.chance(Math.max(0.10, hitProb))) {
+          enemyMissed = true;
           logs.push(`Đòn tấn công của ${enemy.customName || tpl.name} sượt qua người bạn!`);
         } else {
           const rawDmg = rng.int(tpl.normalDmg[0], tpl.normalDmg[1]);
@@ -4348,6 +4367,7 @@ function finishCombatRoundWithEnemyTurn(
     playerDefeated,
     severedAnyLimb,
     wasCrit,
+    enemyMissed: enemyMissed && lastTakenDmg === 0,
     lastTakenDmg,
     weaponCategory: enemyCat,
     vfxColor: enemyVfx.vfxColor,
@@ -4575,11 +4595,13 @@ export function executeSingleActorCombatAction(
       player.statuses.guarding = false;
       let severedNowOut = false;
       let wasCrit = false;
+      let didMiss = false;
       let totalDealt = 0;
       let particleType: 'blood' | 'fire' | 'spark' = 'blood';
 
       if (!rng.chance(hitChance)) {
-        logs.push(`[${player.name}] vung [${wpn.name}] nhắm vào [${limb.name}] nhưng sượt qua!`);
+        didMiss = true;
+        logs.push(`[HỤT ĐÒN] [${player.name}] vung [${wpn.name}] nhắm vào [${limb.name}] nhưng sượt qua!`);
       } else {
         let dmg = rng.int(wpn.dmg[0], wpn.dmg[1]);
         if (player.bloodForgedWeapons?.includes(wpn.id)) dmg = Math.round(dmg * 1.35);
@@ -4700,6 +4722,7 @@ export function executeSingleActorCombatAction(
         playerDefeated: false,
         severedAnyLimb: severedNowOut,
         wasCrit,
+        missed: didMiss,
         lastDealtDmg: totalDealt,
         particleType,
         targetLimbId: effectiveLimbId,
@@ -4836,7 +4859,15 @@ export function executeSingleActorCombatAction(
         const finalTargets = targets.length > 0 ? targets : [limb];
         logs.push(`[${player.name}] thi triển [Nhát Chém Xoáy]!`);
         for (const t of finalTargets) {
-          const r = applyLimbDamageToEnemy(player, enemy, tpl, t, baseDmg, false, logs);
+          if (isEnemyDead(enemy)) break;
+          const activeTarget =
+            t.hp > 0
+              ? t
+              : enemy.limbs.find(
+                  (l) => l.hp > 0 && canTargetEnemyLimb(enemy, tpl, l.id).allowed
+                ) || enemy.limbs.find((l) => l.hp > 0);
+          if (!activeTarget) break;
+          const r = applyLimbDamageToEnemy(player, enemy, tpl, activeTarget, baseDmg, false, logs);
           dealt += r.actualDmg;
           if (r.severedNow) severedNow = true;
         }
@@ -5027,6 +5058,7 @@ export function executeSingleActorCombatAction(
       let dealt = 0;
       let severedNow = false;
       let wasCrit = false;
+      let didMiss = false;
 
       if (itemId === 'brown_vial') {
         const dmg = rng.int(CONFIG.BROWN_VIAL_MIN_DMG, CONFIG.BROWN_VIAL_MAX_DMG);
@@ -5153,7 +5185,8 @@ export function executeSingleActorCombatAction(
             `[${actorName}] bắn [Mũi Tên Săn] xuyên vào [${limb.name}] gây ${sub.actualDmg} sát thương${wasCrit ? ' (CHÍ MẠNG!)' : ''}!`
           );
         } else {
-          logs.push(`[${actorName}] bắn [Mũi Tên Săn] sượt qua mục tiêu!`);
+          didMiss = true;
+          logs.push(`[HỤT ĐÒN] [${actorName}] bắn [Mũi Tên Săn] sượt qua mục tiêu!`);
         }
       } else {
         applySupportItemEffects(player, itemId, logs);
@@ -5175,6 +5208,7 @@ export function executeSingleActorCombatAction(
         lastDealtDmg: dealt,
         severedAnyLimb: severedNow,
         wasCrit,
+        missed: didMiss,
         weaponCategory: itmVfx.weaponCategory,
         vfxColor: itmVfx.vfxColor,
         actorIdx: actorIndex,
@@ -5218,6 +5252,7 @@ export function executeSingleActorCombatAction(
       let dealt = 0;
       let severedNow = false;
       let wasCrit = false;
+      let didMiss = false;
 
       if (itemId === 'brown_vial') {
         const dmg = rng.int(CONFIG.BROWN_VIAL_MIN_DMG, CONFIG.BROWN_VIAL_MAX_DMG);
@@ -5336,7 +5371,8 @@ export function executeSingleActorCombatAction(
             `[${actorName}] bắn [Mũi Tên Săn] xuyên vào [${limb.name}] gây ${sub.actualDmg} sát thương${wasCrit ? ' (CHÍ MẠNG!)' : ''}!`
           );
         } else {
-          logs.push(`[${actorName}] bắn [Mũi Tên Săn] sượt qua mục tiêu!`);
+          didMiss = true;
+          logs.push(`[HỤT ĐÒN] [${actorName}] bắn [Mũi Tên Săn] sượt qua mục tiêu!`);
         }
       }
 
@@ -5356,6 +5392,7 @@ export function executeSingleActorCombatAction(
         lastDealtDmg: dealt,
         severedAnyLimb: severedNow,
         wasCrit,
+        missed: didMiss,
         weaponCategory: itmVfx.weaponCategory,
         vfxColor: itmVfx.vfxColor,
         actorIdx: actorIndex,
@@ -5492,13 +5529,19 @@ export function executeSingleActorCombatAction(
   if (!limb) return { logs, enemyDefeated: isEnemyDead(enemy), playerDefeated: false };
 
   const allyWpn = getAllyEffectiveWeapon(ally);
+  const allyWpnVfx = getWeaponVfxMeta(allyWpn.id);
   const hitChance = Math.max(0.25, Math.min(0.96, 0.86 + allyWpn.hitBonus - (limb.evasionBonus || 0)));
   if (!rng.chance(hitChance)) {
     return {
-      logs: [`[${ally.name}] vung [${allyWpn.name}] nhắm vào [${limb.name}] nhưng trượt!`],
+      logs: [`[HỤT ĐÒN] [${ally.name}] vung [${allyWpn.name}] nhắm vào [${limb.name}] nhưng trượt!`],
       enemyDefeated: false,
       playerDefeated: false,
+      missed: true,
+      lastDealtDmg: 0,
       targetLimbId: limb.id,
+      weaponCategory: allyWpnVfx.weaponCategory,
+      vfxColor: allyWpnVfx.vfxColor,
+      actorIdx: actorIndex,
     };
   }
   let allyDmg = rng.int(allyWpn.dmg[0], allyWpn.dmg[1]);
@@ -5516,7 +5559,6 @@ export function executeSingleActorCombatAction(
   logs.unshift(
     `[${ally.name}] dùng [${allyWpn.name}] đánh vào [${limb.name}] gây ${sub.actualDmg} sát thương${wasCrit? '(CHÍ MẠNG!)': ''}!`
   );
-  const allyWpnVfx = getWeaponVfxMeta(allyWpn.id);
   if (isEnemyDead(enemy)) {
     const deadOut = handleEnemyDeath(player, enemy, tpl, logs, sub.severedNow, wasCrit);
     deadOut.lastDealtDmg = sub.actualDmg;

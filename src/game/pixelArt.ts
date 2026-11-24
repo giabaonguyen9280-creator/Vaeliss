@@ -7487,10 +7487,12 @@ export function getFloorTileTexture(
   floor: 1 | 2 | 3,
   tileType: string,
   variant: number,
-  isExterior: boolean = false
+  isExterior: boolean = false,
+  isLooted: boolean = false
 ): HTMLCanvasElement {
   const v = Math.abs(variant) % 20;
-  const key = `v9_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}`;
+  const effectiveLooted = tileType === 'CRATE' ? false : isLooted;
+  const key = `v10_${floor}_${tileType}_${v}_${isExterior ? 'ext' : 'int'}_${effectiveLooted ? 'looted' : 'fresh'}`;
   const cached = tileCache.get(key);
   if (cached) return cached;
 
@@ -8008,105 +8010,174 @@ export function getFloorTileTexture(
     ];
     const hs = herbStyles[herbStyleIdx];
 
-    // Subtle colored ground aura so players distinguish herb species from a distance
-    const auraGrad = ctx.createRadialGradient(24, 22, 2, 24, 22, 18);
-    auraGrad.addColorStop(0, hs.aura);
-    auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = auraGrad;
-    ctx.beginPath();
-    ctx.arc(24, 22, 18, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = hs.shadow;
-    ctx.beginPath();
-    ctx.ellipse(24, 31, 14, 7.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Serrated herb stems
-    ctx.strokeStyle = hs.stem;
-    ctx.lineWidth = 2.2;
-    for (const [lx, ly] of [
-      [14, 16],
-      [24, 12],
-      [34, 17],
-      [18, 22],
-      [30, 22],
-    ]) {
+    if (effectiveLooted) {
+      // Harvested Herb State (herb bị vặt): disturbed soil patch + short snipped stem stubs
+      ctx.fillStyle = hs.shadow;
       ctx.beginPath();
-      ctx.moveTo(24, 32);
-      ctx.quadraticCurveTo((24 + lx) / 2, ly + 6, lx, ly);
-      ctx.stroke();
-    }
-
-    // Species-tinted leaves
-    ctx.fillStyle = hs.leaf;
-    ctx.strokeStyle = hs.leafEdge;
-    ctx.lineWidth = 1;
-    for (const [lx, ly, ang] of [
-      [16, 20, -0.5],
-      [32, 20, 0.5],
-      [24, 15, 0],
-    ]) {
-      ctx.beginPath();
-      ctx.ellipse(lx, ly, 5.5, 2.8, ang, 0, Math.PI * 2);
+      ctx.ellipse(24, 31, 11, 5.5, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.stroke();
-    }
 
-    if (herbStyleIdx === 3) {
-      // Calm Flower: 5-petal deep indigo/violet blossoms
-      for (const [bx, by] of [
-        [15, 15],
-        [24, 11],
-        [33, 16],
+      // Short cut stem stubs (no aura, no upper foliage, no flowers/buds)
+      ctx.strokeStyle = hs.stem;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'butt';
+      for (const [sx, sy] of [
+        [19, 25],
+        [24, 23],
+        [29, 26],
       ]) {
-        ctx.fillStyle = '#5b21b6';
-        for (let p = 0; p < 5; p++) {
-          const a = (p * Math.PI * 2) / 5;
+        ctx.beginPath();
+        ctx.moveTo(24, 32);
+        ctx.lineTo(sx, sy);
+        ctx.stroke();
+
+        // Pale flat cut stem tip
+        ctx.fillStyle = '#c2b9a5';
+        ctx.fillRect(sx - 1, sy - 1, 2, 2);
+      }
+
+      // Single small bruised basal leaf resting near the soil
+      ctx.fillStyle = hs.leafEdge;
+      ctx.beginPath();
+      ctx.ellipse(18, 29, 4, 2, -0.35, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Subtle colored ground aura so players distinguish herb species from a distance
+      const auraGrad = ctx.createRadialGradient(24, 22, 2, 24, 22, 18);
+      auraGrad.addColorStop(0, hs.aura);
+      auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = auraGrad;
+      ctx.beginPath();
+      ctx.arc(24, 22, 18, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = hs.shadow;
+      ctx.beginPath();
+      ctx.ellipse(24, 31, 14, 7.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Serrated herb stems
+      ctx.strokeStyle = hs.stem;
+      ctx.lineWidth = 2.2;
+      for (const [lx, ly] of [
+        [14, 16],
+        [24, 12],
+        [34, 17],
+        [18, 22],
+        [30, 22],
+      ]) {
+        ctx.beginPath();
+        ctx.moveTo(24, 32);
+        ctx.quadraticCurveTo((24 + lx) / 2, ly + 6, lx, ly);
+        ctx.stroke();
+      }
+
+      // Species-tinted leaves
+      ctx.fillStyle = hs.leaf;
+      ctx.strokeStyle = hs.leafEdge;
+      ctx.lineWidth = 1;
+      for (const [lx, ly, ang] of [
+        [16, 20, -0.5],
+        [32, 20, 0.5],
+        [24, 15, 0],
+      ]) {
+        ctx.beginPath();
+        ctx.ellipse(lx, ly, 5.5, 2.8, ang, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      if (herbStyleIdx === 3) {
+        // Calm Flower: 5-petal deep indigo/violet blossoms
+        for (const [bx, by] of [
+          [15, 15],
+          [24, 11],
+          [33, 16],
+        ]) {
+          ctx.fillStyle = '#5b21b6';
+          for (let p = 0; p < 5; p++) {
+            const a = (p * Math.PI * 2) / 5;
+            ctx.beginPath();
+            ctx.arc(bx + Math.cos(a) * 2.5, by + Math.sin(a) * 2.5, 2.0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = hs.bud;
           ctx.beginPath();
-          ctx.arc(bx + Math.cos(a) * 2.5, by + Math.sin(a) * 2.5, 2.0, 0, Math.PI * 2);
+          ctx.arc(bx, by, 2.0, 0, Math.PI * 2);
           ctx.fill();
         }
+      } else {
+        // Distinct emerald, crimson-blood, or luminous ivory buds
         ctx.fillStyle = hs.bud;
-        ctx.beginPath();
-        ctx.arc(bx, by, 2.0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else {
-      // Distinct emerald, crimson-blood, or luminous ivory buds
-      ctx.fillStyle = hs.bud;
-      for (const [bx, by] of [
-        [15, 15],
-        [24, 11],
-        [33, 16],
-      ]) {
-        ctx.beginPath();
-        ctx.arc(bx, by, 3.3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = hs.budRim;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        for (const [bx, by] of [
+          [15, 15],
+          [24, 11],
+          [33, 16],
+        ]) {
+          ctx.beginPath();
+          ctx.arc(bx, by, 3.3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = hs.budRim;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
       }
     }
   } else if (tileType === 'CHEST') {
-    // Dark Oak Treasure Chest bound in Iron Straps with Gold Lock
-    ctx.fillStyle = '#451a03';
-    ctx.fillRect(7, 13, 34, 24);
-    ctx.fillStyle = '#78350f';
-    ctx.fillRect(7, 10, 34, 8);
-    ctx.strokeStyle = '#090504';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(7, 10, 34, 27);
+    if (effectiveLooted) {
+      // Opened Dark Oak Chest (mở nắp): swung-back upper lid + hollow dark interior cavity
+      // Tilted open lid at top
+      ctx.fillStyle = '#5c280b';
+      ctx.fillRect(7, 5, 34, 10);
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(9, 7, 30, 5);
+      ctx.strokeStyle = '#090504';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(7, 5, 34, 10);
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(12, 5, 4, 10);
+      ctx.fillRect(32, 5, 4, 10);
 
-    // Iron Straps
-    ctx.fillStyle = '#64748b';
-    ctx.fillRect(12, 10, 4, 27);
-    ctx.fillRect(32, 10, 4, 27);
+      // Hollow empty chest interior & front wooden rim
+      ctx.fillStyle = '#0b0604';
+      ctx.fillRect(8, 15, 32, 9);
+      ctx.fillStyle = '#271104';
+      ctx.fillRect(10, 17, 28, 3);
 
-    // Gleaming Gold Lockplate
-    ctx.fillStyle = '#facc15';
-    ctx.fillRect(21, 18, 6, 8);
-    ctx.strokeRect(21, 18, 6, 8);
+      // Lower front body
+      ctx.fillStyle = '#451a03';
+      ctx.fillRect(7, 22, 34, 16);
+      ctx.strokeStyle = '#090504';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(7, 15, 34, 23);
+
+      // Front iron straps & unlocked gold clasp
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(12, 22, 4, 16);
+      ctx.fillRect(32, 22, 4, 16);
+      ctx.fillStyle = '#a16207';
+      ctx.fillRect(21, 23, 6, 5);
+      ctx.strokeRect(21, 23, 6, 5);
+    } else {
+      // Closed Dark Oak Treasure Chest bound in Iron Straps with Gold Lock
+      ctx.fillStyle = '#451a03';
+      ctx.fillRect(7, 13, 34, 24);
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(7, 10, 34, 8);
+      ctx.strokeStyle = '#090504';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(7, 10, 34, 27);
+
+      // Iron Straps
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(12, 10, 4, 27);
+      ctx.fillRect(32, 10, 4, 27);
+
+      // Gleaming Gold Lockplate
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(21, 18, 6, 8);
+      ctx.strokeRect(21, 18, 6, 8);
+    }
   } else if (tileType === 'BOOKSHELF') {
     // Tall Carved Wooden Bookshelf with Colored Tomes & Scrolls
     ctx.fillStyle = '#3b2313';
@@ -8228,7 +8299,7 @@ export function getFloorTileTexture(
     ctx.fillStyle = '#7f1d1d';
     ctx.fillRect(10, 20, 28, 17);
   } else if (tileType === 'FLOOR_TRAP') {
-    // Rusted Serrated Iron Bear-Trap with recessed stone crack & bloodied pressure pan
+    // Recessed stone crack under trap
     ctx.strokeStyle = '#18141c';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -8238,35 +8309,73 @@ export function getFloorTileTexture(
     ctx.lineTo(40, 27);
     ctx.stroke();
 
-    // Rusted iron outer jaw ring
-    ctx.fillStyle = 'rgba(15, 11, 14, 0.75)';
-    ctx.beginPath();
-    ctx.arc(24, 24, 14, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#78716c';
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    ctx.arc(24, 24, 13, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Central crimson-stained pressure plate
-    ctx.fillStyle = '#450a0a';
-    ctx.beginPath();
-    ctx.arc(24, 24, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#991b1b';
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-
-    // Sharp serrated metallic jaw teeth
-    ctx.fillStyle = '#cbd5e1';
-    for (const [sx, sy] of [[15, 19], [20, 15], [28, 15], [33, 19], [16, 29], [24, 32], [32, 29]]) {
+    if (effectiveLooted) {
+      // Triggered / Sprung Bear-Trap (trap đã đóng bẫy): jaws snapped tightly shut across center
+      // Slack hinge anchor & outer tension ring
+      ctx.strokeStyle = '#44403c';
+      ctx.lineWidth = 2.2;
       ctx.beginPath();
-      ctx.moveTo(sx - 2, sy + 2);
-      ctx.lineTo(sx, sy - 4);
-      ctx.lineTo(sx + 2, sy + 2);
-      ctx.closePath();
+      ctx.ellipse(24, 25, 13, 5.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Clamped iron jaws snapped closed along horizontal seam
+      ctx.fillStyle = '#57534e';
+      ctx.strokeStyle = '#09070a';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.roundRect(11, 20.5, 26, 8.5, 4);
       ctx.fill();
+      ctx.stroke();
+
+      // Interlocked closed teeth seam down the middle
+      ctx.strokeStyle = '#09070a';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(12, 24.8);
+      ctx.lineTo(36, 24.8);
+      ctx.stroke();
+
+      ctx.fillStyle = '#94a3b8';
+      for (const sx of [15, 19, 23, 27, 31]) {
+        ctx.fillRect(sx - 1, 22.8, 2, 4);
+      }
+
+      // Faint dried blood smudge on clamped jaws
+      ctx.fillStyle = 'rgba(127, 29, 29, 0.72)';
+      ctx.beginPath();
+      ctx.ellipse(24, 24.5, 4.5, 2.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Armed Rusted Serrated Iron Bear-Trap with open jaw ring & bloodied pressure pan
+      ctx.fillStyle = 'rgba(15, 11, 14, 0.75)';
+      ctx.beginPath();
+      ctx.arc(24, 24, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#78716c';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.arc(24, 24, 13, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Central crimson-stained pressure plate
+      ctx.fillStyle = '#450a0a';
+      ctx.beginPath();
+      ctx.arc(24, 24, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+
+      // Sharp serrated metallic jaw teeth
+      ctx.fillStyle = '#cbd5e1';
+      for (const [sx, sy] of [[15, 19], [20, 15], [28, 15], [33, 19], [16, 29], [24, 32], [32, 29]]) {
+        ctx.beginPath();
+        ctx.moveTo(sx - 2, sy + 2);
+        ctx.lineTo(sx, sy - 4);
+        ctx.lineTo(sx + 2, sy + 2);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   } else if (tileType === 'MIASMA_VENT') {
     // Glowing Purple Miasma Fissure Vent
@@ -8296,17 +8405,42 @@ export function getFloorTileTexture(
     ctx.lineWidth = 1.4;
     ctx.strokeRect(14, 14, 20, 20);
   } else if (tileType === 'CORPSE_LOOT') {
-    // Fallen Expedition Corpse with Armor Remnants & Satchel
-    ctx.fillStyle = '#475569';
-    ctx.beginPath();
-    ctx.ellipse(24, 26, 14, 8, -0.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#e5dccb';
-    ctx.beginPath();
-    ctx.arc(15, 22, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#991b1b';
-    ctx.fillRect(20, 24, 10, 5);
+    if (effectiveLooted) {
+      // Searched / Looted Expedition Corpse: rumpled cloak, exposed pale bones & emptied open satchel
+      ctx.fillStyle = '#334155';
+      ctx.beginPath();
+      ctx.ellipse(24, 26, 14, 7.5, -0.15, 0, Math.PI * 2);
+      ctx.fill();
+      // Exposed rib/bone slats across torso
+      ctx.fillStyle = '#a8a29e';
+      ctx.fillRect(19, 23, 8, 2);
+      ctx.fillRect(20, 26, 7, 2);
+      // Displaced skull
+      ctx.fillStyle = '#cbd5e1';
+      ctx.beginPath();
+      ctx.arc(14, 22, 5.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(12, 21, 1.8, 1.8);
+      ctx.fillRect(15, 21, 1.8, 1.8);
+      // Emptied, flung-open dark leather satchel beside body
+      ctx.fillStyle = '#1c1411';
+      ctx.fillRect(28, 27, 9, 6);
+      ctx.fillStyle = '#29201b';
+      ctx.fillRect(29, 24, 7, 3);
+    } else {
+      // Unlooted Fallen Expedition Corpse with Armor Remnants & Intact Red Satchel
+      ctx.fillStyle = '#475569';
+      ctx.beginPath();
+      ctx.ellipse(24, 26, 14, 8, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#e5dccb';
+      ctx.beginPath();
+      ctx.arc(15, 22, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#991b1b';
+      ctx.fillRect(20, 24, 10, 5);
+    }
   }
 
   tileCache.set(key, canvas);
@@ -10099,7 +10233,8 @@ export function drawFallenEnemyCorpse(
   tileH: number,
   severedLimbs: Set<string>,
   state: 'intact' | 'devoured' | 'raised',
-  isBoss: boolean = false
+  isBoss: boolean = false,
+  isLooted: boolean = false
 ): void {
   const cx = x + tileW * 0.5;
   const cy = y + tileH * 0.56;
@@ -10171,7 +10306,7 @@ export function drawFallenEnemyCorpse(
     ctx.scale(1, 0.78);
     ctx.globalAlpha = 0.86;
     if ('filter' in ctx) {
-      ctx.filter = 'brightness(0.72) saturate(0.68)';
+      ctx.filter = isLooted ? 'brightness(0.62) saturate(0.5)' : 'brightness(0.72) saturate(0.68)';
     }
 
     const sprW = tileW * (isBoss ? 1.18 : 0.86);
@@ -10190,6 +10325,17 @@ export function drawFallenEnemyCorpse(
       false
     );
     ctx.restore();
+
+    // If searched/looted, draw a tossed-aside emptied pouch/pack beside the corpse
+    if (isLooted) {
+      ctx.fillStyle = '#1c1411';
+      ctx.strokeStyle = '#09070a';
+      ctx.lineWidth = 1;
+      ctx.fillRect(cx + tileW * 0.16, cy + tileH * 0.1, 8, 5);
+      ctx.strokeRect(cx + tileW * 0.16, cy + tileH * 0.1, 8, 5);
+      ctx.fillStyle = '#3f2e25';
+      ctx.fillRect(cx + tileW * 0.17, cy + tileH * 0.06, 6, 2.5);
+    }
   } else if (state === 'devoured') {
     // 3. Devoured remains: stripped pale ribcage & scattered bone shards
     ctx.strokeStyle = 'rgba(10, 8, 13, 0.75)';
