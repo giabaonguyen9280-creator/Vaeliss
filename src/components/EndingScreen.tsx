@@ -110,7 +110,7 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
           <button
             type="button"
             onClick={() => {
-              const freshSeed = seedInput === worldSeed ? onGenerateRandomSeed() : seedInput;
+              const freshSeed = onGenerateRandomSeed();
               setSeedInput(freshSeed);
               onStartNewRun(freshSeed, playerClassId);
             }}

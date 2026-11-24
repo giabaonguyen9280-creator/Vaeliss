@@ -41,6 +41,7 @@ import {
   createInitialPlayer,
   createRecruitedAlly,
   devourEnemyCorpse,
+  evaluateZeroMindStepDespair,
   executeCombatItem,
   executeCombatTalk,
   executePlayerSkill,
@@ -51,6 +52,7 @@ import {
   getAllyAvailableSkills,
   getAllyComputedStats,
   getComputedPlayerStats,
+  getIncomingDamageMultiplier,
   getEnemyMaxTotalHp,
   getEnemyRemainingTotalHp,
   getEnemyStepMultiplier,
@@ -134,7 +136,7 @@ test('Seeded world generation starts at F2_EXTERIOR, includes tutorial enemy & 3
   assert.equal(w1.rooms.F1_R3.enemies.some((e) => e.templateId === 'demon_lord_vaelis'), true);
 });
 
-test('All 6 non-rectangular room templates preserve outer VOID border, wrap WALL around floor, and carve a Secret Chamber with TILE.CHEST behind TILE.CRACKED_WALL', () => {
+test('All 6 non-rectangular room templates preserve outer VOID border, wrap WALL around floor, and support varied Secret Chambers behind TILE.CRACKED_WALL while skipping exterior & boss rooms', () => {
   const templates: RoomTemplateType[] = [
     'BRIDGE_CHASM',
     'JAGGED_RUIN',
@@ -143,19 +145,47 @@ test('All 6 non-rectangular room templates preserve outer VOID border, wrap WALL
     'CRYPT_ALCOVES',
     'SPLIT_SHORTCUT',
   ];
+  const validChamberTiles = new Set<TILE>([
+    TILE.FLOOR,
+    TILE.CHEST,
+    TILE.CRATE,
+    TILE.CORPSE_LOOT,
+    TILE.HERB,
+    TILE.FLOOR_TRAP,
+  ]);
   const rng = new SeededRNG('ROOM-TEST');
   for (const tpl of templates) {
-    const { grid, spawnX, spawnY, secretX, secretY } = buildRoomLayout(tpl, rng);
+    const { grid, spawnX, spawnY, secretX, secretY, secretChamberCoords } = buildRoomLayout(
+      tpl,
+      rng,
+      CONFIG.GRID_W,
+      CONFIG.GRID_H,
+      { forceSecretChamber: true }
+    );
     assert.equal(grid.length, 13);
     assert.equal(grid[0].length, 17);
     assert.equal(grid[0][0], TILE.VOID);
     assert.equal(grid[12][16], TILE.VOID);
     assert.equal(grid[spawnY][spawnX], TILE.FLOOR);
     assert.equal(grid[secretY][secretX], TILE.CRACKED_WALL);
-    const chamberY = Math.max(1, secretY - 1);
-    assert.equal(grid[chamberY][secretX], TILE.FLOOR);
-    assert.equal(grid[chamberY][secretX + 1], TILE.CHEST);
+    assert.equal(secretChamberCoords.length, 2);
+    for (const key of secretChamberCoords) {
+      const [cx, cy] = key.split(',').map(Number);
+      assert.equal(validChamberTiles.has(grid[cy][cx]), true);
+    }
   }
+
+  // World generation skips F2_EXTERIOR and boss rooms, and does not spawn secret chambers in 100% of normal rooms
+  const wSecret = generateWorld('SECRET-VARIETY-SEED');
+  assert.equal((wSecret.rooms.F2_EXTERIOR.secretChamberCoords || []).length, 0);
+  for (const bossRoomId of ['F2_R4', 'F3_R3', 'F1_R3']) {
+    assert.equal((wSecret.rooms[bossRoomId].secretChamberCoords || []).length, 0);
+  }
+  const normalRooms = Object.values(wSecret.rooms).filter(
+    (r) => !r.isExterior && !['F2_R4', 'F3_R3', 'F1_R3'].includes(r.id)
+  );
+  const roomsWithSecret = normalRooms.filter((r) => (r.secretChamberCoords || []).length > 0).length;
+  assert.equal(roomsWithSecret < normalRooms.length, true);
 });
 
 test('All 12 skills execute without crashing across Lv.1..3 even when lockedLimbIds is initially undefined', () => {
@@ -238,16 +268,39 @@ test('Class-Specific HP/Mind, Custom Name, Consecutive Normal Attacks after Limb
   assert.equal(statsStarving.agility, 0);
   assert.equal(statsStarving.critRatePct, 0);
 
-  // Devouring corpse reduces hunger by 45, adds +20 Corruption, and locks Holy Magic
+  // Devouring corpse is strictly blocked when demonicPact === 0 without mutating state
   const enemy = world.rooms.F2_EXTERIOR.enemies[0];
   enemy.defeated = true;
   p.hunger = 60;
+  p.hp = 70;
+  p.corruption = 0;
+  p.affinities.demonicPact = 0;
+  const blockedDevour = devourEnemyCorpse(p, enemy);
+  assert.equal(blockedDevour.success, false);
+  assert.equal(blockedDevour.message.includes('[Huyết Quỷ]'), true);
+  assert.equal(Boolean(enemy.corpseDevoured), false);
+  assert.equal(p.hunger, 60);
+  assert.equal(p.hp, 70);
+  assert.equal(p.corruption, 0);
+  assert.equal(isHolyMotherBanned(p), false);
+
+  // Clean dissection still works at demonicPact === 0 with 0 corruption
+  const dissectEnemy = JSON.parse(JSON.stringify(enemy));
+  p.inventory.scroll_field_dissection = 1;
+  const cleanRes = dissectEnemyCorpseCleanly(p, dissectEnemy, new SeededRNG('CLEAN-DISSECT-0'));
+  assert.equal(cleanRes.success, true);
+  assert.equal(p.corruption, 0);
+  assert.equal(isHolyMotherBanned(p), false);
+
+  // With demonicPact >= 1, devouring corpse reduces hunger by 45, heals +20 HP, adds +20 Corruption, and locks Holy Magic
+  p.affinities.demonicPact = 1;
   const devourRes = devourEnemyCorpse(p, enemy);
   assert.equal(devourRes.success, true);
   assert.equal(p.hunger, 15);
+  assert.equal(p.hp, 90);
   assert.equal(p.corruption, 20);
   assert.equal(p.holyMagicLocked, true);
-  assert.equal(p.affinities.demonicPact, 1);
+  assert.equal(p.affinities.demonicPact, 2);
 });
 
 test('Diminishing Returns Armor Curve (ArmorFactor = 1 / (1 + Armor / 50)), Elemental Oil+Fire 2.5x + 150 Burn, Blunt+Acid Stun, and Reticle Badges operate accurately', () => {
@@ -1061,7 +1114,7 @@ test('Tactical items (ancient_ash, poison_powder, poison_herb, lamp_oil), 2 floo
   }
   assert.equal(trapCount, 2);
 
-  // Companion leave preserves wounds, hunger, gear & parkedLocation, and map recall restores full state
+  // Companion leave preserves wounds, hunger, gear & waiting coordinates, and map recall restores full state
   const kael = createRecruitedAlly('ally_kael');
   kael.hp = 68;
   kael.mind = 55;
@@ -1071,31 +1124,28 @@ test('Tactical items (ancient_ash, poison_powder, poison_herb, lamp_oil), 2 floo
   p.party = [kael];
   const leaveOut = leaveOrDismissPartyMember(p, 0, 'leave', {
     roomId: 'F2_R1',
-    floor: 2,
     x: 6,
     y: 5,
   });
   assert.equal(leaveOut.success, true);
   assert.equal((p.dismissedCompanions || []).length, 1);
-  assert.deepEqual(p.dismissedCompanions?.[0].parkedLocation, {
-    roomId: 'F2_R1',
-    floor: 2,
-    x: 6,
-    y: 5,
-  });
-  assert.equal(p.dismissedCompanions?.[0].equippedBody, 'legion_brigandine');
+  assert.equal(p.dismissedCompanions?.[0].waitingRoomId, 'F2_R1');
+  assert.equal(p.dismissedCompanions?.[0].waitingX, 6);
+  assert.equal(p.dismissedCompanions?.[0].waitingY, 5);
+  assert.equal(p.unlockedGear.includes('legion_brigandine'), true);
+  assert.equal(p.dismissedCompanions?.[0].equippedBody, null);
   const recallOut = recallDismissedCompanion(p, 'ally_kael');
   assert.equal(recallOut.success, true);
   assert.equal(p.party.length, 1);
   assert.equal(p.party[0].hp, 68);
   assert.equal(p.party[0].hunger, 42);
-  assert.equal(p.party[0].equippedBody, 'legion_brigandine');
   assert.equal(p.party[0].limbs.leftArm, false);
-  assert.equal(p.party[0].parkedLocation, undefined);
+  assert.equal(p.party[0].waitingRoomId, undefined);
 
-  // Alchemy recipes start hidden (empty) and all 3 Pha Chế Thuốc books are placed in dungeon rooms
+  // Advanced alchemy recipes start hidden (empty); 6 advanced recipes across 3 books + 5 basic starter recipes
   assert.deepEqual(createInitialPlayer('fallen_knight').unlockedRecipes, []);
-  assert.equal(CONFIG.RECIPES.length, 6);
+  assert.equal(CONFIG.RECIPES.filter((r) => !r.isBasic).length, 6);
+  assert.equal(CONFIG.RECIPES.filter((r) => r.isBasic).length, 5);
   const placedBooks = new Set<string>();
   for (const room of Object.values(world.rooms)) {
     for (const bookId of Object.values(room.guaranteedRecipeBooks || {})) {
@@ -1902,7 +1952,7 @@ test('Balancing Patch: diegetic corruption warning (18-24), blood_pact Lv3 condi
   pNoHeal.hp = 80;
   pNoHeal.maxHp = 135;
   pNoHeal.statuses.bloodPactLevel = 3;
-  const enTank = createMapEnemyInstance('e_bp_tank', 'starved_hound', 4, 4);
+  const enTank = createMapEnemyInstance('e_bp_tank', 'dire_hellwolf', 4, 4);
   enTank.stunTurns = 1;
   const torsoTank = enTank.limbs.find((l) => l.id === 'torso')!;
   torsoTank.hp = 9999;
@@ -1954,7 +2004,7 @@ test('Balancing Patch: diegetic corruption warning (18-24), blood_pact Lv3 condi
   pKillHeal.hp = 80;
   pKillHeal.maxHp = 135;
   pKillHeal.statuses.bloodPactLevel = 3;
-  const enKill = createMapEnemyInstance('e_bp_kill', 'starved_hound', 4, 4);
+  const enKill = createMapEnemyInstance('e_bp_kill', 'dire_hellwolf', 4, 4);
   enKill.stunTurns = 1;
   const torsoKill = enKill.limbs.find((l) => l.id === 'torso')!;
   torsoKill.hp = 10;
@@ -2050,7 +2100,7 @@ test('Summon Rebalance: 0.7x/0.85x/1.05x undead damage scaling, ghoul flesh_rend
   assert.equal(getAllyComputedStats(ghoul, necro).physAtk, Math.round(expectedBaseAvg * 0.7));
 
   // Verify ghoul flesh_rend deals 200 * 0.7 = 140 dmg and 90 * 0.7 = 63 bleed at Lv1
-  const enTarget = createMapEnemyInstance('e_ghoul_tgt', 'starved_hound', 4, 4);
+  const enTarget = createMapEnemyInstance('e_ghoul_tgt', 'dire_hellwolf', 4, 4);
   const torso = enTarget.limbs.find((l) => l.id === 'torso')!;
   torso.hp = 1000;
   torso.maxHp = 1000;
@@ -2130,7 +2180,7 @@ test('Summon Rebalance: 0.7x/0.85x/1.05x undead damage scaling, ghoul flesh_rend
   decaySummon.mind = 0;
   decaySummon.weaponId = 'broad_iron_sword';
 
-  const stunnedEnemy = createMapEnemyInstance('e_decay_foe', 'starved_hound', 4, 4);
+  const stunnedEnemy = createMapEnemyInstance('e_decay_foe', 'dire_hellwolf', 4, 4);
   stunnedEnemy.stunTurns = 2; // No enemy damage so we isolate Soul Decay
   const round1 = resolveEnemyCombatRound(decayPlayer, stunnedEnemy, new SeededRNG('SOUL-DECAY-1'));
   assert.equal(decaySummon.hp, 85, 'Undead summon at 0 Mind must lose 15% maxHp (15 HP)');
@@ -2319,7 +2369,7 @@ test('Combat.ts Deep Bugfix: guarding resets after round, Vaelis drops 1 void_co
   pGuard.party.push(ally);
   pGuard.statuses.guarding = true;
   ally.guarding = true;
-  const foeGuard = createMapEnemyInstance('e_guard_reset', 'starved_hound', 4, 4);
+  const foeGuard = createMapEnemyInstance('e_guard_reset', 'dire_hellwolf', 4, 4);
   foeGuard.stunTurns = 2;
   resolveEnemyCombatRound(pGuard, foeGuard, new SeededRNG('GUARD-RESET'));
   assert.equal(pGuard.statuses.guarding, false, 'player.statuses.guarding must reset to false at end of round');
@@ -2335,7 +2385,7 @@ test('Combat.ts Deep Bugfix: guarding resets after round, Vaelis drops 1 void_co
   pBoss.corruption = 0;
 
   // Test +2 Mind/round from black_wax_crown
-  const stunnedFoe = createMapEnemyInstance('e_crown_mind', 'starved_hound', 4, 4);
+  const stunnedFoe = createMapEnemyInstance('e_crown_mind', 'dire_hellwolf', 4, 4);
   stunnedFoe.stunTurns = 2;
   resolveEnemyCombatRound(pBoss, stunnedFoe, new SeededRNG('CROWN-MIND'));
   assert.equal(pBoss.mind, 52, 'black_wax_crown must restore +2 Mind at end of round');
@@ -2453,7 +2503,7 @@ test('Workstream A & B: Panic ITEM, ally ITEM isolation, Lv3 skills, gear passiv
   const pPanicItem = createInitialPlayer('fallen_knight');
   pPanicItem.mind = 10;
   pPanicItem.inventory.opium_vial = 1;
-  const foePanic = createMapEnemyInstance('e_panic_item', 'starved_hound', 4, 4);
+  const foePanic = createMapEnemyInstance('e_panic_item', 'dire_hellwolf', 4, 4);
   const panicItemOut = executeSingleActorCombatAction(
     pPanicItem,
     foePanic,
@@ -2588,7 +2638,7 @@ test('Workstream A & B: Panic ITEM, ally ITEM isolation, Lv3 skills, gear passiv
   pPlat.hp = 100;
   pPlat.corruption = 10;
   pPlat.equippedBody = 'platinum_cuirass';
-  const stunnedSlime = createMapEnemyInstance('e_plat', 'starved_hound', 4, 4);
+  const stunnedSlime = createMapEnemyInstance('e_plat', 'dire_hellwolf', 4, 4);
   stunnedSlime.stunTurns = 2;
   resolveEnemyCombatRound(pPlat, stunnedSlime, new SeededRNG('PLAT-BURN'));
   assert.equal(pPlat.hp, 95, 'platinum_cuirass must burn 5 HP at end of combat round when corruption > 0');
@@ -2612,18 +2662,21 @@ test('Workstream A & B: Panic ITEM, ally ITEM isolation, Lv3 skills, gear passiv
   resolveEnemyCombatRound(pGuardMulti, multiBoss, new SeededRNG('MULTI-HIT-GUARD'));
   assert.equal(guardAlly.guarding, false, 'ally.guarding resets at end of round after defending all multi-hits');
 
-  // 6. Alchemy consolidation: fresh player has unlockedRecipes = [], 6 recipes across 3 books, no Lore unlockRecipeId
+  // 6. Alchemy consolidation: fresh player has unlockedRecipes = [], 6 advanced recipes across 3 books + 5 basic starter recipes
   const freshP = createInitialPlayer('fallen_knight');
   assert.deepEqual(freshP.unlockedRecipes, []);
-  assert.equal(CONFIG.RECIPES.length, 6);
+  const advancedRecipes = CONFIG.RECIPES.filter((r) => !r.isBasic);
+  const basicRecipes = CONFIG.RECIPES.filter((r) => r.isBasic);
+  assert.equal(advancedRecipes.length, 6);
+  assert.equal(basicRecipes.length, 5);
   const bookUnlocked = new Set([
     ...(CONFIG.ITEMS.recipe_book_expedition?.unlockRecipes || []),
     ...(CONFIG.ITEMS.recipe_book_cathedral?.unlockRecipes || []),
     ...(CONFIG.ITEMS.recipe_book_forbidden?.unlockRecipes || []),
   ]);
   assert.equal(bookUnlocked.size, 6);
-  for (const r of CONFIG.RECIPES) {
-    assert.equal(bookUnlocked.has(r.id), true, `Recipe ${r.id} must belong to one of the 3 alchemy books`);
+  for (const r of advancedRecipes) {
+    assert.equal(bookUnlocked.has(r.id), true, `Advanced recipe ${r.id} must belong to one of the 3 alchemy books`);
   }
 
   // 7. Waiting spot coordinates persisted on leaveOrDismissPartyMember & cleared on recallDismissedCompanion
@@ -2657,12 +2710,100 @@ test('Workstream A & B: Panic ITEM, ally ITEM isolation, Lv3 skills, gear passiv
   }
 });
 
+test('Overworld 0-Mind Suicide/Despair Check, Easy Difficulty Damage Multiplier, New Food/Sanity Items, and Basic Crafting Materials', () => {
+  // 1. evaluateZeroMindStepDespair: low mind (1..8) warns without killing; mind === 0 triggers at <0.14 (or <0.07 if panicImmune)
+  const pLow = createInitialPlayer('night_hunter');
+  pLow.mind = 6;
+  const lowWarn = evaluateZeroMindStepDespair(pLow, 0.1);
+  assert.equal(lowWarn.triggered, false);
+  assert.equal(Boolean(lowWarn.warningMessage), true);
+  assert.equal(pLow.hp > 0, true);
 
+  const pZero = createInitialPlayer('night_hunter');
+  pZero.mind = 0;
+  pZero.hp = 90;
+  const safeRoll = evaluateZeroMindStepDespair(pZero, 0.2);
+  assert.equal(safeRoll.triggered, false);
+  assert.equal(pZero.hp, 90);
 
+  const fatalRoll = evaluateZeroMindStepDespair(pZero, 0.08);
+  assert.equal(fatalRoll.triggered, true);
+  assert.equal(pZero.hp, 0);
+  assert.equal(fatalRoll.ending?.id, 'MIND_ZERO_SUICIDE');
+  assert.equal(fatalRoll.ending?.title, 'TÂM TRÍ TAN VỠ — TỰ KẾT LIỄU TRONG BÓNG TỐI');
 
+  const pImmune = createInitialPlayer('night_hunter');
+  pImmune.mind = 0;
+  pImmune.hp = 90;
+  pImmune.panicImmune = true;
+  // 0.10 is >= 0.07 so panicImmune survives, whereas 0.04 < 0.07 still triggers
+  assert.equal(evaluateZeroMindStepDespair(pImmune, 0.1).triggered, false);
+  assert.equal(pImmune.hp, 90);
+  const immuneFatal = evaluateZeroMindStepDespair(pImmune, 0.04);
+  assert.equal(immuneFatal.triggered, true);
+  assert.equal(pImmune.hp, 0);
+  assert.equal(immuneFatal.ending?.id, 'MIND_ZERO_SUICIDE');
 
+  // 2. Easy mode reduces incoming combat damage by 20%
+  const pNorm = createInitialPlayer('fallen_knight', undefined, 'normal');
+  const pEasy = createInitialPlayer('fallen_knight', undefined, 'easy');
+  assert.equal(getIncomingDamageMultiplier(pNorm), 1);
+  assert.equal(getIncomingDamageMultiplier(pEasy), 0.8);
 
+  const eNorm = createMapEnemyInstance('e_diff_n', 'dire_hellwolf', 4, 4);
+  const eEasy = createMapEnemyInstance('e_diff_e', 'dire_hellwolf', 4, 4);
+  pNorm.hp = 135;
+  pEasy.hp = 135;
+  resolveEnemyCombatRound(pNorm, eNorm, new SeededRNG('DIFF-SEED-7'));
+  resolveEnemyCombatRound(pEasy, eEasy, new SeededRNG('DIFF-SEED-7'));
+  const normLoss = 135 - pNorm.hp;
+  const easyLoss = 135 - pEasy.hp;
+  assert.equal(normLoss > 0, true);
+  assert.equal(easyLoss < normLoss, true);
 
+  // 3. New food & sanity-recovery items apply expected effects
+  const pItems = createInitialPlayer('forsaken_nun');
+  const itemLogs: string[] = [];
+  pItems.mind = 20;
+  pItems.hunger = 80;
+  pItems.hp = 50;
+  pItems.statuses.hallucinating = true;
+  applySupportItemEffects(pItems, 'herbal_cigarette', itemLogs);
+  assert.equal(pItems.mind, 38);
+  assert.equal(pItems.statuses.hallucinating, false);
 
+  applySupportItemEffects(pItems, 'dark_ale', itemLogs);
+  assert.equal(pItems.mind, 54);
+  assert.equal(pItems.hunger, 68);
 
+  pItems.mind = 40;
+  pItems.hunger = 60;
+  applySupportItemEffects(pItems, 'abbey_wine', itemLogs);
+  assert.equal(pItems.mind, 68);
+  assert.equal(pItems.hunger, 52);
 
+  pItems.hunger = 80;
+  pItems.hp = 50;
+  applySupportItemEffects(pItems, 'salted_meat', itemLogs);
+  assert.equal(pItems.hunger, 35);
+  assert.equal(pItems.hp, 65);
+
+  pItems.hunger = 70;
+  pItems.mind = 50;
+  applySupportItemEffects(pItems, 'aged_cheese', itemLogs);
+  assert.equal(pItems.hunger, 40);
+  assert.equal(pItems.mind, 58);
+
+  // 4. Scavengeable raw materials & basic starter crafting recipes integrity
+  for (const matId of ['torn_cloth', 'dry_wood', 'scrap_iron', 'pine_resin']) {
+    assert.ok(CONFIG.ITEMS[matId], `Material ${matId} must exist in CONFIG.ITEMS`);
+  }
+  const basicList = CONFIG.RECIPES.filter((r) => r.isBasic);
+  assert.equal(basicList.length, 5);
+  for (const rec of basicList) {
+    assert.ok(CONFIG.ITEMS[rec.resultItemId], `Basic recipe result ${rec.resultItemId} must exist`);
+    for (const ingId of Object.keys(rec.ingredients)) {
+      assert.ok(CONFIG.ITEMS[ingId], `Basic recipe ingredient ${ingId} must exist`);
+    }
+  }
+});

@@ -252,17 +252,8 @@ export const CombatStageView: React.FC<CombatStageViewProps> = ({
                           setHoveredLimbId((cur) => (cur === limb.id ? null : cur))
                         }
                         onClick={() => onClickLimb?.(limb.id)}
-                        className={`pointer-events-auto relative w-11 h-11 bg-transparent border-0 cursor-pointer focus:outline-none flex items-center justify-center ${
-                          limb.id === selectedLimbId ? 'limb-target-pulse' : ''
-                        }`}
-                      >
-                        {limb.id === selectedLimbId && (
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none block w-7 h-7 rounded-full border border-[#fff8e7]/65 bg-[#fff8e7]/12 shadow-[0_0_12px_rgba(255,250,235,0.45)]"
-                          />
-                        )}
-                      </button>
+                        className="pointer-events-auto relative w-11 h-11 bg-transparent border-0 cursor-pointer focus:outline-none flex items-center justify-center"
+                      />
                     )}
                   </div>
                 );

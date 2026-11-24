@@ -23,6 +23,8 @@ export interface LimbConfig {
 
 export type WeaponCategory = 'sword' | 'heavy_axe' | 'dagger' | 'staff' | 'unarmed';
 
+export type DifficultyMode = 'easy' | 'normal';
+
 export interface EnemyTemplate {
   id: string;
   name: string;
@@ -177,6 +179,7 @@ export interface RecipeDef {
   resultItemId: string;
   name: string;
   ingredients: Record<string, number>;
+  isBasic?: boolean;
   desc: string;
 }
 
@@ -1310,10 +1313,136 @@ export const CONFIG = {
       mapUsable: false,
       desc: 'Tẩm Dầu Lửa lên vũ khí (3 đòn đánh): gây Thiêu Đốt 5% Sinh Lực tối đa/lượt và kích nổ 2.5x sát thương lên mục tiêu dính Dầu.',
     },
+    // === LƯƠNG THỰC & HỒI PHỤC LÝ TRÍ MỞ RỘNG ===
+    herbal_cigarette: {
+      id: 'herbal_cigarette',
+      name: 'Thuốc Quấn Thảo Mộc',
+      category: 'tool',
+      mindHeal: 18,
+      cureHallucination: true,
+      combatUsable: true,
+      mapUsable: true,
+      desc: 'Lá thảo mộc sấy khô quấn trong mảnh vải mỏng. Hít một hơi sâu giúp hồi +18 Lý Trí và xua tan Ảo Giác.',
+    },
+    dark_ale: {
+      id: 'dark_ale',
+      name: 'Bia Đen Hầm Ngục',
+      category: 'food',
+      mindHeal: 16,
+      hungerRestore: 12,
+      combatUsable: true,
+      mapUsable: true,
+      desc: 'Chai bia đen đắng ngắt ủ dưới hầm rượu cũ. Hồi +16 Lý Trí và giảm 12 Cơn Đói.',
+    },
+    abbey_wine: {
+      id: 'abbey_wine',
+      name: 'Rượu Vang Giáo Đường',
+      category: 'food',
+      mindHeal: 28,
+      hungerRestore: 8,
+      combatUsable: true,
+      mapUsable: true,
+      desc: 'Rượu vang đỏ cổ lưu giữ trong hầm lễ nhà thờ Goethe. Làm ấm máu thịt, hồi +28 Lý Trí và giảm 8 Cơn Đói.',
+    },
+    salted_meat: {
+      id: 'salted_meat',
+      name: 'Thịt Muối Hun Khói',
+      category: 'food',
+      hungerRestore: 45,
+      hpHeal: 15,
+      combatUsable: false,
+      mapUsable: true,
+      desc: 'Tảng thịt ướp muối hun khói dày dặn, bảo quản tốt giữa sương mù. Giảm 45 Cơn Đói và hồi +15 Sinh Lực.',
+    },
+    aged_cheese: {
+      id: 'aged_cheese',
+      name: 'Phô Mai Hầm Cổ',
+      category: 'food',
+      hungerRestore: 30,
+      mindHeal: 8,
+      combatUsable: false,
+      mapUsable: true,
+      desc: 'Khoanh phô mai ủ lâu năm phủ lớp vỏ sáp cứng. Giảm 30 Cơn Đói và hồi +8 Lý Trí.',
+    },
+    // === NGUYÊN LIỆU THÔ NHẶT ĐƯỢC ĐỂ CHẾ TẠO CƠ BẢN ===
+    torn_cloth: {
+      id: 'torn_cloth',
+      name: 'Vải Rách',
+      category: 'tool',
+      combatUsable: false,
+      mapUsable: false,
+      desc: 'Mảnh vải lanh rách nhặt từ xác lính và thùng hàng cũ. Dùng để chế tạo Băng Gạc, Đuốc Sáng hoặc Thuốc Quấn Thảo Mộc.',
+    },
+    dry_wood: {
+      id: 'dry_wood',
+      name: 'Gỗ Khô',
+      category: 'tool',
+      combatUsable: false,
+      mapUsable: false,
+      desc: 'Thanh gỗ khô cứng tách từ thùng tiếp tế vỡ. Dùng làm cán Đuốc Sáng hoặc khung Bẫy Gấu Sắt.',
+    },
+    scrap_iron: {
+      id: 'scrap_iron',
+      name: 'Mảnh Sắt Gỉ',
+      category: 'tool',
+      combatUsable: false,
+      mapUsable: false,
+      desc: 'Mảnh kim loại rỉ sét thu nhặt trong đổ nát. Có thể uốn thành Chìa Khóa Vạn Năng hoặc rèn Bẫy Gấu Sắt.',
+    },
+    pine_resin: {
+      id: 'pine_resin',
+      name: 'Nhựa Thông',
+      category: 'tool',
+      combatUsable: false,
+      mapUsable: false,
+      desc: 'Cục nhựa thông dễ bắt lửa đọng trên thân cây và ván gỗ cũ. Dùng tẩm đầu Đuốc Sáng cháy bền.',
+    },
   } as Record<string, UtilityItemDef>,
 
-  // Crafting Recipes (Unlocked via Bookshelves / Default)
+  // Crafting Recipes (Basic Survival unlocked from start + Advanced Alchemy unlocked via Bookshelves)
   RECIPES: [
+    // --- Chế Tạo Cơ Bản (Mở sẵn từ đầu) ---
+    {
+      id: 'basic_bandage',
+      resultItemId: 'bandage',
+      name: 'Băng Gạc Vải',
+      ingredients: { torn_cloth: 2 },
+      isBasic: true,
+      desc: '2 Vải Rách → 1 Băng Gạc Vải (Cầm máu hoàn toàn + hồi 12 Sinh Lực).',
+    },
+    {
+      id: 'basic_torch',
+      resultItemId: 'torch',
+      name: 'Đuốc Sáng',
+      ingredients: { dry_wood: 1, torn_cloth: 1, pine_resin: 1 },
+      isBasic: true,
+      desc: '1 Gỗ Khô + 1 Vải Rách + 1 Nhựa Thông → 1 Đuốc Sáng (120s ánh sáng).',
+    },
+    {
+      id: 'basic_lockpick',
+      resultItemId: 'lockpick',
+      name: 'Chìa Khóa Vạn Năng',
+      ingredients: { scrap_iron: 2 },
+      isBasic: true,
+      desc: '2 Mảnh Sắt Gỉ → 1 Chìa Khóa Vạn Năng (Mở rương khóa an toàn).',
+    },
+    {
+      id: 'basic_steel_trap',
+      resultItemId: 'steel_trap',
+      name: 'Bẫy Gấu Sắt',
+      ingredients: { scrap_iron: 2, dry_wood: 1 },
+      isBasic: true,
+      desc: '2 Mảnh Sắt Gỉ + 1 Gỗ Khô → 1 Bẫy Gấu Sắt (Chặt đứt chân quái).',
+    },
+    {
+      id: 'basic_cigarette',
+      resultItemId: 'herbal_cigarette',
+      name: 'Thuốc Quấn Thảo Mộc',
+      ingredients: { green_herb: 1, torn_cloth: 1 },
+      isBasic: true,
+      desc: '1 Thảo Dược Xanh + 1 Vải Rách → 1 Thuốc Quấn Thảo Mộc (+18 Lý Trí, Xóa Ảo Giác).',
+    },
+    // --- Giả Kim Nâng Cao (Mở khóa qua Sách Công Thức) ---
     {
       id: 'recipe_herbal_salve',
       resultItemId: 'herbal_salve',

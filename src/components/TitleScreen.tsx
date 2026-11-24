@@ -1,6 +1,6 @@
 import React from 'react';
 import { FolderOpen, Dices, Settings } from 'lucide-react';
-import { CONFIG } from '../game/config';
+import { CONFIG, DifficultyMode } from '../game/config';
 import { sfx } from '../game/audio';
 import { CharacterPortraitBox } from './CanvasWidgets';
 import { SaveSlotData } from './SystemModals';
@@ -12,6 +12,8 @@ export interface TitleScreenProps {
   setCharacterNameInput: React.Dispatch<React.SetStateAction<string>>;
   selectedClassId: string;
   setSelectedClassId: React.Dispatch<React.SetStateAction<string>>;
+  selectedDifficulty: DifficultyMode;
+  setSelectedDifficulty: React.Dispatch<React.SetStateAction<DifficultyMode>>;
   portraitErrorMap: Record<string, boolean>;
   onMarkPortraitError: (url: string) => void;
   saveSlots: Array<SaveSlotData | null>;
@@ -34,6 +36,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   setCharacterNameInput,
   selectedClassId,
   setSelectedClassId,
+  selectedDifficulty,
+  setSelectedDifficulty,
   portraitErrorMap,
   onMarkPortraitError,
   saveSlots,
@@ -150,6 +154,43 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     </button>
                   </div>
                 </div>
+                <div className="w-full sm:w-auto shrink-0">
+                  <label className="block text-[10px] uppercase tracking-wider text-[#c5a059] mb-1">
+                    Chế Độ Sinh Tồn
+                  </label>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sfx.playSfx('ui_confirm');
+                        setSelectedDifficulty('normal');
+                      }}
+                      className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider cursor-pointer ${
+                        selectedDifficulty === 'normal'
+                          ? 'df-btn-bronze text-[#f5ebd6]'
+                          : 'df-btn text-[#9b8f82]'
+                      }`}
+                      title="Chuẩn: Trải nghiệm khắc nghiệt nguyên bản của Thung Lũng Xương Tàn."
+                    >
+                      Normal (Chuẩn)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sfx.playSfx('ui_confirm');
+                        setSelectedDifficulty('easy');
+                      }}
+                      className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider cursor-pointer ${
+                        selectedDifficulty === 'easy'
+                          ? 'df-btn-bronze text-[#f5ebd6]'
+                          : 'df-btn text-[#9b8f82]'
+                      }`}
+                      title="Dễ: -20% sát thương nhận vào, đuốc cháy lâu hơn 25% (nhưng vùng sáng hầm hẹp hơn ~18%), đói chậm hơn 30%. Mọi luật đứt chi & chết vĩnh viễn giữ nguyên."
+                    >
+                      Easy (Dễ)
+                    </button>
+                  </div>
+                </div>
                 <div className="flex w-full sm:w-auto gap-2 shrink-0">
                   <button
                     type="button"
@@ -163,6 +204,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   </button>
                 </div>
               </div>
+              {selectedDifficulty === 'easy' && (
+                <div className="text-[11px] text-[#c8bda8] df-well px-3 py-1.5 border-l-2 border-[#c5a059]">
+                  <span className="text-[#c5a059] font-semibold">Easy (Dễ):</span> Giảm 20% sát thương nhận vào • Đuốc/đèn cháy lâu hơn 25% nhưng vùng sáng trong hầm hẹp hơn • Đói tăng chậm hơn 30% (đứt chi &amp; luật tử vong giữ nguyên).
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {CONFIG.CLASSES.map((cls) => {

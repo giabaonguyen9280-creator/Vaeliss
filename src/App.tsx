@@ -8,7 +8,7 @@ import {
   HelpCircle,
   Settings,
 } from 'lucide-react';
-import { CONFIG, WeaponCategory } from './game/config';
+import { CONFIG, DifficultyMode, WeaponCategory } from './game/config';
 import {
   evaluateCanonEnding,
   evaluateVoidRiftRequirements,
@@ -64,6 +64,7 @@ import {
   getAllyAvailableSkills,
   canTargetEnemyLimb,
   devourEnemyCorpse,
+  evaluateZeroMindStepDespair,
   applyDefaultIntroLoadoutForRemainingSteps,
   isPlayerPanicking,
   leaveOrDismissPartyMember,
@@ -139,9 +140,11 @@ export default function App() {
   const [seedInput, setSeedInput] = useState<string>(CONFIG.DEFAULT_SEED);
   const [characterNameInput, setCharacterNameInput] = useState<string>(CONFIG.CLASSES[0].name);
   const [selectedClassId, setSelectedClassId] = useState<string>(CONFIG.CLASSES[0].id);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyMode>('normal');
   const [world, setWorld] = useState<WorldMapState>(() => generateWorld(CONFIG.DEFAULT_SEED));
   const [player, setPlayer] = useState<PlayerState>(() => createInitialPlayer(CONFIG.CLASSES[0].id));
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number }>({ x: 3, y: 9 });
+  const hungerStepAccumRef = useRef<number>(0);
 
   // Active combat enemy reference & standalone CombatEngine Manager
   const combatEngineRef = useRef<CombatEngine>(new CombatEngine());
@@ -610,12 +613,13 @@ export default function App() {
 
   // Start new game -> enters 3-Frame Prologue first
   const enterPrologue = useCallback(
-    (customSeed?: string, customClassId?: string) => {
+    (customSeed?: string, customClassId?: string, customDifficulty?: DifficultyMode) => {
       const finalSeed = customSeed?.trim() || generateRandomSeed();
       const finalClass = customClassId ?? selectedClassId;
+      const finalDifficulty = customDifficulty ?? selectedDifficulty;
       const newWorld = generateWorld(finalSeed);
       const startRoom = newWorld.rooms[newWorld.currentRoomId];
-      const newPlayer = createInitialPlayer(finalClass, characterNameInput);
+      const newPlayer = createInitialPlayer(finalClass, characterNameInput, finalDifficulty);
 
       setSeedInput(finalSeed);
       setWorld(newWorld);
@@ -635,6 +639,7 @@ export default function App() {
       setAreaBannerText(startRoom.name);
       setAreaBannerKey((k) => k + 1);
       torchLowWarnedRef.current = false;
+      hungerStepAccumRef.current = 0;
       setSmugglerPrices({});
       setTrailCoords([
         { x: Math.max(1, startRoom.spawnX - 1), y: startRoom.spawnY },
@@ -646,7 +651,7 @@ export default function App() {
       setShowSkipProloguePrompt(false);
       setScreen('prologue');
     },
-    [selectedClassId, characterNameInput, generateRandomSeed]
+    [selectedClassId, selectedDifficulty, characterNameInput, generateRandomSeed]
   );
 
   // Skip prologue directly from Character Select -> auto-apply default intro loadout & enter F2_EXTERIOR
@@ -654,7 +659,7 @@ export default function App() {
     const finalSeed = generateRandomSeed();
     const newWorld = generateWorld(finalSeed);
     const startRoom = newWorld.rooms[newWorld.currentRoomId];
-    const newPlayer = createInitialPlayer(selectedClassId, characterNameInput);
+    const newPlayer = createInitialPlayer(selectedClassId, characterNameInput, selectedDifficulty);
     const loadoutRes = applyDefaultIntroLoadoutForRemainingSteps(newPlayer, 0);
 
     setSeedInput(finalSeed);
@@ -675,6 +680,7 @@ export default function App() {
     setAreaBannerText(startRoom.name);
     setAreaBannerKey((k) => k + 1);
     torchLowWarnedRef.current = false;
+    hungerStepAccumRef.current = 0;
     setSmugglerPrices({});
     setTrailCoords([
       { x: Math.max(1, startRoom.spawnX - 1), y: startRoom.spawnY },
@@ -702,7 +708,7 @@ export default function App() {
       classOpening[newPlayer.classId] || startRoom.sensoryLine,
       startRoom.sensoryLine,
     ]);
-  }, [selectedClassId, characterNameInput, generateRandomSeed]);
+  }, [selectedClassId, selectedDifficulty, characterNameInput, generateRandomSeed]);
 
   const finishPrologueAndPlay = useCallback(
     (alreadyCompletedBackstory = false) => {
@@ -805,8 +811,11 @@ export default function App() {
       x: restoredRoom?.spawnX ?? 3,
       y: restoredRoom?.spawnY ?? 6,
     };
+    const restoredDifficulty: DifficultyMode =
+      data.player.difficulty === 'easy' ? 'easy' : 'normal';
     const restoredPlayer: PlayerState = {
       ...data.player,
+      difficulty: restoredDifficulty,
       corruptionWarningLogged: Boolean(data.player.corruptionWarningLogged),
       usedAltarKeys: Array.isArray(data.player.usedAltarKeys)
         ? [...data.player.usedAltarKeys]
@@ -836,12 +845,14 @@ export default function App() {
     }
     setWorld(restoredWorld);
     setPlayer(restoredPlayer);
+    setSelectedDifficulty(restoredDifficulty);
     setPlayerPos(spawnPos);
     setSeedInput(restoredSeed);
     setRiftElixirCollected(restoredRiftElixirCollected);
     setAreaBannerText(restoredRoom?.name || 'Ngoại Vi Đại Giáo Đường Goethe');
     setAreaBannerKey((k) => k + 1);
     torchLowWarnedRef.current = false;
+    hungerStepAccumRef.current = 0;
     setSmugglerPrices({});
     setTrailCoords([
       { x: Math.max(1, spawnPos.x - 1), y: spawnPos.y },
@@ -1037,8 +1048,9 @@ export default function App() {
       if (!room.isExterior && !inSafeZone) {
         const curTorch = playerRef.current.torchTimer ?? 120;
         const maxTorch = Math.max(1, playerRef.current.torchMaxTimer ?? 120);
+        const torchDecay = playerRef.current.difficulty === 'easy' ? 0.75 : 1;
         if (curTorch > 0) {
-          const nextTorch = Math.max(0, curTorch - 1);
+          const nextTorch = Math.max(0, curTorch - torchDecay);
           const prevRatio = curTorch / maxTorch;
           const nextRatio = nextTorch / maxTorch;
           if (prevRatio >= 0.3 && nextRatio < 0.3 && !torchLowWarnedRef.current) {
@@ -1051,7 +1063,10 @@ export default function App() {
           }
           setPlayer((prev) => ({
             ...prev,
-            torchTimer: Math.max(0, (prev.torchTimer ?? 120) - 1),
+            torchTimer: Math.max(
+              0,
+              (prev.torchTimer ?? 120) - (prev.difficulty === 'easy' ? 0.75 : 1)
+            ),
           }));
         } else {
           torchDepletedNow = true;
@@ -1960,6 +1975,11 @@ export default function App() {
           const wares: Array<{ id: string; name: string; price: number }> = [
             { id: 'torch', name: 'Đuốc Sáng (120s Ánh Sáng)', price: 3 },
             { id: 'ritual_chalk', name: 'Phấn Khắc Ấn', price: 4 },
+            { id: 'herbal_cigarette', name: 'Thuốc Quấn Thảo Mộc (+18 Lý Trí)', price: 5 },
+            { id: 'dark_ale', name: 'Bia Đen Hầm Ngục (+16 Lý Trí, -12 Đói)', price: 6 },
+            { id: 'aged_cheese', name: 'Phô Mai Hầm Cổ (-30 Đói, +8 Lý Trí)', price: 7 },
+            { id: 'salted_meat', name: 'Thịt Muối Hun Khói (-45 Đói, +15 SL)', price: 9 },
+            { id: 'abbey_wine', name: 'Rượu Vang Giáo Đường (+28 Lý Trí)', price: 11 },
             { id: 'lamp_oil', name: 'Dầu Đèn', price: 6 },
             { id: 'oil_lamp', name: 'Đèn Dầu Cổ (240s Ánh Sáng)', price: 7 },
             { id: 'poison_herb', name: 'Thảo Dược Độc', price: 7 },
@@ -2657,10 +2677,26 @@ export default function App() {
                 (nextPlayer.inventory.silver_coin || 0) + silverGain;
               lootMessages.push(`+${silverGain} Đồng Bạc`);
             } else {
-              const survivalPool = ['bandage', 'dried_meat', 'torch', 'ritual_chalk'];
+              const survivalPool = [
+                'bandage',
+                'dried_meat',
+                'salted_meat',
+                'aged_cheese',
+                'dark_ale',
+                'herbal_cigarette',
+                'torch',
+                'ritual_chalk',
+                'torn_cloth',
+                'scrap_iron',
+              ];
               const sPick = rng.pick(survivalPool);
               nextPlayer.inventory[sPick] = (nextPlayer.inventory[sPick] || 0) + 1;
               lootMessages.push(`+1 [${CONFIG.ITEMS[sPick]?.name || sPick}]`);
+            }
+            if (rng.chance(0.55)) {
+              const rawPick = rng.pick(['torn_cloth', 'scrap_iron', 'dry_wood', 'pine_resin']);
+              nextPlayer.inventory[rawPick] = (nextPlayer.inventory[rawPick] || 0) + 1;
+              lootMessages.push(`+1 [${CONFIG.ITEMS[rawPick]?.name || rawPick}]`);
             }
 
             setPlayer(nextPlayer);
@@ -2757,14 +2793,26 @@ export default function App() {
       }
 
       if (!corpse.corpseDevoured) {
+        const hasDemonicPact = (player.affinities?.demonicPact || 0) >= 1;
         corpseChoices.push({
-          label: 'Nuốt chửng cái xác',
+          label: hasDemonicPact
+            ? 'Nuốt Chửng cái xác (Khế Ước Huyết Quỷ)'
+            : 'Nuốt Chửng cái xác [Khóa: Cần Huyết Quỷ ≥ 1]',
+          muted: !hasDemonicPact,
+          hint: !hasDemonicPact
+            ? 'Bản năng phàm trần từ chối thịt ô uế — cần ký khế ước [Huyết Quỷ] tại Vòng Tròn Máu.'
+            : undefined,
           onSelect: () => {
             setInteractionMenu(null);
             const pCopy: PlayerState = JSON.parse(JSON.stringify(player));
             const eCopy: MapEnemyInstance = JSON.parse(JSON.stringify(corpse));
             const res = devourEnemyCorpse(pCopy, eCopy);
-            if (!res.success) return;
+            if (!res.success) {
+              sfx.playSfx('ui_move');
+              addLog(res.message);
+              setLogOverlayVisible(true);
+              return;
+            }
             sfx.playSfx('hurt');
             setPlayer(pCopy);
             setWorld((prev) => {
@@ -2793,7 +2841,9 @@ export default function App() {
       setInteractionMenu({
         title: `XÁC CỦA ${corpseName.toUpperCase()}`,
         description:
-          'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm, niệm Chiêu Hồn Thuật hoặc nuốt xác để cầm cự cơn đói.',
+          (player.affinities?.demonicPact || 0) >= 1
+            ? 'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm, giải phẫu, niệm Chiêu Hồn Thuật hoặc Nuốt Chửng theo Khế Ước Huyết Quỷ.'
+            : 'Xác kẻ địch nằm bất động trên nền đá đẫm máu. Bạn có thể lục soát chiến lợi phẩm hoặc dùng Cuộn Giải Phẫu Thực Địa (Nuốt Chửng bị khóa cho đến khi ký khế ước Huyết Quỷ ≥ 1).',
         selectedIndex: 0,
         choices: corpseChoices,
       });
@@ -2977,15 +3027,29 @@ export default function App() {
           'lockpick',
           'torch',
           'torch',
-          'torch',
+          'herbal_cigarette',
+          'dark_ale',
+          'abbey_wine',
+          'torn_cloth',
+          'dry_wood',
+          'scrap_iron',
+          'pine_resin',
         ];
-        const foodTable = ['dried_meat', 'moldy_bread', 'moldy_bread'];
+        const foodTable = [
+          'dried_meat',
+          'moldy_bread',
+          'salted_meat',
+          'aged_cheese',
+          'dark_ale',
+          'abbey_wine',
+        ];
+        const rawMaterialPool = ['torn_cloth', 'dry_wood', 'scrap_iron', 'pine_resin'];
 
         let item1: string;
         let bonusFood: string | null = null;
         if (rng.chance(0.12)) {
           item1 = 'lucky_coin';
-        } else if (rng.chance(0.52)) {
+        } else if (rng.chance(0.48)) {
           item1 = rng.pick(foodTable);
         } else {
           item1 = rng.pick(supplyTable);
@@ -2994,16 +3058,19 @@ export default function App() {
           }
         }
         const bonusTorch = item1 !== 'torch' && rng.chance(0.18);
+        const bonusRawMaterial = rng.chance(0.68) ? rng.pick(rawMaterialPool) : null;
 
-        setPlayer((prev) => ({
-          ...prev,
-          inventory: {
-            ...prev.inventory,
-            [item1]: (prev.inventory[item1] || 0) + 1,
-            ...(bonusFood ? { [bonusFood]: (prev.inventory[bonusFood] || 0) + 1 } : {}),
-            ...(bonusTorch ? { torch: (prev.inventory.torch || 0) + 1 } : {}),
-          },
-        }));
+        setPlayer((prev) => {
+          const nextInv = { ...prev.inventory };
+          nextInv[item1] = (nextInv[item1] || 0) + 1;
+          if (bonusFood) nextInv[bonusFood] = (nextInv[bonusFood] || 0) + 1;
+          if (bonusTorch) nextInv.torch = (nextInv.torch || 0) + 1;
+          if (bonusRawMaterial) nextInv[bonusRawMaterial] = (nextInv[bonusRawMaterial] || 0) + 1;
+          return {
+            ...prev,
+            inventory: nextInv,
+          };
+        });
 
         setWorld((prev) => {
           const curRoom = prev.rooms[room.id] || room;
@@ -3023,10 +3090,13 @@ export default function App() {
         const extraLootNames: string[] = [];
         if (bonusFood) extraLootNames.push(`[${CONFIG.ITEMS[bonusFood]?.name || bonusFood}]`);
         if (bonusTorch) extraLootNames.push(`[${CONFIG.ITEMS.torch?.name || 'Đuốc Sáng'}]`);
+        if (bonusRawMaterial) {
+          extraLootNames.push(`[${CONFIG.ITEMS[bonusRawMaterial]?.name || bonusRawMaterial}]`);
+        }
         addLog(
           item1 === 'lucky_coin'
-            ? bonusTorch
-              ? 'Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Thẻ Bài Bạc] cùng [Đuốc Sáng] ẩn dưới lớp rơm!'
+            ? extraLootNames.length > 0
+              ? `Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Thẻ Bài Bạc] cùng ${extraLootNames.join(' và ')} ẩn dưới lớp rơm!`
               : 'Lục thùng gỗ tiếp tế, bất ngờ tìm thấy [Thẻ Bài Bạc] ẩn dưới lớp rơm!'
             : extraLootNames.length > 0
             ? `Lục thùng gỗ tiếp tế, thu nhận [${CONFIG.ITEMS[item1]?.name || item1}] cùng ${extraLootNames.join(' và ')}.`
@@ -3112,8 +3182,16 @@ export default function App() {
           const rareHerbs = ['white_herb', 'green_herb', 'red_herb', 'calm_flower'];
           const vialId = rng.pick(rareVials);
           const foundLuckyCoin = rng.chance(0.28);
-          const hasFood = rng.chance(0.6);
-          const foodId = rng.chance(0.62) ? 'dried_meat' : 'moldy_bread';
+          const hasFood = rng.chance(0.65);
+          const foodId = rng.pick([
+            'dried_meat',
+            'salted_meat',
+            'aged_cheese',
+            'abbey_wine',
+            'dark_ale',
+            'herbal_cigarette',
+            'moldy_bread',
+          ]);
           const foodQty = hasFood ? (rng.chance(0.3) ? 2 : 1) : 0;
           let equipRewardName = '';
 
@@ -3523,13 +3601,20 @@ export default function App() {
             'poison_powder',
             'poison_herb',
             'lamp_oil',
+            'herbal_cigarette',
+            'dark_ale',
+            'abbey_wine',
+            'salted_meat',
+            'aged_cheese',
           ]);
-          rewardLog = `+1 ${CONFIG.ITEMS[itemPick]?.name}`;
+          const rawPick = rng.pick(['torn_cloth', 'scrap_iron', 'dry_wood', 'pine_resin']);
+          rewardLog = `+1 ${CONFIG.ITEMS[itemPick]?.name} & +1 ${CONFIG.ITEMS[rawPick]?.name}`;
           setPlayer((prev) => ({
             ...prev,
             inventory: {
               ...prev.inventory,
               [itemPick]: (prev.inventory[itemPick] || 0) + 1,
+              [rawPick]: (prev.inventory[rawPick] || 0) + 1,
             },
           }));
         }
@@ -4353,7 +4438,18 @@ export default function App() {
       setLastStepTime(now);
 
       const nextSteps = player.stats.stepsTaken + 1;
-      const nextHunger = Math.min(100, player.hunger + (nextSteps % 5 === 0 ? 2 : 0));
+      let hungerGain = 0;
+      if (player.difficulty === 'easy') {
+        // Easy mode: 30% reduced hunger gain while moving (normal = 0.4/step -> easy = 0.28/step)
+        hungerStepAccumRef.current += 0.28;
+        if (hungerStepAccumRef.current >= 1) {
+          hungerGain = Math.floor(hungerStepAccumRef.current);
+          hungerStepAccumRef.current -= hungerGain;
+        }
+      } else {
+        hungerGain = nextSteps % 5 === 0 ? 2 : 0;
+      }
+      const nextHunger = Math.min(100, player.hunger + hungerGain);
       let nextHp = player.hp;
       let nextMind = player.mind;
       let nextCor = player.corruption;
@@ -4415,9 +4511,27 @@ export default function App() {
         setLogOverlayVisible(true);
       }
 
+      const zeroMindCheck =
+        updatedPlayer.hp > 0
+          ? evaluateZeroMindStepDespair(updatedPlayer, Math.random())
+          : { triggered: false };
+
       setPlayerPos({ x: nx, y: ny });
       setTrailCoords((prev) => [{ x: playerPos.x, y: playerPos.y }, ...prev].slice(0, 4));
       setPlayer(updatedPlayer);
+
+      if (zeroMindCheck.triggered && zeroMindCheck.ending) {
+        sfx.playSfx('hurt');
+        const nextRandomSeed = generateRandomSeed();
+        setSeedInput(nextRandomSeed);
+        setEndingInfo(zeroMindCheck.ending);
+        setScreen('ending');
+        return;
+      }
+      if (zeroMindCheck.warningMessage) {
+        addLog(zeroMindCheck.warningMessage);
+        setLogOverlayVisible(true);
+      }
 
       const stepCoordKey = `${nx},${ny}`;
       const isFloorTrapTriggered =
@@ -5760,6 +5874,8 @@ export default function App() {
           setCharacterNameInput={setCharacterNameInput}
           selectedClassId={selectedClassId}
           setSelectedClassId={setSelectedClassId}
+          selectedDifficulty={selectedDifficulty}
+          setSelectedDifficulty={setSelectedDifficulty}
           portraitErrorMap={portraitErrorMap}
           onMarkPortraitError={markPortraitError}
           saveSlots={saveSlots}

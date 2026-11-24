@@ -1032,6 +1032,31 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                                   GEAR_ITEMS[g]?.slot === 'accessory' &&
                                   canPlayerEquipGear(tempP, g).allowed
                               ) || prev.equippedAccessory;
+                            const nextUnlockedShields = [...prev.unlockedShields];
+                            if (
+                              prev.equippedShield &&
+                              prev.equippedShield !== validShield &&
+                              CONFIG.SHIELDS[prev.equippedShield] &&
+                              !nextUnlockedShields.includes(prev.equippedShield)
+                            ) {
+                              nextUnlockedShields.push(prev.equippedShield);
+                            }
+                            const nextUnlockedGear = [...prev.unlockedGear];
+                            const replacedGearIds: Array<[string | null, string | null]> = [
+                              [prev.equippedHead, validHead],
+                              [prev.equippedBody, validBody],
+                              [prev.equippedAccessory, validAccessory],
+                            ];
+                            for (const [prevGearId, nextGearId] of replacedGearIds) {
+                              if (
+                                prevGearId &&
+                                prevGearId !== nextGearId &&
+                                GEAR_ITEMS[prevGearId] &&
+                                !nextUnlockedGear.includes(prevGearId)
+                              ) {
+                                nextUnlockedGear.push(prevGearId);
+                              }
+                            }
                             return {
                               ...prev,
                               equippedWeapon: nextWep,
@@ -1039,6 +1064,8 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
                               equippedHead: validHead,
                               equippedBody: validBody,
                               equippedAccessory: validAccessory,
+                              unlockedShields: nextUnlockedShields,
+                              unlockedGear: nextUnlockedGear,
                             };
                           });
                           onAddLog(
@@ -1807,87 +1834,114 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
           </div>
         )}
 
-        {/* TAB 3: GIẢ KIM (2-COLUMN COMPACT RECIPE CARDS) */}
+        {/* TAB 3: CHẾ TẠO CƠ BẢN & GIẢ KIM NÂNG CAO */}
         {invTab === 'alchemy' && (() => {
-          const unlockedRecipesList = CONFIG.RECIPES.filter((rec) =>
-            player.unlockedRecipes.includes(rec.id)
+          const basicRecipesList = CONFIG.RECIPES.filter((rec) => Boolean(rec.isBasic));
+          const advancedRecipesList = CONFIG.RECIPES.filter(
+            (rec) => !rec.isBasic && player.unlockedRecipes.includes(rec.id)
           );
+
+          const renderRecipeCard = (rec: (typeof CONFIG.RECIPES)[number]) => {
+            const ingEntries = Object.entries(rec.ingredients);
+            const canCraft = ingEntries.every(
+              ([ingId, qty]) => (player.inventory[ingId] || 0) >= qty
+            );
+            return (
+              <div
+                key={rec.id}
+                onMouseEnter={() => setPreviewItemId(rec.resultItemId)}
+                className="p-2.5 df-card flex flex-col justify-between gap-2 text-xs"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ItemArtworkCanvas itemOrWeaponId={rec.resultItemId} size={28} />
+                    <span className="font-bold text-[#dfd2b4] truncate">{rec.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!canCraft}
+                    onClick={() => {
+                      sfx.playHealOrChime();
+                      setPlayer((prev) => {
+                        const nextInv = { ...prev.inventory };
+                        for (const [ingId, qty] of ingEntries) {
+                          nextInv[ingId] = Math.max(0, (nextInv[ingId] || 0) - qty);
+                        }
+                        nextInv[rec.resultItemId] = (nextInv[rec.resultItemId] || 0) + 1;
+                        return { ...prev, inventory: nextInv };
+                      });
+                      const msg = rec.isBasic
+                        ? `Chế tạo thành công [${CONFIG.ITEMS[rec.resultItemId]?.name || rec.name}].`
+                        : `Điều chế thành công [${CONFIG.ITEMS[rec.resultItemId]?.name || rec.name}].`;
+                      setInvFeedback(msg);
+                      onAddLog(msg);
+                    }}
+                    className="df-btn-bronze px-2.5 py-1 disabled:opacity-35 text-[11px] font-bold cursor-pointer shrink-0"
+                  >
+                    {rec.isBasic ? 'Chế Tạo' : 'Pha Chế'}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1">
+                  {ingEntries.map(([ingId, qty]) => {
+                    const owned = player.inventory[ingId] || 0;
+                    const enough = owned >= qty;
+                    const ingName = CONFIG.ITEMS[ingId]?.name || ingId;
+                    return (
+                      <span
+                        key={ingId}
+                        className={`px-1.5 py-0.5 text-[10px] border font-mono ${
+                          enough
+                            ? 'bg-[#121914] border-[#4a6b48] text-[#9ab08e]'
+                            : 'bg-[#2a0c10] border-[#8b0000]/75 text-[#c96b6b]'
+                        }`}
+                      >
+                        {ingName} {owned}/{qty}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          };
+
           return (
-            <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
               {invFeedback && (
                 <div className="px-2.5 py-1.5 df-well border-[#c5a059] text-[11px] text-[#dfd2b4]">
                   {invFeedback}
                 </div>
               )}
-              {unlockedRecipesList.length === 0 ? (
-                <div className="p-6 df-well text-center text-xs italic text-[#9b8f82]">
-                  Chưa nắm giữ công thức giả kim nào. Hãy tìm các quyển sách Pha Chế Thuốc trong hầm ngục.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {unlockedRecipesList.map((rec) => {
-                    const ingEntries = Object.entries(rec.ingredients);
-                    const canCraft = ingEntries.every(
-                      ([ingId, qty]) => (player.inventory[ingId] || 0) >= qty
-                    );
-                    return (
-                      <div
-                        key={rec.id}
-                        onMouseEnter={() => setPreviewItemId(rec.resultItemId)}
-                        className="p-2.5 df-card flex flex-col justify-between gap-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <ItemArtworkCanvas itemOrWeaponId={rec.resultItemId} size={28} />
-                            <span className="font-bold text-[#dfd2b4] truncate">{rec.name}</span>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={!canCraft}
-                            onClick={() => {
-                              sfx.playHealOrChime();
-                              setPlayer((prev) => {
-                                const nextInv = { ...prev.inventory };
-                                for (const [ingId, qty] of ingEntries) {
-                                  nextInv[ingId] = Math.max(0, (nextInv[ingId] || 0) - qty);
-                                }
-                                nextInv[rec.resultItemId] = (nextInv[rec.resultItemId] || 0) + 1;
-                                return { ...prev, inventory: nextInv };
-                              });
-                              const msg = `Điều chế thành công [${CONFIG.ITEMS[rec.resultItemId]?.name || rec.name}].`;
-                              setInvFeedback(msg);
-                              onAddLog(msg);
-                            }}
-                            className="df-btn-bronze px-2.5 py-1 disabled:opacity-35 text-[11px] font-bold cursor-pointer shrink-0"
-                          >
-                            Pha Chế
-                          </button>
-                        </div>
 
-                        <div className="flex flex-wrap gap-1">
-                          {ingEntries.map(([ingId, qty]) => {
-                            const owned = player.inventory[ingId] || 0;
-                            const enough = owned >= qty;
-                            const ingName = CONFIG.ITEMS[ingId]?.name || ingId;
-                            return (
-                              <span
-                                key={ingId}
-                                className={`px-1.5 py-0.5 text-[10px] border font-mono ${
-                                  enough
-                                    ? 'bg-[#121914] border-[#4a6b48] text-[#9ab08e]'
-                                    : 'bg-[#2a0c10] border-[#8b0000]/75 text-[#c96b6b]'
-                                }`}
-                              >
-                                {ingName} {owned}/{qty}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#c5a059]">
+                    Chế Tạo Cơ Bản ({basicRecipesList.length})
+                  </span>
+                  <span className="text-[10px] text-[#8e847b]">Mở sẵn từ đầu hành trình</span>
                 </div>
-              )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {basicRecipesList.map(renderRecipeCard)}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] pb-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#c5a059]">
+                    Giả Kim Nâng Cao ({advancedRecipesList.length})
+                  </span>
+                  <span className="text-[10px] text-[#8e847b]">Mở khóa qua Sách Công Thức</span>
+                </div>
+                {advancedRecipesList.length === 0 ? (
+                  <div className="p-4 df-well text-center text-xs italic text-[#9b8f82]">
+                    Chưa nắm giữ công thức Giả Kim Nâng Cao nào. Hãy tìm các quyển sách Pha Chế Thuốc trên kệ sách trong hầm ngục.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {advancedRecipesList.map(renderRecipeCard)}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })()}

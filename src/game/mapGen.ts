@@ -230,7 +230,8 @@ export function buildRoomLayout(
   template: RoomTemplateType,
   rng: SeededRNG,
   width: number = CONFIG.GRID_W,
-  height: number = CONFIG.GRID_H
+  height: number = CONFIG.GRID_H,
+  opts?: { allowSecretChamber?: boolean; forceSecretChamber?: boolean }
 ): {
   grid: TILE[][];
   spawnX: number;
@@ -240,6 +241,7 @@ export function buildRoomLayout(
   secretX: number;
   secretY: number;
   secretChamberCoords: string[];
+  secretHerbTypes: Record<string, HerbType>;
 } {
   const w = width;
   const h = height;
@@ -307,29 +309,207 @@ export function buildRoomLayout(
     grid[midY - 2][midX] = TILE.SHORTCUT_GATE;
   }
 
-  // Carve Secret Chamber behind TILE.CRACKED_WALL in top wall
-  const secretX = rng.int(6, Math.max(7, w - 7));
-  const secretY = 2;
-  const chamberY = 1;
-  grid[chamberY][secretX - 1] = TILE.WALL;
-  grid[chamberY][secretX] = TILE.FLOOR;
-  grid[chamberY][secretX + 1] = TILE.CHEST;
-  grid[chamberY][secretX + 2] = TILE.WALL;
-  grid[secretY][secretX] = TILE.CRACKED_WALL;
-  grid[secretY + 1][secretX] = TILE.FLOOR;
-  const secretChamberCoords = [
-    `${secretX},${chamberY}`,
-    `${secretX + 1},${chamberY}`,
-  ];
-
-  // Ensure spawn and exit portals
+  // Ensure spawn and exit portals first so secret chamber placement strictly avoids them
   grid[spawnY][spawnX - 1] = TILE.PORTAL_PREV;
   grid[spawnY][spawnX] = TILE.FLOOR;
   grid[spawnY][spawnX + 1] = TILE.FLOOR;
   grid[exitY][exitX] = TILE.PORTAL_NEXT;
   grid[exitY][exitX - 1] = TILE.FLOOR;
 
-  return { grid, spawnX, spawnY, exitX, exitY, secretX, secretY, secretChamberCoords };
+  // Rare (~38% seeded) Secret Chamber behind TILE.CRACKED_WALL on varied wall sides (top/bottom/left/right)
+  let secretX = -1;
+  let secretY = -1;
+  const secretChamberCoords: string[] = [];
+  const secretHerbTypes: Record<string, HerbType> = {};
+  const allowSecret = opts?.allowSecretChamber !== false;
+  const shouldSpawnSecret = Boolean(opts?.forceSecretChamber) || (allowSecret && rng.chance(0.38));
+
+  if (shouldSpawnSecret) {
+    type SecretCandidate = {
+      side: 'top' | 'bottom' | 'left' | 'right';
+      crackX: number;
+      crackY: number;
+      frontX: number;
+      frontY: number;
+      entryX: number;
+      entryY: number;
+      lootX: number;
+      lootY: number;
+      sealWalls: Array<[number, number]>;
+    };
+
+    const candidates: SecretCandidate[] = [];
+    const nearPortal = (x: number, y: number) =>
+      Math.abs(x - spawnX) + Math.abs(y - spawnY) <= 2 ||
+      Math.abs(x - (spawnX - 1)) + Math.abs(y - spawnY) <= 2 ||
+      Math.abs(x - exitX) + Math.abs(y - exitY) <= 2;
+
+    // Top wall candidates (chamber at y = 1, crack at y = 2, interior floor at y = 3)
+    for (let x = 5; x <= w - 7; x++) {
+      if (
+        grid[3][x] === TILE.FLOOR &&
+        grid[3][x + 1] === TILE.FLOOR &&
+        !nearPortal(x, 3)
+      ) {
+        candidates.push({
+          side: 'top',
+          crackX: x,
+          crackY: 2,
+          frontX: x,
+          frontY: 3,
+          entryX: x,
+          entryY: 1,
+          lootX: x + 1,
+          lootY: 1,
+          sealWalls: [
+            [x - 1, 1],
+            [x + 2, 1],
+            [x + 1, 2],
+          ],
+        });
+      }
+    }
+
+    // Bottom wall candidates (chamber at y = h - 2, crack at y = h - 3, interior floor at y = h - 4)
+    if (h >= 13) {
+      for (let x = 5; x <= w - 7; x++) {
+        if (
+          grid[h - 4][x] === TILE.FLOOR &&
+          grid[h - 4][x + 1] === TILE.FLOOR &&
+          grid[h - 3][x] === TILE.FLOOR &&
+          grid[h - 3][x + 1] === TILE.FLOOR &&
+          !nearPortal(x, h - 3) &&
+          !nearPortal(x, h - 4)
+        ) {
+          candidates.push({
+            side: 'bottom',
+            crackX: x,
+            crackY: h - 3,
+            frontX: x,
+            frontY: h - 4,
+            entryX: x,
+            entryY: h - 2,
+            lootX: x + 1,
+            lootY: h - 2,
+            sealWalls: [
+              [x - 1, h - 2],
+              [x + 2, h - 2],
+              [x + 1, h - 3],
+            ],
+          });
+        }
+      }
+    }
+
+    // Left wall candidates (chamber at x = 1, crack at x = 2, interior floor at x = 3)
+    for (let y = 4; y <= h - 5; y++) {
+      if (
+        grid[y][3] === TILE.FLOOR &&
+        grid[y][2] === TILE.FLOOR &&
+        grid[y + 1][2] === TILE.FLOOR &&
+        !nearPortal(2, y) &&
+        !nearPortal(2, y + 1)
+      ) {
+        candidates.push({
+          side: 'left',
+          crackX: 2,
+          crackY: y,
+          frontX: 3,
+          frontY: y,
+          entryX: 1,
+          entryY: y,
+          lootX: 1,
+          lootY: y + 1,
+          sealWalls: [
+            [1, y - 1],
+            [1, y + 2],
+            [2, y + 1],
+          ],
+        });
+      }
+    }
+
+    // Right wall candidates (chamber at x = w - 2, crack at x = w - 3, interior floor at x = w - 4)
+    for (let y = 4; y <= h - 5; y++) {
+      if (
+        grid[y][w - 4] === TILE.FLOOR &&
+        grid[y][w - 3] === TILE.FLOOR &&
+        grid[y + 1][w - 3] === TILE.FLOOR &&
+        !nearPortal(w - 3, y) &&
+        !nearPortal(w - 3, y + 1)
+      ) {
+        candidates.push({
+          side: 'right',
+          crackX: w - 3,
+          crackY: y,
+          frontX: w - 4,
+          frontY: y,
+          entryX: w - 2,
+          entryY: y,
+          lootX: w - 2,
+          lootY: y + 1,
+          sealWalls: [
+            [w - 2, y - 1],
+            [w - 2, y + 2],
+            [w - 3, y + 1],
+          ],
+        });
+      }
+    }
+
+    if (candidates.length > 0) {
+      // Pick side fairly first so top/bottom/left/right are all represented
+      const availableSides = Array.from(new Set(candidates.map((c) => c.side)));
+      const chosenSide = rng.pick(availableSides);
+      const sideCandidates = candidates.filter((c) => c.side === chosenSide);
+      const picked = rng.pick(sideCandidates);
+
+      secretX = picked.crackX;
+      secretY = picked.crackY;
+      for (const [wx, wy] of picked.sealWalls) {
+        if (wy >= 1 && wy < h - 1 && wx >= 1 && wx < w - 1) {
+          grid[wy][wx] = TILE.WALL;
+        }
+      }
+      grid[picked.crackY][picked.crackX] = TILE.CRACKED_WALL;
+      grid[picked.frontY][picked.frontX] = TILE.FLOOR;
+
+      // Vary secret chamber contents (~35% Chest, ~35% Crate+Corpse, ~30% Trap guarding Herb/Crate)
+      const contentRoll = rng.next();
+      if (contentRoll < 0.35) {
+        grid[picked.entryY][picked.entryX] = TILE.FLOOR;
+        grid[picked.lootY][picked.lootX] = TILE.CHEST;
+      } else if (contentRoll < 0.70) {
+        grid[picked.entryY][picked.entryX] = TILE.CRATE;
+        grid[picked.lootY][picked.lootX] = TILE.CORPSE_LOOT;
+      } else {
+        grid[picked.entryY][picked.entryX] = TILE.FLOOR_TRAP;
+        if (rng.chance(0.55)) {
+          grid[picked.lootY][picked.lootX] = TILE.HERB;
+          secretHerbTypes[`${picked.lootX},${picked.lootY}`] = rng.pick(HERB_POOL);
+        } else {
+          grid[picked.lootY][picked.lootX] = TILE.CRATE;
+        }
+      }
+
+      secretChamberCoords.push(
+        `${picked.entryX},${picked.entryY}`,
+        `${picked.lootX},${picked.lootY}`
+      );
+    }
+  }
+
+  return {
+    grid,
+    spawnX,
+    spawnY,
+    exitX,
+    exitY,
+    secretX,
+    secretY,
+    secretChamberCoords,
+    secretHerbTypes,
+  };
 }
 
 function buildExteriorCourtyardRoom(seed: string): RoomData {
@@ -348,14 +528,10 @@ function buildExteriorCourtyardRoom(seed: string): RoomData {
     }
   }
 
-  // Secret chamber at top-left
-  const secretX = 6;
-  const secretY = 2;
-  grid[1][secretX] = TILE.FLOOR;
-  grid[1][secretX + 1] = TILE.CHEST;
-  grid[secretY][secretX] = TILE.CRACKED_WALL;
-  grid[3][secretX] = TILE.FLOOR;
-  const secretChamberCoords = [`${secretX},1`, `${secretX + 1},1`];
+  // No secret chamber in F2_EXTERIOR (outer wall stays solid)
+  const secretX = -1;
+  const secretY = -1;
+  const secretChamberCoords: string[] = [];
 
   const gateY = Math.floor(h / 2) + 1;
   grid[gateY - 1][w - 3] = TILE.BARS;
@@ -364,12 +540,14 @@ function buildExteriorCourtyardRoom(seed: string): RoomData {
 
   grid[5][4] = TILE.CRATE;
   grid[h - 4][6] = TILE.CRATE;
+  grid[3][18] = TILE.CRATE;
   grid[3][12] = TILE.BOOKSHELF;
   grid[3][15] = TILE.BOOKSHELF;
   grid[h - 3][3] = TILE.BED_SAVE;
   grid[6][8] = TILE.HERB;
   grid[h - 4][11] = TILE.HERB;
   grid[5][17] = TILE.CORPSE_LOOT;
+  grid[h - 3][16] = TILE.CORPSE_LOOT;
 
   const herbRng = new SeededRNG(`${seed}_exterior_herbs`);
   const herbTypes: Record<string, HerbType> = {
@@ -490,8 +668,17 @@ export function generateWorld(seed: string): WorldMapState {
       const roomW = isBossRoom ? 26 : idx % 2 === 0 ? 24 : 22;
       const roomH = isBossRoom ? 18 : idx % 2 === 0 ? 18 : 16;
 
-      const { grid, spawnX, spawnY, exitX, exitY, secretX, secretY, secretChamberCoords } =
-        buildRoomLayout(tpl, rng, roomW, roomH);
+      const {
+        grid,
+        spawnX,
+        spawnY,
+        exitX,
+        exitY,
+        secretX,
+        secretY,
+        secretChamberCoords,
+        secretHerbTypes,
+      } = buildRoomLayout(tpl, rng, roomW, roomH, { allowSecretChamber: !isBossRoom });
 
       // If Floor 1 Final Boss Throne Room (F1_R3), clear interior for Grand Royal Carpet & 3-Step Dais
       if (isThroneRoom) {
@@ -545,12 +732,14 @@ export function generateWorld(seed: string): WorldMapState {
           }
         }
       }
-      // Reserve secret chamber and entrance tile
+      // Reserve secret chamber and entrance tile (when present)
       for (const coord of secretChamberCoords) {
         reservedMask.add(coord);
         occupiedTiles.add(coord);
       }
-      reserveArea(secretX, secretY + 1, 1);
+      if (secretX >= 0 && secretY >= 0) {
+        reserveArea(secretX, secretY, 1);
+      }
       // Reserve 5x5 spawn & exit safety zones
       reserveArea(spawnX, spawnY, 2);
       reserveArea(exitX, exitY, 2);
@@ -904,17 +1093,19 @@ export function generateWorld(seed: string): WorldMapState {
       }
 
       // Place Crates, Chest, Herbs, and Survival Props with strict >= 2 Manhattan distance (bufferRadius = 1)
-      const herbTypes: Record<string, HerbType> = {};
+      const herbTypes: Record<string, HerbType> = { ...secretHerbTypes };
       if (!isThroneRoom) {
         const chestSpot = popTileWithBuffer(extraRng, 1);
         if (chestSpot) grid[chestSpot[1]][chestSpot[0]] = TILE.CHEST;
 
-        for (let cIdx = 0; cIdx < 2; cIdx++) {
+        const crateCount = isBossRoom ? 2 : 3;
+        for (let cIdx = 0; cIdx < crateCount; cIdx++) {
           const crateSpot = popTileWithBuffer(extraRng, 1);
           if (crateSpot) grid[crateSpot[1]][crateSpot[0]] = TILE.CRATE;
         }
 
-        for (let hIdx = 0; hIdx < 2; hIdx++) {
+        const herbCount = isBossRoom ? 2 : extraRng.chance(0.55) ? 3 : 2;
+        for (let hIdx = 0; hIdx < herbCount; hIdx++) {
           const herbSpot = popTileWithBuffer(extraRng, 1);
           if (herbSpot) {
             grid[herbSpot[1]][herbSpot[0]] = TILE.HERB;
@@ -924,29 +1115,64 @@ export function generateWorld(seed: string): WorldMapState {
       }
 
       if (!isBossRoom) {
+        const isFairTrapTile = (tx: number, ty: number): boolean => {
+          if (Math.abs(tx - spawnX) + Math.abs(ty - spawnY) <= 1) return false;
+          if (Math.abs(tx - exitX) + Math.abs(ty - exitY) <= 1) return false;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (Math.abs(dx) + Math.abs(dy) > 1) continue;
+              const nt = grid[ty + dy]?.[tx + dx];
+              if (
+                nt === TILE.PORTAL_PREV ||
+                nt === TILE.PORTAL_NEXT ||
+                nt === TILE.STAIRS_UP ||
+                nt === TILE.STAIRS_DOWN ||
+                nt === TILE.HEXEN_ALTAR ||
+                nt === TILE.RITUAL_CIRCLE ||
+                nt === TILE.FLOOR_TRAP
+              ) {
+                return false;
+              }
+            }
+          }
+          return true;
+        };
+
         for (let tIdx = 0; tIdx < 2; tIdx++) {
           let trapSpot = popTileWithBuffer(extraRng, 1) || popTileWithBuffer(extraRng, 0);
+          if (trapSpot && !isFairTrapTile(trapSpot[0], trapSpot[1])) {
+            trapSpot = null;
+          }
           if (!trapSpot) {
-            // Scan entire room floor for any unoccupied tile if central openTiles ran dry
-            const fallbackFloors: [number, number][] = [];
+            // Scan entire room floor for any unoccupied tile, strongly preferring fair tiles not adjacent to spawn/exit/stairs/altars/traps
+            const fairFallbackFloors: [number, number][] = [];
+            const anyFallbackFloors: [number, number][] = [];
             for (let y = 3; y < roomH - 2; y++) {
               for (let x = 3; x < roomW - 3; x++) {
                 if (grid[y][x] === TILE.FLOOR && !reservedMask.has(`${x},${y}`)) {
-                  fallbackFloors.push([x, y]);
+                  if (isFairTrapTile(x, y)) {
+                    fairFallbackFloors.push([x, y]);
+                  } else {
+                    anyFallbackFloors.push([x, y]);
+                  }
                 }
               }
             }
-            if (fallbackFloors.length > 0) {
-              trapSpot = fallbackFloors[extraRng.int(0, fallbackFloors.length - 1)];
-              reserveArea(trapSpot[0], trapSpot[1], 0);
+            const pool = fairFallbackFloors.length > 0 ? fairFallbackFloors : anyFallbackFloors;
+            if (pool.length > 0) {
+              trapSpot = pool[extraRng.int(0, pool.length - 1)];
+              reserveArea(trapSpot[0], trapSpot[1], 1);
             }
           }
           if (trapSpot) grid[trapSpot[1]][trapSpot[0]] = TILE.FLOOR_TRAP;
         }
         const miasmaSpot = popTileWithBuffer(extraRng, 1);
         if (miasmaSpot) grid[miasmaSpot[1]][miasmaSpot[0]] = TILE.MIASMA_VENT;
-        const corpseSpot = popTileWithBuffer(extraRng, 1);
-        if (corpseSpot) grid[corpseSpot[1]][corpseSpot[0]] = TILE.CORPSE_LOOT;
+        const corpseCount = extraRng.chance(0.55) ? 2 : 1;
+        for (let cpIdx = 0; cpIdx < corpseCount; cpIdx++) {
+          const corpseSpot = popTileWithBuffer(extraRng, 1);
+          if (corpseSpot) grid[corpseSpot[1]][corpseSpot[0]] = TILE.CORPSE_LOOT;
+        }
       }
 
       const canonRoomMeta: Record<string, { name: string; sensory: string }> = {

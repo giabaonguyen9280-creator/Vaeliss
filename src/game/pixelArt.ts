@@ -252,35 +252,11 @@ function drawDrippingBloodAtSeam(
   // Exposed bone tip at center of severed stump
   bufCtx.fillStyle = '#dfd8c8';
   bufCtx.strokeStyle = '#1c1917';
-  bufCtx.lineWidth = 1.2;
+  bufCtx.lineWidth = 1.1;
   bufCtx.beginPath();
   bufCtx.ellipse(seamX, seamY - 1, Math.max(3, woundRx * 0.28), Math.max(2.5, woundRy * 0.26), 0.2, 0, Math.PI * 2);
   bufCtx.fill();
   bufCtx.stroke();
-
-  // Animated dripping crimson streaks & droplets falling below the severed joint
-  const dripCount = isBottom ? 5 : 3;
-  for (let i = 0; i < dripCount; i++) {
-    const spread = (i / (dripCount - 1) - 0.5) * woundRx * 1.45;
-    const dx = seamX + spread;
-    const cycle = (nowSec * (0.75 + i * 0.19) + i * 0.37) % 1;
-    const streakLen = 8 + (i % 3) * 6 + Math.sin(nowSec * 2 + i) * 2.5;
-    const dropY = seamY + streakLen + cycle * 24;
-
-    bufCtx.strokeStyle = i % 2 === 0 ? '#7f1d1d' : '#b91c1c';
-    bufCtx.lineWidth = 2.4;
-    bufCtx.lineCap = 'round';
-    bufCtx.beginPath();
-    bufCtx.moveTo(dx, seamY + 2);
-    bufCtx.lineTo(dx, seamY + streakLen);
-    bufCtx.stroke();
-
-    // Falling blood teardrop
-    bufCtx.fillStyle = `rgba(185, 28, 28, ${(1 - cycle * 0.85).toFixed(2)})`;
-    bufCtx.beginPath();
-    bufCtx.ellipse(dx, dropY, 2.3, 3.6, 0, 0, Math.PI * 2);
-    bufCtx.fill();
-  }
 
   bufCtx.restore();
 }
@@ -339,17 +315,44 @@ export function drawCombatPngSprite(
     bufCtx.save();
     bufCtx.globalCompositeOperation = 'destination-out';
     bufCtx.fillStyle = '#000000';
-    for (const { box } of severedMasks) {
+    for (const { id, box } of severedMasks) {
       const rx = drawX + box.x * drawW;
       const ry = drawY + box.y * drawH;
       const rw = box.w * drawW;
       const rh = box.h * drawH;
-      // Slightly organic jagged cut boundary around the maskBox
+      let idSeed = 0;
+      for (let ci = 0; ci < id.length; ci++) idSeed = (idSeed * 31 + id.charCodeAt(ci)) % 997;
+      const jagX = Math.max(2.5, Math.min(7, rw * 0.08));
+      const jagY = Math.max(2.5, Math.min(7, rh * 0.08));
+      const wobble = (idx: number) => Math.sin(idSeed * 0.17 + idx * 2.35);
+
+      // Slightly organic jagged multi-point polygon along the maskBox edges
       bufCtx.beginPath();
+      const segs = 5;
       bufCtx.moveTo(rx, ry);
+      // Top edge
+      for (let s = 1; s < segs; s++) {
+        const t = s / segs;
+        bufCtx.lineTo(rx + rw * t, ry + wobble(s) * jagY);
+      }
       bufCtx.lineTo(rx + rw, ry);
+      // Right edge
+      for (let s = 1; s < segs; s++) {
+        const t = s / segs;
+        bufCtx.lineTo(rx + rw + wobble(s + 7) * jagX, ry + rh * t);
+      }
       bufCtx.lineTo(rx + rw, ry + rh);
+      // Bottom edge
+      for (let s = segs - 1; s >= 1; s--) {
+        const t = s / segs;
+        bufCtx.lineTo(rx + rw * t, ry + rh + wobble(s + 15) * jagY);
+      }
       bufCtx.lineTo(rx, ry + rh);
+      // Left edge
+      for (let s = segs - 1; s >= 1; s--) {
+        const t = s / segs;
+        bufCtx.lineTo(rx + wobble(s + 23) * jagX, ry + rh * t);
+      }
       bufCtx.closePath();
       bufCtx.fill();
     }
@@ -680,15 +683,18 @@ export function getLimbReticlePositions(spriteKey: string): Record<string, { nx:
 function drawArterialStump(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
   ctx.save();
   const grad = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
-  grad.addColorStop(0, '#ff4d4d');
-  grad.addColorStop(0.5, '#8b0000');
+  grad.addColorStop(0, '#c81e1e');
+  grad.addColorStop(0.55, '#7f1d1d');
   grad.addColorStop(1, '#2b0505');
   ctx.fillStyle = grad;
+  ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+  ctx.lineWidth = Math.max(0.85, r * 0.14);
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
 
-  // Exposed jagged bone shard in center
+  // Exposed jagged pale bone shard in center
   ctx.fillStyle = '#e6dcc8';
   ctx.beginPath();
   ctx.moveTo(x - r * 0.35, y);
@@ -697,16 +703,6 @@ function drawArterialStump(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.lineTo(x, y + r * 0.35);
   ctx.closePath();
   ctx.fill();
-
-  // Dripping arterial blood streams
-  ctx.strokeStyle = '#b91c1c';
-  ctx.lineWidth = Math.max(1.5, r * 0.25);
-  for (let i = -1; i <= 1; i++) {
-    ctx.beginPath();
-    ctx.moveTo(x + i * r * 0.4, y + r * 0.4);
-    ctx.quadraticCurveTo(x + i * r * 0.5, y + r * 1.5, x + i * r * 0.3, y + r * 2.3);
-    ctx.stroke();
-  }
   ctx.restore();
 }
 
@@ -835,51 +831,92 @@ function drawDetailedWeapon(
   ctx.save();
   ctx.translate(hx, hy);
 
+  const inkStroke = 'rgba(10, 8, 13, 0.78)';
+  const thinWeaponLine = Math.max(0.8, 0.95 * scale);
+
   if (hand === 'left') {
     if (spriteKey === 'fanatic_zealot' || spriteKey === 'crypt_keybearer') {
-      // Burning Torch (shaft centered through (0, 0) grip) + Iron Key Ring for crypt_keybearer
-      ctx.fillStyle = '#4a321f';
-      ctx.strokeStyle = '#070608';
-      ctx.lineWidth = 1.8 * scale;
+      // Compact Hand Torch (short tapered ash-wood handle + wrapped rag/iron head cup + compact layered flame)
+      ctx.save();
+      ctx.rotate(-0.22);
+
+      // Tapered charred ash-wood handle (narrower at grip (0, 0), wider toward top)
+      const handleGrad = ctx.createLinearGradient(-3 * scale, 5 * scale, 3 * scale, -18 * scale);
+      handleGrad.addColorStop(0, '#292524');
+      handleGrad.addColorStop(1, '#44403c');
+      ctx.fillStyle = handleGrad;
+      ctx.strokeStyle = inkStroke;
+      ctx.lineWidth = thinWeaponLine;
       ctx.beginPath();
-      ctx.moveTo(-1.5 * scale, 10 * scale);
-      ctx.lineTo(-11.5 * scale, -26 * scale);
-      ctx.lineTo(-4.5 * scale, -28 * scale);
-      ctx.lineTo(5.5 * scale, 8 * scale);
+      ctx.moveTo(-1.6 * scale, 6 * scale);
+      ctx.lineTo(-3.2 * scale, -17 * scale);
+      ctx.lineTo(3.2 * scale, -17 * scale);
+      ctx.lineTo(1.6 * scale, 6 * scale);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
-      const fGrad = ctx.createRadialGradient(-9.5 * scale, -34 * scale, 2 * scale, -9.5 * scale, -34 * scale, 16 * scale);
-      fGrad.addColorStop(0, '#fff3b0');
-      fGrad.addColorStop(0.45, '#f59e0b');
-      fGrad.addColorStop(1, 'rgba(220, 38, 38, 0)');
+      // Dark wrapped-rag / iron torch head cup directly on top of handle
+      ctx.fillStyle = '#2c2420';
+      ctx.beginPath();
+      ctx.moveTo(-4.4 * scale, -16.5 * scale);
+      ctx.lineTo(-5.2 * scale, -22.5 * scale);
+      ctx.lineTo(5.2 * scale, -22.5 * scale);
+      ctx.lineTo(4.4 * scale, -16.5 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Rag wrap highlight & thin dark iron collar band
+      ctx.fillStyle = '#3f3530';
+      ctx.fillRect(-4.6 * scale, -21.5 * scale, 9.2 * scale, 3 * scale);
+      ctx.fillStyle = '#1f242b';
+      ctx.fillRect(-4.4 * scale, -18 * scale, 8.8 * scale, 1.8 * scale);
+      ctx.strokeRect(-4.4 * scale, -18 * scale, 8.8 * scale, 1.8 * scale);
+
+      // Soft outer orange glow seated directly on torch head
+      const fGrad = ctx.createRadialGradient(0, -27 * scale, 1.5 * scale, 0, -27 * scale, 11.5 * scale);
+      fGrad.addColorStop(0, 'rgba(254, 240, 138, 0.85)');
+      fGrad.addColorStop(0.5, 'rgba(245, 158, 11, 0.45)');
+      fGrad.addColorStop(1, 'rgba(234, 88, 12, 0)');
       ctx.fillStyle = fGrad;
       ctx.beginPath();
-      ctx.arc(-9.5 * scale, -34 * scale, 16 * scale, 0, Math.PI * 2);
+      ctx.arc(0, -27 * scale, 11.5 * scale, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = '#fbbf24';
+      // Mid warm amber flame
+      ctx.fillStyle = '#f59e0b';
       ctx.beginPath();
-      ctx.moveTo(-14.5 * scale, -26 * scale);
-      ctx.quadraticCurveTo(-17.5 * scale, -42 * scale, -8.5 * scale, -48 * scale);
-      ctx.quadraticCurveTo(-0.5 * scale, -39 * scale, -4.5 * scale, -26 * scale);
+      ctx.moveTo(-4.8 * scale, -22.2 * scale);
+      ctx.quadraticCurveTo(-6.2 * scale, -30.5 * scale, 0, -35.5 * scale);
+      ctx.quadraticCurveTo(6.2 * scale, -30.5 * scale, 4.8 * scale, -22.2 * scale);
       ctx.closePath();
       ctx.fill();
 
+      // Compact bright inner core
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.moveTo(-2.4 * scale, -22.5 * scale);
+      ctx.quadraticCurveTo(-2.8 * scale, -27.8 * scale, 0, -30.8 * scale);
+      ctx.quadraticCurveTo(2.8 * scale, -27.8 * scale, 2.4 * scale, -22.5 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
       if (spriteKey === 'crypt_keybearer') {
         // Large Iron Crypt Key Ring hanging directly from gripped hand
-        ctx.strokeStyle = '#eab308';
-        ctx.lineWidth = 2.2 * scale;
+        ctx.strokeStyle = '#ca8a04';
+        ctx.lineWidth = Math.max(1.2, 1.6 * scale);
         ctx.beginPath();
-        ctx.arc(-1 * scale, 12 * scale, 7 * scale, 0, Math.PI * 2);
+        ctx.arc(-1 * scale, 12 * scale, 6.5 * scale, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillRect(-3 * scale, 19 * scale, 4 * scale, 12 * scale);
+        ctx.fillStyle = '#a16207';
+        ctx.fillRect(-2.6 * scale, 18.5 * scale, 3.6 * scale, 10.5 * scale);
       }
     } else if (spriteKey === 'rotting_priest') {
       // Tarnished Brass Soul-Bell (handle ring centered at (0, 0) grip)
       ctx.strokeStyle = '#785c18';
-      ctx.lineWidth = 2.4 * scale;
+      ctx.lineWidth = Math.max(1.3, 1.8 * scale);
       ctx.beginPath();
       ctx.arc(0, 4.5 * scale, 5.2 * scale, Math.PI, 0);
       ctx.stroke();
@@ -887,10 +924,10 @@ function drawDetailedWeapon(
       const bellGrad = ctx.createLinearGradient(-8 * scale, 6 * scale, 10 * scale, 26 * scale);
       bellGrad.addColorStop(0, '#eab308');
       bellGrad.addColorStop(0.5, '#a16207');
-      bellGrad.addColorStop(1, '#422006');
+      bellGrad.addColorStop(1, '#3f3422');
       ctx.fillStyle = bellGrad;
-      ctx.strokeStyle = '#070608';
-      ctx.lineWidth = 1.8 * scale;
+      ctx.strokeStyle = inkStroke;
+      ctx.lineWidth = thinWeaponLine;
       ctx.beginPath();
       ctx.moveTo(-6 * scale, 6 * scale);
       ctx.lineTo(6 * scale, 6 * scale);
@@ -912,8 +949,8 @@ function drawDetailedWeapon(
       shGrad.addColorStop(0.5, '#94a3b8');
       shGrad.addColorStop(1, '#1e293b');
       ctx.fillStyle = shGrad;
-      ctx.strokeStyle = '#eab308';
-      ctx.lineWidth = 2.6 * scale;
+      ctx.strokeStyle = '#ca8a04';
+      ctx.lineWidth = Math.max(1.2, 1.8 * scale);
       ctx.beginPath();
       ctx.moveTo(-26 * scale, -42 * scale);
       ctx.lineTo(10 * scale, -42 * scale);
@@ -925,18 +962,18 @@ function drawDetailedWeapon(
       ctx.stroke();
 
       // Blazing Gold Cross on Greatshield
-      ctx.fillStyle = '#f59e0b';
+      ctx.fillStyle = '#d97706';
       ctx.fillRect(-11 * scale, -34 * scale, 6 * scale, 54 * scale);
       ctx.fillRect(-21 * scale, -18 * scale, 26 * scale, 6 * scale);
     } else if (spriteKey === 'fallen_knight') {
-      // Iron-Rimmed Oak Shield with Rivets
+      // Dark Weathered Iron & Slate-Wood Heater Shield
       const shGrad = ctx.createLinearGradient(-22 * scale, -18 * scale, 4 * scale, 24 * scale);
-      shGrad.addColorStop(0, '#78350f');
-      shGrad.addColorStop(0.6, '#451a03');
-      shGrad.addColorStop(1, '#1c0a02');
+      shGrad.addColorStop(0, '#334155');
+      shGrad.addColorStop(0.6, '#1f242b');
+      shGrad.addColorStop(1, '#0f1218');
       ctx.fillStyle = shGrad;
       ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 2.8 * scale;
+      ctx.lineWidth = Math.max(1.2, 1.8 * scale);
       ctx.beginPath();
       ctx.moveTo(-22 * scale, -18 * scale);
       ctx.lineTo(4 * scale, -18 * scale);
@@ -948,7 +985,7 @@ function drawDetailedWeapon(
 
       // Steel Shield Boss & Cross Strips
       ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 2.2 * scale;
+      ctx.lineWidth = Math.max(1.1, 1.6 * scale);
       ctx.beginPath();
       ctx.moveTo(-9 * scale, -16 * scale);
       ctx.lineTo(-9 * scale, 24 * scale);
@@ -958,7 +995,7 @@ function drawDetailedWeapon(
     } else if (spriteKey === 'butcher_kaelgor') {
       // Heavy Iron Meat Hook on Chain in Left Hand
       ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 2.8 * scale;
+      ctx.lineWidth = Math.max(1.5, 2.2 * scale);
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(-12 * scale, 18 * scale);
@@ -975,8 +1012,8 @@ function drawDetailedWeapon(
       ctx.fill();
 
       ctx.fillStyle = '#eab308';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 1.5 * scale;
+      ctx.strokeStyle = inkStroke;
+      ctx.lineWidth = thinWeaponLine;
       ctx.beginPath();
       ctx.moveTo(-17 * scale, -26 * scale);
       ctx.lineTo(-3 * scale, -26 * scale);
@@ -1016,8 +1053,8 @@ function drawDetailedWeapon(
 
       // Bone Skull
       ctx.fillStyle = '#f5ebd6';
-      ctx.strokeStyle = '#09070a';
-      ctx.lineWidth = 1.8 * scale;
+      ctx.strokeStyle = inkStroke;
+      ctx.lineWidth = thinWeaponLine;
       ctx.beginPath();
       ctx.arc(-10 * scale, -4 * scale, 9 * scale, 0, Math.PI * 2);
       ctx.fill();
@@ -1044,7 +1081,7 @@ function drawDetailedWeapon(
 
       // Swirling Void Vortex arcs
       ctx.strokeStyle = '#f0abfc';
-      ctx.lineWidth = 1.8 * scale;
+      ctx.lineWidth = Math.max(1, 1.4 * scale);
       for (let a = 0; a < 3; a++) {
         ctx.beginPath();
         ctx.arc(-10 * scale, -6 * scale, (8 + a * 4) * scale, a, a + Math.PI * 1.1);
@@ -1058,12 +1095,12 @@ function drawDetailedWeapon(
   // =========================================================================
   // RIGHT-HAND PRIMARY WEAPONS (all shafts/hilts pass cleanly through (0, 0) grip)
   // =========================================================================
-  ctx.strokeStyle = '#070608';
-  ctx.lineWidth = 1.8 * scale;
+  ctx.strokeStyle = inkStroke;
+  ctx.lineWidth = thinWeaponLine;
 
   if (spriteKey === 'night_hunter') {
-    // Curved Steel Hunting Dagger (hilt centered on (0, 0))
-    ctx.fillStyle = '#451a03';
+    // Curved Steel Hunting Dagger (charred ash hilt centered on (0, 0))
+    ctx.fillStyle = '#292524';
     ctx.fillRect(-3 * scale, -3 * scale, 6 * scale, 11 * scale);
     ctx.strokeRect(-3 * scale, -3 * scale, 6 * scale, 11 * scale);
     const bladeGrad = ctx.createLinearGradient(0, -2 * scale, 22 * scale, -36 * scale);
@@ -1081,7 +1118,7 @@ function drawDetailedWeapon(
   } else if (spriteKey === 'forsaken_nun') {
     // Flanged Steel Holy Mother Mace (shaft passes cleanly through (0, 0))
     ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 3.4 * scale;
+    ctx.lineWidth = 3 * scale;
     ctx.beginPath();
     ctx.moveTo(-3.5 * scale, 10 * scale);
     ctx.lineTo(10.5 * scale, -28 * scale);
@@ -1094,8 +1131,8 @@ function drawDetailedWeapon(
     maceGrad.addColorStop(0.55, '#64748b');
     maceGrad.addColorStop(1, '#1e293b');
     ctx.fillStyle = maceGrad;
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 1.6 * scale;
+    ctx.strokeStyle = inkStroke;
+    ctx.lineWidth = thinWeaponLine;
     for (let f = 0; f < 6; f++) {
       const ang = (f / 6) * Math.PI * 2;
       ctx.beginPath();
@@ -1112,19 +1149,29 @@ function drawDetailedWeapon(
     ctx.fill();
     ctx.stroke();
   } else if (spriteKey === 'fanatic_zealot') {
-    // Bloodied Reaper Sickle (wooden shaft passes directly through (0, 0))
-    ctx.strokeStyle = '#5c3a21';
-    ctx.lineWidth = 3.2 * scale;
+    // Tempered Steel Reaper Sickle with dark iron/ash shaft
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 2.8 * scale;
     ctx.beginPath();
     ctx.moveTo(-2.5 * scale, 7 * scale);
     ctx.lineTo(7.5 * scale, -19 * scale);
     ctx.stroke();
 
+    // Subtle slate ferrule band
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 3.2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(4.5 * scale, -11.5 * scale);
+    ctx.lineTo(7.5 * scale, -19 * scale);
+    ctx.stroke();
+
     const bladeGrad = ctx.createLinearGradient(4 * scale, -18 * scale, 24 * scale, -38 * scale);
-    bladeGrad.addColorStop(0, '#94a3b8');
-    bladeGrad.addColorStop(0.6, '#e2e8f0');
-    bladeGrad.addColorStop(1, '#991b1b');
+    bladeGrad.addColorStop(0, '#64748b');
+    bladeGrad.addColorStop(0.55, '#cbd5e1');
+    bladeGrad.addColorStop(1, '#e2e8f0');
     ctx.fillStyle = bladeGrad;
+    ctx.strokeStyle = inkStroke;
+    ctx.lineWidth = thinWeaponLine;
     ctx.beginPath();
     ctx.moveTo(6.5 * scale, -18 * scale);
     ctx.bezierCurveTo(25 * scale, -22 * scale, 25 * scale, -44 * scale, 3 * scale, -42 * scale);
@@ -1139,7 +1186,7 @@ function drawDetailedWeapon(
   ) {
     // Spiked Morning Star Mace (iron handle passes cleanly through (0, 0))
     ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 3.5 * scale;
+    ctx.lineWidth = 3.1 * scale;
     ctx.beginPath();
     ctx.moveTo(-3.2 * scale, 8 * scale);
     ctx.lineTo(12 * scale, -28 * scale);
@@ -1148,8 +1195,8 @@ function drawDetailedWeapon(
     const ballX = 13.5 * scale;
     const ballY = -32 * scale;
     ctx.fillStyle = '#334155';
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 1.5 * scale;
+    ctx.strokeStyle = inkStroke;
+    ctx.lineWidth = thinWeaponLine;
     ctx.beginPath();
     ctx.arc(ballX, ballY, 8.5 * scale, 0, Math.PI * 2);
     ctx.fill();
@@ -1167,9 +1214,9 @@ function drawDetailedWeapon(
       ctx.stroke();
     }
   } else if (spriteKey === 'executioner_paladin') {
-    // Colossal Judgment Warhammer (haft passes through (0, 0))
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = 4.2 * scale;
+    // Colossal Judgment Warhammer (dark iron haft passes through (0, 0))
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 3.8 * scale;
     ctx.beginPath();
     ctx.moveTo(-4.5 * scale, 14 * scale);
     ctx.lineTo(14.5 * scale, -44 * scale);
@@ -1180,8 +1227,8 @@ function drawDetailedWeapon(
     hamGrad.addColorStop(0.5, '#cbd5e1');
     hamGrad.addColorStop(1, '#475569');
     ctx.fillStyle = hamGrad;
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = inkStroke;
+    ctx.lineWidth = thinWeaponLine;
     ctx.beginPath();
     ctx.moveTo(0, -48 * scale);
     ctx.lineTo(28 * scale, -36 * scale);
@@ -1191,17 +1238,17 @@ function drawDetailedWeapon(
     ctx.fill();
     ctx.stroke();
   } else if (spriteKey === 'butcher_kaelgor') {
-    // Đại Phủ Chặt Đầu khổng lồ (Executioner Cleaver — haft passes through (0, 0))
-    ctx.strokeStyle = '#5c3a21';
-    ctx.lineWidth = 4.5 * scale;
+    // Đại Phủ Chặt Đầu khổng lồ (Executioner Cleaver — ash-wood/iron haft)
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 4 * scale;
     ctx.beginPath();
     ctx.moveTo(-4 * scale, 12 * scale);
     ctx.lineTo(15 * scale, -44 * scale);
     ctx.stroke();
 
     ctx.fillStyle = '#475569';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2.2 * scale;
+    ctx.strokeStyle = inkStroke;
+    ctx.lineWidth = thinWeaponLine;
     ctx.beginPath();
     ctx.moveTo(7 * scale, -18 * scale);
     ctx.lineTo(33 * scale, -54 * scale);
@@ -1211,17 +1258,17 @@ function drawDetailedWeapon(
     ctx.fill();
     ctx.stroke();
 
-    // Bloodstained cleaver edge
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 2.5 * scale;
+    // Tempered steel cleaver edge with subtle dark crimson patina
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = Math.max(1.2, 1.8 * scale);
     ctx.beginPath();
     ctx.moveTo(32 * scale, -51 * scale);
     ctx.lineTo(39 * scale, -25 * scale);
     ctx.stroke();
   } else if (spriteKey === 'grand_abbess' || spriteKey === 'rotting_priest') {
-    // Glowing Holy Mother Staff (shaft passes directly through (0, 0))
-    ctx.strokeStyle = '#b45309';
-    ctx.lineWidth = 3.6 * scale;
+    // Glowing Holy Mother Staff (tarnished brass/slate shaft)
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 3.2 * scale;
     ctx.beginPath();
     ctx.moveTo(-4.5 * scale, 18 * scale);
     ctx.lineTo(11 * scale, -42 * scale);
@@ -1241,7 +1288,7 @@ function drawDetailedWeapon(
     // Converging Judgment Light Beams when Grand Abbess is telegraphing
     if (spriteKey === 'grand_abbess') {
       ctx.strokeStyle = 'rgba(254, 240, 138, 0.85)';
-      ctx.lineWidth = 1.8 * scale;
+      ctx.lineWidth = Math.max(1, 1.4 * scale);
       for (let i = 0; i < 8; i++) {
         const ang = (i * Math.PI * 2) / 8;
         ctx.beginPath();
@@ -1252,7 +1299,7 @@ function drawDetailedWeapon(
     }
 
     ctx.strokeStyle = '#fde047';
-    ctx.lineWidth = 3.2 * scale;
+    ctx.lineWidth = 2.6 * scale;
     ctx.beginPath();
     ctx.moveTo(11 * scale, -58 * scale);
     ctx.lineTo(11 * scale, -34 * scale);
@@ -1261,8 +1308,8 @@ function drawDetailedWeapon(
     ctx.stroke();
   } else if (spriteKey === 'demon_lord_vaelis') {
     // World-Ending Apocalypse Greatsword (Đại Đao Diệt Thế rực lửa dung nham)
-    ctx.strokeStyle = '#3f2014';
-    ctx.lineWidth = 4.2 * scale;
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 3.8 * scale;
     ctx.beginPath();
     ctx.moveTo(-3 * scale, 10 * scale);
     ctx.lineTo(4 * scale, -4 * scale);
@@ -1274,8 +1321,8 @@ function drawDetailedWeapon(
     bGrad.addColorStop(0.8, '#f97316');
     bGrad.addColorStop(1, '#fef08a');
     ctx.fillStyle = bGrad;
-    ctx.strokeStyle = '#09050a';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = inkStroke;
+    ctx.lineWidth = thinWeaponLine;
     ctx.beginPath();
     ctx.moveTo(0, -3 * scale);
     ctx.lineTo(22 * scale, -62 * scale);
@@ -1288,30 +1335,30 @@ function drawDetailedWeapon(
     ctx.stroke();
 
     // Horned Demon Crossguard
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 3.8 * scale;
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 3.2 * scale;
     ctx.beginPath();
     ctx.moveTo(-6 * scale, -7 * scale);
     ctx.quadraticCurveTo(5 * scale, -1 * scale, 16 * scale, 2 * scale);
     ctx.stroke();
   } else {
-    // Broad Iron Sword / Penitent Greatsword / Vorath Dark Greatsword (leather hilt centered on (0, 0))
+    // Broad Iron Sword / Penitent Greatsword / Vorath Dark Greatsword (ash/iron hilt + tempered steel blade)
     const isColossal = spriteKey === 'penitent_knight' || spriteKey === 'dullahan_knight';
     const len = isColossal ? -60 : -48;
-    ctx.strokeStyle = '#3f2314';
-    ctx.lineWidth = 3.6 * scale;
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 3.2 * scale;
     ctx.beginPath();
     ctx.moveTo(-3 * scale, 9 * scale);
     ctx.lineTo(3 * scale, -5 * scale);
     ctx.stroke();
 
     const bGrad = ctx.createLinearGradient(2 * scale, -4 * scale, 20 * scale, len * scale);
-    bGrad.addColorStop(0, spriteKey === 'dullahan_knight' ? '#1e293b' : '#64748b');
-    bGrad.addColorStop(0.55, spriteKey === 'dullahan_knight' ? '#475569' : '#e2e8f0');
-    bGrad.addColorStop(1, '#991b1b');
+    bGrad.addColorStop(0, spriteKey === 'dullahan_knight' ? '#1e293b' : '#475569');
+    bGrad.addColorStop(0.55, spriteKey === 'dullahan_knight' ? '#475569' : '#cbd5e1');
+    bGrad.addColorStop(1, spriteKey === 'dullahan_knight' ? '#94a3b8' : '#e2e8f0');
     ctx.fillStyle = bGrad;
-    ctx.strokeStyle = '#070608';
-    ctx.lineWidth = 1.8 * scale;
+    ctx.strokeStyle = inkStroke;
+    ctx.lineWidth = thinWeaponLine;
     ctx.beginPath();
     ctx.moveTo(-1 * scale, -5 * scale);
     ctx.lineTo(16 * scale, len * scale);
@@ -1321,8 +1368,8 @@ function drawDetailedWeapon(
     ctx.fill();
     ctx.stroke();
 
-    ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 3.2 * scale;
+    ctx.strokeStyle = '#b49a5a';
+    ctx.lineWidth = 2.6 * scale;
     ctx.beginPath();
     ctx.moveTo(-6 * scale, -7 * scale);
     ctx.lineTo(12 * scale, 1 * scale);
@@ -1389,7 +1436,7 @@ export function drawPixelSprite(
     floor === 3 ? 'rgba(216, 180, 254, 0.85)' : floor === 1 ? 'rgba(251, 146, 60, 0.82)' : 'rgba(245, 198, 130, 0.72)';
   const rimLightSoft =
     floor === 3 ? 'rgba(168, 85, 247, 0.42)' : floor === 1 ? 'rgba(234, 88, 12, 0.38)' : 'rgba(217, 179, 108, 0.34)';
-  const outlineDark = '#050505';
+  const outlineDark = 'rgba(10, 8, 13, 0.78)';
   const selectedLimbId = combatPngOptions?.selectedLimbId;
   const timeMs = combatPngOptions?.timeMs ?? animPhase * 1000;
   const limbPulseAlpha = selectedLimbId ? computeLimbTargetPulseAlpha(timeMs) : 0;
@@ -1555,8 +1602,8 @@ export function drawPixelSprite(
     garbDark = '#09040f';
   }
 
-  ctx.strokeStyle = '#050505';
-  ctx.lineWidth = Math.max(1.8, 2.3 * scale);
+  ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+  ctx.lineWidth = Math.max(0.85, 1.05 * scale);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
@@ -1596,8 +1643,8 @@ export function drawPixelSprite(
     // 1. Kẻ Đúc Kiếm Không Đầu (Tầng 1): Hulking headless giant, charred apron, 4 massive arms + Iron Anvil
     // 1. Anvil in foreground base
     ctx.fillStyle = '#1e293b';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.fillRect(cx - 24 * scale, destH * 0.72, 48 * scale, 16 * scale);
     ctx.strokeRect(cx - 24 * scale, destH * 0.72, 48 * scale, 16 * scale);
     ctx.beginPath();
@@ -1627,8 +1674,8 @@ export function drawPixelSprite(
 
     // 3. Hulking Torso & Charred Leather Apron with molten iron droplets
     ctx.fillStyle = '#5c4033';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.ellipse(cx, destH * 0.46 + torsoBreathY, 34 * scale, 26 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1654,16 +1701,16 @@ export function drawPixelSprite(
     ctx.lineTo(cx + 40 * scale, destH * 0.14 + rightArmBobY);
     ctx.stroke();
     ctx.fillStyle = '#64748b';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.fillRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 11 * scale);
     ctx.strokeRect(cx + 30 * scale, destH * 0.08 + rightArmBobY, 20 * scale, 11 * scale);
     drawGrippingHand(ctx, cx + 40 * scale, destH * 0.20 + rightArmBobY, scale, '#6b4c3b', 0.15);
 
     // 5. Flat Scarred Neck Stump (NO HEAD)
     ctx.fillStyle = '#3b1c1a';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.ellipse(cx, destH * 0.23 + torsoBreathY, 13 * scale, 5 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1740,8 +1787,8 @@ export function drawPixelSprite(
     const py = destH * 0.22; // Shifted down for low hunched posture
     // Wax-crusted grey robe hunched over
     ctx.fillStyle = '#4b5563';
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.moveTo(cx - 22 * scale, py + destH * 0.66);
     ctx.quadraticCurveTo(cx - 26 * scale, py + destH * 0.26, cx, py + destH * 0.20 + torsoBreathY);
@@ -1832,8 +1879,8 @@ export function drawPixelSprite(
 
     // Small Child Head with bleached white hair (drawn BEFORE rags torso)
     const childTopY = destH * 0.44 + torsoBreathY * 0.6;
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 1.6 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.fillStyle = '#f8fafc';
     ctx.beginPath();
     ctx.arc(cx, childTopY, 8.5 * scale, 0, Math.PI * 2);
@@ -1848,8 +1895,8 @@ export function drawPixelSprite(
 
     // Small Child Body (occupies lower-center, ~55% of adult height)
     ctx.fillStyle = '#cbd5e1'; // Tattered prisoner rags
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 1.6 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.moveTo(cx - 9 * scale, childTopY + 10 * scale);
     ctx.lineTo(cx + 9 * scale, childTopY + 10 * scale);
@@ -1876,8 +1923,8 @@ export function drawPixelSprite(
     const sitY = destH * 0.36;
     // Crushed bandaged legs stretched forward on the ground
     ctx.fillStyle = '#334155';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.fillRect(cx - 18 * scale, destH * 0.74, 36 * scale, 12 * scale);
     ctx.strokeRect(cx - 18 * scale, destH * 0.74, 36 * scale, 12 * scale);
     // Blood-soaked bandages on crushed legs
@@ -1967,8 +2014,8 @@ export function drawPixelSprite(
     // 8. Kẻ Chép Sử Hóa Thạch (Tầng 3 – Vực Sao): Hunched ancient scribe 80% petrified into runic limestone, holding glowing purple reconstruction scroll
     // Hunched hooded scholar head (cracked stone — drawn BEFORE stone robe collar)
     ctx.fillStyle = '#78716c';
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.arc(cx - 2 * scale, destH * 0.27 + headBobY * 0.3, 11.5 * scale, 0, Math.PI * 2);
     ctx.fill();
@@ -1983,8 +2030,8 @@ export function drawPixelSprite(
 
     // Petrified stone robe base fused to floor
     ctx.fillStyle = '#57534e';
-    ctx.strokeStyle = '#09070a';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.moveTo(cx - 22 * scale, destH * 0.88);
     ctx.lineTo(cx - 16 * scale, destH * 0.36 + torsoBreathY * 0.3);
@@ -2012,8 +2059,8 @@ export function drawPixelSprite(
     // 9. Tên Buôn Lậu (Tầng 2): Hooded greatcoat, iron half-mask, brass coin pouch, glowing amber storm lantern
     // Back dark greatcoat hem
     ctx.fillStyle = '#1e1b24';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.moveTo(cx - 21 * scale, destH * 0.31);
     ctx.lineTo(cx - 26 * scale, destH * 0.85);
@@ -2044,8 +2091,8 @@ export function drawPixelSprite(
     ctx.save();
     ctx.translate(headSwayX, headBobY * 0.7);
     ctx.fillStyle = '#27232d';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.moveTo(cx, destH * 0.06);
     ctx.bezierCurveTo(cx + 19 * scale, destH * 0.10, cx + 20 * scale, destH * 0.28, cx + 15 * scale, destH * 0.34);
@@ -2083,8 +2130,8 @@ export function drawPixelSprite(
 
     // 4. Coat Torso & Leather Cross-Belt
     ctx.fillStyle = '#332d3b';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.fillRect(cx - 16 * scale, destH * 0.32 + torsoBreathY, 32 * scale, 36 * scale);
     ctx.strokeRect(cx - 16 * scale, destH * 0.32 + torsoBreathY, 32 * scale, 36 * scale);
     ctx.fillStyle = '#452815';
@@ -2113,8 +2160,8 @@ export function drawPixelSprite(
     ctx.arc(lanX, lanY - 1 * scale, 3 * scale, Math.PI, 0);
     ctx.stroke();
     ctx.fillStyle = '#f59e0b';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 1.6 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.fillRect(lanX - 4 * scale, lanY, 8 * scale, 10 * scale);
     ctx.strokeRect(lanX - 4 * scale, lanY, 8 * scale, 10 * scale);
     drawGrippingHand(ctx, lanX, lanY - 4 * scale, scale, '#3f3847', -0.18);
@@ -2131,8 +2178,8 @@ export function drawPixelSprite(
     withLimbHighlight('tentacle_4', () => {
       if (!severedLimbs.has('tentacle_4')) {
         ctx.fillStyle = '#57534e';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 26 * scale, destH * 0.58);
         ctx.lineTo(cx + 28 * scale, destH * 0.58);
@@ -2160,8 +2207,8 @@ export function drawPixelSprite(
     withLimbHighlight('tentacle_2', () => {
       if (!severedLimbs.has('tentacle_2')) {
         ctx.fillStyle = '#78716c';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 42 * scale, destH * 0.34);
         ctx.lineTo(cx - 16 * scale, destH * 0.38);
@@ -2170,8 +2217,8 @@ export function drawPixelSprite(
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 1.6 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 34 * scale, destH * 0.38);
         ctx.lineTo(cx - 22 * scale, destH * 0.46);
@@ -2186,8 +2233,8 @@ export function drawPixelSprite(
     withLimbHighlight('head', () => {
       if (!severedLimbs.has('head')) {
         ctx.fillStyle = '#78716c';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, destH * 0.18 + headBobY * 0.4, 15 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -2208,8 +2255,8 @@ export function drawPixelSprite(
       ctx.save();
       ctx.translate(0, torsoBreathY * 0.4);
       ctx.fillStyle = '#78716c';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.5 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - 30 * scale, destH * 0.28);
       ctx.lineTo(cx + 30 * scale, destH * 0.28);
@@ -2242,8 +2289,8 @@ export function drawPixelSprite(
     withLimbHighlight('tentacle_3', () => {
       if (!severedLimbs.has('tentacle_3')) {
         ctx.fillStyle = '#a8a29e';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 44 * scale, destH * 0.18);
         ctx.lineTo(cx - 14 * scale, destH * 0.20);
@@ -2262,8 +2309,8 @@ export function drawPixelSprite(
         ctx.save();
         ctx.translate(0, rightArmBobY * 0.5);
         ctx.fillStyle = '#a8a29e';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.5 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx + 24 * scale, destH * 0.28);
         ctx.lineTo(cx + 46 * scale, destH * 0.14);
@@ -2359,8 +2406,8 @@ export function drawPixelSprite(
           ctx.stroke();
 
           ctx.fillStyle = '#991b1b';
-          ctx.strokeStyle = '#070509';
-          ctx.lineWidth = 2 * scale;
+          ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+          ctx.lineWidth = Math.max(0.85, 1.05 * scale);
           ctx.beginPath();
           ctx.arc(cx + bx * scale, destH * by + headBobY, 8 * scale * pulse, 0, Math.PI * 2);
           ctx.fill();
@@ -2374,8 +2421,8 @@ export function drawPixelSprite(
     // 4. torso: Lồng ngực banh rộng mọc lên thân cây thịt trắng bệch
     withLimbHighlight('torso', () => {
       ctx.fillStyle = '#e2e8f0';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.4 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - 18 * scale, destH * 0.64);
       ctx.quadraticCurveTo(cx - 12 * scale, destH * 0.44, cx - 14 * scale, destH * 0.24);
@@ -2384,8 +2431,8 @@ export function drawPixelSprite(
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.6 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       for (const dir of [-1, 1]) {
         for (let r = 0; r < 3; r++) {
           const ry = destH * (0.44 + r * 0.06);
@@ -2434,8 +2481,8 @@ export function drawPixelSprite(
     withLimbHighlight('head', () => {
       if (!severedLimbs.has('head')) {
         ctx.fillStyle = '#3b0764';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.ellipse(cx, destH * 0.20 + headBobY, 18 * scale, 12 * scale, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -2469,8 +2516,8 @@ export function drawPixelSprite(
     const drawVoidStump = (bx: number, by: number, rad: number) => {
       ctx.save();
       ctx.fillStyle = '#180522';
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 2.2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.arc(bx, by, rad, 0, Math.PI * 2);
       ctx.fill();
@@ -2497,8 +2544,8 @@ export function drawPixelSprite(
         mistGrad.addColorStop(0.8, 'rgba(30, 12, 54, 0.48)');
         mistGrad.addColorStop(1, 'rgba(5, 3, 9, 0)');
         ctx.fillStyle = mistGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 30 * scale, destH * 0.56);
         ctx.lineTo(cx + 30 * scale, destH * 0.56);
@@ -2583,8 +2630,8 @@ export function drawPixelSprite(
         voidHeadGrad.addColorStop(0.7, '#1a0833');
         voidHeadGrad.addColorStop(1, '#a855f7');
         ctx.fillStyle = voidHeadGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 3 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, hy, 14.5 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -2605,8 +2652,8 @@ export function drawPixelSprite(
           const mx = cx + Math.cos(ang) * 28 * scale;
           const my = hy + Math.sin(ang) * 10 * scale;
           ctx.fillStyle = '#181026';
-          ctx.strokeStyle = outlineDark;
-          ctx.lineWidth = 2.2 * scale;
+          ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+          ctx.lineWidth = Math.max(0.85, 1.05 * scale);
           ctx.beginPath();
           ctx.moveTo(mx - 4.5 * scale, my - 2.2 * scale);
           ctx.lineTo(mx + 1.2 * scale, my - 5.5 * scale);
@@ -2636,8 +2683,8 @@ export function drawPixelSprite(
       bodyGrad.addColorStop(0.42, flashWhite ? '#c084fc' : '#0f071f');
       bodyGrad.addColorStop(1, '#040208');
       ctx.fillStyle = bodyGrad;
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 3.2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx, destH * 0.22);
       ctx.lineTo(cx + 36 * scale, destH * 0.34);
@@ -2662,8 +2709,8 @@ export function drawPixelSprite(
         shGrad.addColorStop(0.5, '#1e1038');
         shGrad.addColorStop(1, '#07030d');
         ctx.fillStyle = shGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx + dir * 18 * scale, destH * 0.27);
         ctx.lineTo(cx + dir * 44 * scale, destH * 0.29);
@@ -2746,8 +2793,8 @@ export function drawPixelSprite(
     throneGrad.addColorStop(0.5, '#120b12');
     throneGrad.addColorStop(1, '#050307');
     ctx.fillStyle = throneGrad;
-    ctx.strokeStyle = outlineDark;
-    ctx.lineWidth = 3.2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.beginPath();
     ctx.moveTo(cx - 50 * scale, destH * 0.90);
     ctx.lineTo(cx - 44 * scale, destH * 0.14);
@@ -2805,8 +2852,8 @@ export function drawPixelSprite(
     // Throne bone skulls with recessed dark eye sockets
     for (const [skX, skY] of [[-30, 0.17], [30, 0.17], [-36, 0.31], [36, 0.31], [0, 0.09]]) {
       ctx.fillStyle = '#c4bab0';
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 1.8 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.arc(cx + skX * scale, destH * skY, 5.2 * scale, 0, Math.PI * 2);
       ctx.fill();
@@ -2853,8 +2900,8 @@ export function drawPixelSprite(
       gGrad.addColorStop(0.45, '#1e293b');
       gGrad.addColorStop(1, '#090d14');
       ctx.fillStyle = gGrad;
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 2.6 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.fillRect(gx, destH * 0.58, 18 * scale, 28 * scale);
       ctx.strokeRect(gx, destH * 0.58, 18 * scale, 28 * scale);
       ctx.strokeStyle = rimLightCol;
@@ -2899,8 +2946,8 @@ export function drawPixelSprite(
         clawGrad.addColorStop(0.5, '#334155');
         clawGrad.addColorStop(1, '#0f172a');
         ctx.fillStyle = clawGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.8 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 28 * scale, destH * 0.33);
         ctx.lineTo(cx - 53 * scale, destH * 0.45);
@@ -2916,8 +2963,8 @@ export function drawPixelSprite(
         ctx.lineTo(cx - 52 * scale, destH * 0.45);
         ctx.stroke();
         ctx.fillStyle = '#e2e8f0';
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 1.6 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         for (const cyOff of [0.42, 0.48, 0.54]) {
           ctx.beginPath();
           ctx.moveTo(cx - 47 * scale, destH * cyOff);
@@ -2959,8 +3006,8 @@ export function drawPixelSprite(
         helmGrad.addColorStop(0.5, '#1e293b');
         helmGrad.addColorStop(1, '#090d14');
         ctx.fillStyle = helmGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.8 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, hy, 14 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -3026,8 +3073,8 @@ export function drawPixelSprite(
       armorGrad.addColorStop(0.42, flashWhite ? '#94a3b8' : '#1b202b');
       armorGrad.addColorStop(1, '#080a0f');
       ctx.fillStyle = armorGrad;
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 3 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - 32 * scale, destH * 0.27);
       ctx.lineTo(cx + 32 * scale, destH * 0.27);
@@ -3049,8 +3096,8 @@ export function drawPixelSprite(
         ctx.lineTo(cx + dir * 22 * scale, destH * 0.58);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.stroke();
       }
 
@@ -3109,8 +3156,8 @@ export function drawPixelSprite(
         swGrad.addColorStop(0.5, '#64748b');
         swGrad.addColorStop(1, '#7f1d1d');
         ctx.fillStyle = swGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 4.5 * scale, destH * 0.46);
         ctx.lineTo(cx + 4.5 * scale, destH * 0.46);
@@ -3150,8 +3197,8 @@ export function drawPixelSprite(
         cGrad.addColorStop(0.45, '#dc2626');
         cGrad.addColorStop(1, '#450a0a');
         ctx.fillStyle = cGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(censerX, censerY, 10 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -3175,8 +3222,8 @@ export function drawPixelSprite(
       if (!kLegsSevered) {
         for (const dir of [-1, 1]) {
           ctx.fillStyle = '#1c1917';
-          ctx.strokeStyle = '#070509';
-          ctx.lineWidth = 2.4 * scale;
+          ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+          ctx.lineWidth = Math.max(0.85, 1.05 * scale);
           ctx.fillRect(cx + (dir * 15 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
           ctx.strokeRect(cx + (dir * 15 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
         }
@@ -3225,8 +3272,8 @@ export function drawPixelSprite(
       if (!severedLimbs.has('head')) {
         const hy = destH * 0.18 + headBobY * 0.5;
         ctx.fillStyle = '#334155';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 13 * scale, hy - 12 * scale);
         ctx.lineTo(cx + 13 * scale, hy - 12 * scale);
@@ -3252,8 +3299,8 @@ export function drawPixelSprite(
       ctx.save();
       ctx.translate(0, torsoBreathY);
       ctx.fillStyle = '#475569';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.6 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - 32 * scale, destH * 0.28);
       ctx.lineTo(cx + 32 * scale, destH * 0.28);
@@ -3312,8 +3359,8 @@ export function drawPixelSprite(
       if (!dLegsSevered) {
         for (const dir of [-1, 1]) {
           ctx.fillStyle = '#1e293b';
-          ctx.strokeStyle = '#070509';
-          ctx.lineWidth = 2.4 * scale;
+          ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+          ctx.lineWidth = Math.max(0.85, 1.05 * scale);
           ctx.fillRect(cx + (dir * 15 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
           ctx.strokeRect(cx + (dir * 15 - 9) * scale, destH * 0.58, 18 * scale, 30 * scale);
         }
@@ -3349,8 +3396,8 @@ export function drawPixelSprite(
       if (!severedLimbs.has('head')) {
         const hy = destH * 0.18 + headBobY * 0.5;
         ctx.fillStyle = '#334155';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, hy, 13 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -3385,8 +3432,8 @@ export function drawPixelSprite(
       ctx.save();
       ctx.translate(0, torsoBreathY);
       ctx.fillStyle = '#1e293b';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.6 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.fillRect(cx - 26 * scale, destH * 0.28, 52 * scale, 34 * scale);
       ctx.strokeRect(cx - 26 * scale, destH * 0.28, 52 * scale, 34 * scale);
       ctx.strokeStyle = '#991b1b';
@@ -3413,8 +3460,8 @@ export function drawPixelSprite(
         ctx.save();
         ctx.translate(leftArmSwayX * 0.5, leftArmBobY * 0.5);
         ctx.fillStyle = '#475569';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.6 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillRect(cx - 48 * scale, destH * 0.24, 30 * scale, 52 * scale);
         ctx.strokeRect(cx - 48 * scale, destH * 0.24, 30 * scale, 52 * scale);
         ctx.fillStyle = '#7f1d1d';
@@ -3524,8 +3571,8 @@ export function drawPixelSprite(
       ctx.save();
       ctx.translate(0, torsoBreathY);
       ctx.fillStyle = '#7f1d1d';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.4 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - 20 * scale, destH * 0.30);
       ctx.lineTo(cx + 20 * scale, destH * 0.30);
@@ -3541,8 +3588,8 @@ export function drawPixelSprite(
     withLimbHighlight('left_arm', () => {
       if (!severedLimbs.has('left_arm')) {
         ctx.fillStyle = '#ef4444';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         for (const [hx, hy] of [[-38, 0.46], [-44, 0.51], [-33, 0.52]]) {
           ctx.beginPath();
           ctx.arc(cx + hx * scale, destH * hy + leftArmBobY, 5.5 * scale, 0, Math.PI * 2);
@@ -3584,8 +3631,8 @@ export function drawPixelSprite(
     withLimbHighlight('legs', () => {
       if (!severedLimbs.has('legs')) {
         ctx.fillStyle = '#365314';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         for (const [bx, by, r] of [[-16, 0.72, 13], [0, 0.74, 15], [16, 0.72, 13]]) {
           ctx.beginPath();
           ctx.arc(cx + bx * scale, destH * by, r * scale, 0, Math.PI * 2);
@@ -3606,8 +3653,8 @@ export function drawPixelSprite(
     withLimbHighlight('left_arm', () => {
       if (!severedLimbs.has('left_arm')) {
         ctx.fillStyle = '#e7e5e4';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 32 * scale, destH * 0.38);
         ctx.lineTo(cx - 56 * scale, destH * 0.52 + leftArmBobY);
@@ -3621,8 +3668,8 @@ export function drawPixelSprite(
     withLimbHighlight('right_arm', () => {
       if (!severedLimbs.has('right_arm')) {
         ctx.fillStyle = '#991b1b';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.ellipse(cx + 42 * scale, destH * 0.50 + rightArmBobY, 15 * scale, 20 * scale, 0.25, 0, Math.PI * 2);
         ctx.fill();
@@ -3635,8 +3682,8 @@ export function drawPixelSprite(
       if (!severedLimbs.has('head')) {
         for (const [hx, hy] of [[-12, 0.22], [10, 0.20], [0, 0.26]]) {
           ctx.fillStyle = '#d6b89c';
-          ctx.strokeStyle = '#070509';
-          ctx.lineWidth = 2 * scale;
+          ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+          ctx.lineWidth = Math.max(0.85, 1.05 * scale);
           ctx.beginPath();
           ctx.arc(cx + hx * scale, destH * hy + headBobY * 0.5, 9 * scale, 0, Math.PI * 2);
           ctx.fill();
@@ -3654,8 +3701,8 @@ export function drawPixelSprite(
       ctx.save();
       ctx.translate(0, torsoBreathY);
       ctx.fillStyle = '#7f1d1d';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.6 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.ellipse(cx, destH * 0.46, 36 * scale, 26 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -3694,8 +3741,8 @@ export function drawPixelSprite(
           ribGrad.addColorStop(0.55, '#d6c7a5');
           ribGrad.addColorStop(1, '#574a38');
           ctx.fillStyle = ribGrad;
-          ctx.strokeStyle = outlineDark;
-          ctx.lineWidth = 2.2 * scale;
+          ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+          ctx.lineWidth = Math.max(0.85, 1.05 * scale);
           ctx.beginPath();
           ctx.moveTo(cx + rx * scale - 4.5 * scale, destH * 0.59);
           ctx.quadraticCurveTo(
@@ -3763,8 +3810,8 @@ export function drawPixelSprite(
         goldGrad.addColorStop(0.48, '#d97706');
         goldGrad.addColorStop(1, '#451a03');
         ctx.fillStyle = goldGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.8 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx, hy - 16 * scale);
         ctx.lineTo(cx + 18 * scale, hy);
@@ -3805,8 +3852,8 @@ export function drawPixelSprite(
       waxGrad.addColorStop(0.5, '#cbd5e1');
       waxGrad.addColorStop(1, '#475569');
       ctx.fillStyle = waxGrad;
-      ctx.strokeStyle = outlineDark;
-      ctx.lineWidth = 3 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - 30 * scale, destH * 0.27);
       ctx.lineTo(cx + 30 * scale, destH * 0.27);
@@ -3859,8 +3906,8 @@ export function drawPixelSprite(
         bookGrad.addColorStop(0.6, '#5c240c');
         bookGrad.addColorStop(1, '#260d04');
         ctx.fillStyle = bookGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillRect(cx - 55 * scale, destH * 0.33 + leftArmBobY, 22 * scale, 30 * scale);
         ctx.strokeRect(cx - 55 * scale, destH * 0.33 + leftArmBobY, 22 * scale, 30 * scale);
         // Bronze nails & crimson seal
@@ -3893,8 +3940,8 @@ export function drawPixelSprite(
         bellGrad.addColorStop(0.55, '#ca8a04');
         bellGrad.addColorStop(1, '#7f1d1d');
         ctx.fillStyle = bellGrad;
-        ctx.strokeStyle = outlineDark;
-        ctx.lineWidth = 2.2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx + 50 * scale, destH * 0.22 + rightArmBobY, 9 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -3965,8 +4012,8 @@ export function drawPixelSprite(
     withLimbHighlight('head', () => {
       if (!severedLimbs.has('head')) {
         ctx.fillStyle = '#f8fafc';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, destH * 0.20 + headBobY * 0.4, 12 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -3990,8 +4037,8 @@ export function drawPixelSprite(
     // 4. torso: Nữ tu già nua bị trói chặt vào bánh xe gỗ + sáp nến chảy xuống ngực (nx: 0.50, ny: 0.46)
     withLimbHighlight('torso', () => {
       ctx.fillStyle = '#1e1b4b';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.4 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - 18 * scale, destH * 0.28);
       ctx.lineTo(cx + 18 * scale, destH * 0.28);
@@ -4040,8 +4087,8 @@ export function drawPixelSprite(
     withLimbHighlight('left_leg', () => {
       if (!severedLimbs.has('left_leg') && !severedLimbs.has('legs')) {
         ctx.fillStyle = '#7f1d1d';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillRect(cx - 20 * scale, destH * 0.58, 14 * scale, 30 * scale);
         ctx.strokeRect(cx - 20 * scale, destH * 0.58, 14 * scale, 30 * scale);
         // Black blood ooze
@@ -4056,8 +4103,8 @@ export function drawPixelSprite(
     withLimbHighlight('legs', () => {
       if (!severedLimbs.has('legs')) {
         ctx.fillStyle = '#cbd5e1';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillRect(cx + 6 * scale, destH * 0.58, 16 * scale, 30 * scale);
         ctx.strokeRect(cx + 6 * scale, destH * 0.58, 16 * scale, 30 * scale);
       } else {
@@ -4081,8 +4128,8 @@ export function drawPixelSprite(
     withLimbHighlight('head', () => {
       if (!severedLimbs.has('head')) {
         ctx.fillStyle = '#cbd5e1';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.4 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, destH * 0.18 + headBobY, 13 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -4097,8 +4144,8 @@ export function drawPixelSprite(
     // 4. torso: Giáp bạch kim khổng lồ bị ăn mòn, qua các khe khớp trào ra bùn máu đen (nx: 0.50, ny: 0.44)
     withLimbHighlight('torso', () => {
       ctx.fillStyle = '#e2e8f0';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.5 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.fillRect(cx - 26 * scale, destH * 0.28 + torsoBreathY, 52 * scale, 32 * scale);
       ctx.strokeRect(cx - 26 * scale, destH * 0.28 + torsoBreathY, 52 * scale, 32 * scale);
       // Black blood mud oozing from armor seams
@@ -4111,8 +4158,8 @@ export function drawPixelSprite(
     withLimbHighlight('left_arm', () => {
       if (!severedLimbs.has('left_arm')) {
         ctx.fillStyle = '#cbd5e1';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.5 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillRect(cx - 48 * scale, destH * 0.28 + leftArmBobY, 24 * scale, 42 * scale);
         ctx.strokeRect(cx - 48 * scale, destH * 0.28 + leftArmBobY, 24 * scale, 42 * scale);
         // Giant rolling eyeball in center of shield
@@ -4145,8 +4192,8 @@ export function drawPixelSprite(
         ctx.lineTo(cx + 38 * scale, destH * 0.18 + rightArmBobY);
         ctx.stroke();
         ctx.fillStyle = '#e2e8f0';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillRect(cx + 28 * scale, destH * 0.12 + rightArmBobY, 20 * scale, 16 * scale);
         ctx.strokeRect(cx + 28 * scale, destH * 0.12 + rightArmBobY, 20 * scale, 16 * scale);
         drawGrippingHand(ctx, cx + 36 * scale, destH * 0.46 + rightArmBobY, scale, '#cbd5e1', 0.12);
@@ -4293,8 +4340,8 @@ export function drawPixelSprite(
       if (!severedLimbs.has('head')) {
         const hy = destH * 0.22 + headBobY;
         ctx.fillStyle = isLeech ? '#4c0519' : '#581c87';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2.5 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, hy, 16 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -4313,8 +4360,8 @@ export function drawPixelSprite(
     // 3. torso: Writhing base sac
     withLimbHighlight('torso', () => {
       ctx.fillStyle = isLeech ? '#3f1d2e' : '#2e1065';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2.5 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.ellipse(cx, destH * 0.52 + torsoBreathY, 30 * scale, 24 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -4380,8 +4427,8 @@ export function drawPixelSprite(
     withLimbHighlight('head', () => {
       if (!severedLimbs.has('head')) {
         ctx.fillStyle = '#18181b';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.arc(cx, destH * 0.18 + headBobY, 12 * scale, 0, Math.PI * 2);
         ctx.fill();
@@ -4418,8 +4465,8 @@ export function drawPixelSprite(
     withLimbHighlight('left_arm', () => {
       if (!severedLimbs.has('left_arm')) {
         ctx.fillStyle = '#334155';
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.beginPath();
         ctx.moveTo(cx - 35 * scale, destH * 0.38);
         ctx.lineTo(cx - 19 * scale, destH * 0.40);
@@ -4451,8 +4498,8 @@ export function drawPixelSprite(
   if (spriteKey === 'ally_kael') {
     // Kael (Tù Nhân): chân -> cánh tay -> đầu & tóc -> áo tù rách rưới -> cùm xích gãy
     ctx.fillStyle = '#44403c';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     // 1. Legs
     ctx.fillRect(cx - 12 * scale, destH * 0.58, 9 * scale, 28 * scale);
     ctx.strokeRect(cx - 12 * scale, destH * 0.58, 9 * scale, 28 * scale);
@@ -4469,8 +4516,8 @@ export function drawPixelSprite(
     ctx.beginPath();
     ctx.arc(cx, destH * 0.21 + headBobY * 0.4, 11 * scale, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.stroke();
     ctx.fillStyle = '#09090b';
     ctx.beginPath();
@@ -4510,8 +4557,8 @@ export function drawPixelSprite(
     // Kỵ Sĩ Roland: Áo giáp xám sứt mẻ, mũ sắt không chỏm lông (chân -> cánh tay -> đầu -> thân giáp -> kiếm/găng tay)
     // 1. Legs
     withLimbHighlight('legs', () => {
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.fillStyle = '#475569';
       ctx.fillRect(cx - 14 * scale, destH * 0.62, 10 * scale, 26 * scale);
       ctx.strokeRect(cx - 14 * scale, destH * 0.62, 10 * scale, 26 * scale);
@@ -4521,8 +4568,8 @@ export function drawPixelSprite(
     // 2. Arms (drawn BEFORE head & torso armor)
     withLimbHighlight('left_arm', () => {
       if (!severedLimbs.has('left_arm')) {
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillStyle = '#475569';
         ctx.fillRect(cx - 26 * scale, destH * 0.34, 8 * scale, 22 * scale);
         ctx.strokeRect(cx - 26 * scale, destH * 0.34, 8 * scale, 22 * scale);
@@ -4530,8 +4577,8 @@ export function drawPixelSprite(
     });
     withLimbHighlight('right_arm', () => {
       if (!severedLimbs.has('right_arm')) {
-        ctx.strokeStyle = '#070509';
-        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+        ctx.lineWidth = Math.max(0.85, 1.05 * scale);
         ctx.fillStyle = '#475569';
         ctx.fillRect(cx + 18 * scale, destH * 0.34, 8 * scale, 22 * scale);
         ctx.strokeRect(cx + 18 * scale, destH * 0.34, 8 * scale, 22 * scale);
@@ -4539,8 +4586,8 @@ export function drawPixelSprite(
     });
     // 3. Head (drawn BEFORE torso armor so cổ giáp che gọn phần cổ)
     withLimbHighlight('head', () => {
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.fillStyle = '#64748b';
       ctx.beginPath();
       ctx.arc(cx, destH * 0.20 + headBobY * 0.4, 11 * scale, 0, Math.PI * 2);
@@ -4551,8 +4598,8 @@ export function drawPixelSprite(
     });
     // 4. Torso armor
     withLimbHighlight('torso', () => {
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.fillStyle = '#475569';
       ctx.fillRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
       ctx.strokeRect(cx - 18 * scale, destH * 0.30, 36 * scale, 32 * scale);
@@ -4631,8 +4678,8 @@ export function drawPixelSprite(
     } else {
       // summon_ghoul: head before torso
       ctx.fillStyle = '#4d7c0f';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.arc(cx, destH * 0.24, 10 * scale, 0, Math.PI * 2);
       ctx.fill();
@@ -4670,8 +4717,8 @@ export function drawPixelSprite(
   );
   capeGrad.addColorStop(1, spriteKey === 'fallen_knight' ? '#450a0a' : '#09070b');
   ctx.fillStyle = capeGrad;
-  ctx.strokeStyle = '#070509';
-  ctx.lineWidth = 2 * scale;
+  ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+  ctx.lineWidth = Math.max(0.85, 1.05 * scale);
   ctx.beginPath();
   ctx.moveTo(cx - 26 * scale * torsoWidthMult, destH * 0.28);
   ctx.lineTo(cx - 34 * scale * torsoWidthMult, destH * 0.86);
@@ -4705,8 +4752,8 @@ export function drawPixelSprite(
       }
       return;
     }
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     const thighGrad = ctx.createLinearGradient(lx - 8 * scale, destH * 0.56, lx + 8 * scale, destH * 0.75);
     thighGrad.addColorStop(0, garbLight);
     thighGrad.addColorStop(1, '#070509');
@@ -4763,8 +4810,8 @@ export function drawPixelSprite(
       ctx.save();
       ctx.translate(leftArmSwayX, leftArmBobY);
       ctx.fillStyle = fleshMid;
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx - tw * 0.9, destH * 0.31);
       ctx.bezierCurveTo(cx - 44 * scale, destH * 0.37, cx - 44 * scale, destH * 0.53, cx - 31 * scale, destH * 0.59);
@@ -4781,8 +4828,8 @@ export function drawPixelSprite(
       ctx.save();
       ctx.translate(rightArmSwayX, rightArmBobY);
       ctx.fillStyle = fleshMid;
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.beginPath();
       ctx.moveTo(cx + tw * 0.9, destH * 0.31);
       ctx.bezierCurveTo(cx + 44 * scale, destH * 0.37, cx + 44 * scale, destH * 0.53, cx + 31 * scale, destH * 0.59);
@@ -4806,8 +4853,8 @@ export function drawPixelSprite(
       hoodGrad.addColorStop(0.6, garbMid);
       hoodGrad.addColorStop(1, '#070509');
       ctx.fillStyle = hoodGrad;
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
 
       if (spriteKey === 'forsaken_nun') {
         // Ivory-cream veil with antique gold trim & pale blonde hair peeking under edge
@@ -4825,7 +4872,7 @@ export function drawPixelSprite(
         ctx.fillStyle = '#d4b475';
         ctx.fillRect(cx - 14 * scale, destH * 0.14, 4 * scale, 16 * scale);
         ctx.fillRect(cx + 10 * scale, destH * 0.14, 4 * scale, 16 * scale);
-        ctx.strokeStyle = '#070509';
+        ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
       } else if (spriteKey === 'night_hunter') {
         // Pointed dark moss-green hunter hood (khớp Khung III)
         ctx.fillStyle = '#2e4232';
@@ -4921,8 +4968,8 @@ export function drawPixelSprite(
   withLimbHighlight('torso', () => {
     ctx.save();
     ctx.translate(0, torsoBreathY);
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     const torsoGrad = ctx.createRadialGradient(cx, cy - 6 * scale, 4 * scale, cx, cy, 36 * scale);
     torsoGrad.addColorStop(0, fleshLight);
     torsoGrad.addColorStop(0.5, fleshMid);
@@ -5004,8 +5051,8 @@ export function drawPixelSprite(
       // Hip leather pouch
       ctx.fillStyle = '#854d0e';
       ctx.fillRect(cx + 12 * scale, destH * 0.54, 8 * scale, 8 * scale);
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 1.4 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       ctx.strokeRect(cx + 12 * scale, destH * 0.54, 8 * scale, 8 * scale);
     } else if (spriteKey === 'forsaken_nun') {
       // Cream ivory wimple collar over tattered dark nun habit
@@ -5023,8 +5070,8 @@ export function drawPixelSprite(
     } else if (spriteKey === 'fallen_knight') {
       // Rounded Steel Shoulder Pauldrons
       ctx.fillStyle = '#64748b';
-      ctx.strokeStyle = '#070509';
-      ctx.lineWidth = 1.8 * scale;
+      ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+      ctx.lineWidth = Math.max(0.85, 1.05 * scale);
       for (const dir of [-1, 1]) {
         ctx.beginPath();
         ctx.ellipse(cx + dir * 23 * scale, destH * 0.33, 10 * scale, 7 * scale, dir * 0.3, 0, Math.PI * 2);
@@ -5043,8 +5090,8 @@ export function drawPixelSprite(
     }
 
     ctx.fillStyle = '#29170e';
-    ctx.strokeStyle = '#070509';
-    ctx.lineWidth = 1.6 * scale;
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.78)';
+    ctx.lineWidth = Math.max(0.85, 1.05 * scale);
     ctx.fillRect(cx - tw * 0.78, destH * 0.55, tw * 1.56, 6 * scale);
     ctx.strokeRect(cx - tw * 0.78, destH * 0.55, tw * 1.56, 6 * scale);
     ctx.restore();
@@ -5157,8 +5204,8 @@ export function drawPartyBackSprite(
     ctx.globalAlpha = isSpecter ? 0.82 : 1;
     // 1. Bleached white hair / small child head (drawn BEFORE torso robe)
     ctx.fillStyle = isSpecter ? '#e0f2fe' : '#f8fafc';
-    ctx.strokeStyle = isSpecter ? '#38bdf8' : '#070608';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = isSpecter ? '#38bdf8' : '#0d0a10';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(w * 0.50, h * 0.46, w * 0.14, 0, Math.PI * 2);
     ctx.fill();
@@ -5230,8 +5277,8 @@ export function drawPartyBackSprite(
     }
     // 2. Skull (drawn BEFORE spine/torso)
     ctx.fillStyle = '#27272a';
-    ctx.strokeStyle = '#070608';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(w * 0.50, h * 0.22, w * 0.16, 0, Math.PI * 2);
     ctx.fill();
@@ -5257,8 +5304,8 @@ export function drawPartyBackSprite(
   if (classId === 'summon_ghoul') {
     // 1. Head (drawn BEFORE torso)
     ctx.fillStyle = '#4d7c0f';
-    ctx.strokeStyle = '#070608';
-    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.44;
     ctx.beginPath();
     ctx.arc(w * 0.50, h * 0.24, w * 0.16, 0, Math.PI * 2);
     ctx.fill();
@@ -5303,8 +5350,8 @@ export function drawPartyBackSprite(
       ctx.stroke();
 
       ctx.fillStyle = '#cbd5e1';
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#0d0a10';
+      ctx.lineWidth = 1.2;
       for (let f = 0; f < 6; f++) {
         const ang = (f / 6) * Math.PI * 2;
         const hx = w * 0.90;
@@ -5323,8 +5370,8 @@ export function drawPartyBackSprite(
       dagGrad.addColorStop(0.6, '#e2e8f0');
       dagGrad.addColorStop(1, '#ffffff');
       ctx.fillStyle = dagGrad;
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = '#0d0a10';
+      ctx.lineWidth = 1.44;
       ctx.beginPath();
       ctx.moveTo(w * 0.75, h * 0.55);
       ctx.quadraticCurveTo(w * 0.98, h * 0.32, w * 0.86, h * 0.10);
@@ -5340,8 +5387,8 @@ export function drawPartyBackSprite(
       ctx.stroke();
     } else if (classId === 'ally_kael') {
       ctx.fillStyle = '#94a3b8';
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#0d0a10';
+      ctx.lineWidth = 1.32;
       ctx.beginPath();
       ctx.moveTo(w * 0.74, h * 0.58);
       ctx.lineTo(w * 0.88, h * 0.16);
@@ -5356,8 +5403,8 @@ export function drawPartyBackSprite(
       bladeGrad.addColorStop(0.55, '#cbd5e1');
       bladeGrad.addColorStop(1, '#f8fafc');
       ctx.fillStyle = bladeGrad;
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = '#0d0a10';
+      ctx.lineWidth = 1.44;
       ctx.beginPath();
       ctx.moveTo(w * 0.73, h * 0.56);
       ctx.lineTo(w * 0.92, h * 0.04);
@@ -5397,8 +5444,8 @@ export function drawPartyBackSprite(
   // 1. Headgear from Behind (drawn BEFORE Back Cloak & Shoulder Pauldrons/Wimple Collar)
   if (classId === 'ally_kael') {
     ctx.fillStyle = '#18181b';
-    ctx.strokeStyle = '#050505';
-    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.44;
     ctx.beginPath();
     ctx.arc(w * 0.50, h * 0.24, w * 0.18, 0, Math.PI * 2);
     ctx.fill();
@@ -5422,8 +5469,8 @@ export function drawPartyBackSprite(
     bkGrad.addColorStop(0.55, '#475569');
     bkGrad.addColorStop(1, '#1e293b');
     ctx.fillStyle = bkGrad;
-    ctx.strokeStyle = '#050505';
-    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.56;
     ctx.beginPath();
     ctx.arc(w * 0.50, h * 0.24, w * 0.18, 0, Math.PI * 2);
     ctx.fill();
@@ -5439,8 +5486,8 @@ export function drawPartyBackSprite(
     veilGrad.addColorStop(0.55, '#d8cba8');
     veilGrad.addColorStop(1, '#7a6c52');
     ctx.fillStyle = veilGrad;
-    ctx.strokeStyle = '#050505';
-    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.56;
     ctx.beginPath();
     ctx.moveTo(w * 0.5, h * 0.08);
     ctx.quadraticCurveTo(w * 0.74, h * 0.12, w * 0.68, h * 0.43);
@@ -5461,8 +5508,8 @@ export function drawPartyBackSprite(
     hoodGrad.addColorStop(0.55, '#293b2d');
     hoodGrad.addColorStop(1, '#101a12');
     ctx.fillStyle = hoodGrad;
-    ctx.strokeStyle = '#050505';
-    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.56;
     ctx.beginPath();
     ctx.moveTo(w * 0.50, h * 0.06);
     ctx.quadraticCurveTo(w * 0.72, h * 0.14, w * 0.68, h * 0.36);
@@ -5484,8 +5531,8 @@ export function drawPartyBackSprite(
     helmGrad.addColorStop(0.45, '#64748b');
     helmGrad.addColorStop(1, '#1e293b');
     ctx.fillStyle = helmGrad;
-    ctx.strokeStyle = '#050505';
-    ctx.lineWidth = 2.8;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.68;
     ctx.beginPath();
     ctx.arc(w * 0.50, h * 0.23, w * 0.18, 0, Math.PI * 2);
     ctx.fill();
@@ -5509,8 +5556,8 @@ export function drawPartyBackSprite(
   grad.addColorStop(0, cloakLight);
   grad.addColorStop(1, cloakDark);
   ctx.fillStyle = grad;
-  ctx.strokeStyle = '#050505';
-  ctx.lineWidth = 2.6;
+  ctx.strokeStyle = '#0d0a10';
+  ctx.lineWidth = 1.56;
 
   if (classId === 'forsaken_nun') {
     // Slender habit flaring into jagged tattered skirt hem (matching Frame 3 Nun)
@@ -5553,8 +5600,8 @@ export function drawPartyBackSprite(
   if (classId === 'night_hunter') {
     // Leather waist belt + hip pouch + crossed back straps + slung crossbow
     ctx.fillStyle = '#5c2b12';
-    ctx.strokeStyle = '#070608';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.2;
     ctx.fillRect(w * 0.21, h * 0.64, w * 0.58, h * 0.065);
     ctx.strokeRect(w * 0.21, h * 0.64, w * 0.58, h * 0.065);
     ctx.fillStyle = '#854d0e';
@@ -5606,8 +5653,8 @@ export function drawPartyBackSprite(
     collarGrad.addColorStop(0.55, '#cfc2a0');
     collarGrad.addColorStop(1, '#7a6c52');
     ctx.fillStyle = collarGrad;
-    ctx.strokeStyle = '#050505';
-    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = 1.32;
     ctx.beginPath();
     ctx.moveTo(w * 0.30, h * 0.34);
     ctx.quadraticCurveTo(w * 0.50, h * 0.44, w * 0.70, h * 0.34);
@@ -5638,8 +5685,8 @@ export function drawPartyBackSprite(
         pGrad.addColorStop(1, '#1e293b');
       }
       ctx.fillStyle = pGrad;
-      ctx.strokeStyle = '#050505';
-      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = '#0d0a10';
+      ctx.lineWidth = 1.56;
       ctx.beginPath();
       ctx.ellipse(px, h * 0.39, w * 0.175, h * 0.088, dir * 0.22, 0, Math.PI * 2);
       ctx.fill();
@@ -5993,6 +6040,222 @@ export function drawItemIcon(ctx: CanvasRenderingContext2D, itemId: string, size
     ctx.beginPath();
     ctx.arc(cx - size * 0.16, cy + size * 0.06, size * 0.055, 0, Math.PI * 2);
     ctx.arc(cx + size * 0.18, cy + size * 0.02, size * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (itemId === 'herbal_cigarette') {
+    // Hand-rolled herbal cigarette with glowing ember & smoke wisp
+    ctx.save();
+    ctx.translate(cx, cy + size * 0.04);
+    ctx.rotate(-0.55);
+    ctx.fillStyle = '#dfd6c2';
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.024);
+    ctx.fillRect(-size * 0.3, -size * 0.055, size * 0.52, size * 0.11);
+    ctx.strokeRect(-size * 0.3, -size * 0.055, size * 0.52, size * 0.11);
+    // Dried herb filter end
+    ctx.fillStyle = '#4d6b47';
+    ctx.fillRect(-size * 0.3, -size * 0.055, size * 0.14, size * 0.11);
+    // Glowing ember tip
+    ctx.fillStyle = '#ea580c';
+    ctx.fillRect(size * 0.2, -size * 0.055, size * 0.08, size * 0.11);
+    ctx.fillStyle = '#fef08a';
+    ctx.fillRect(size * 0.24, -size * 0.035, size * 0.04, size * 0.07);
+    ctx.restore();
+    // Rising smoke curl
+    ctx.strokeStyle = 'rgba(203, 213, 225, 0.55)';
+    ctx.lineWidth = Math.max(1.2, size * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(cx + size * 0.22, cy - size * 0.14);
+    ctx.bezierCurveTo(cx + size * 0.14, cy - size * 0.26, cx + size * 0.3, cy - size * 0.34, cx + size * 0.2, cy - size * 0.42);
+    ctx.stroke();
+  } else if (itemId === 'dark_ale') {
+    // Squat Dark Ale Bottle with foamy cap & weathered label
+    ctx.fillStyle = '#29211d';
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(cx - size * 0.08, size * 0.16);
+    ctx.lineTo(cx + size * 0.08, size * 0.16);
+    ctx.lineTo(cx + size * 0.09, size * 0.32);
+    ctx.quadraticCurveTo(cx + size * 0.22, size * 0.38, cx + size * 0.22, size * 0.52);
+    ctx.lineTo(cx + size * 0.2, size * 0.84);
+    ctx.lineTo(cx - size * 0.2, size * 0.84);
+    ctx.lineTo(cx - size * 0.22, size * 0.52);
+    ctx.quadraticCurveTo(cx - size * 0.22, size * 0.38, cx - size * 0.09, size * 0.32);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Cork & parchment label
+    ctx.fillStyle = '#855834';
+    ctx.fillRect(cx - size * 0.06, size * 0.11, size * 0.12, size * 0.06);
+    ctx.fillStyle = '#c8b89a';
+    ctx.fillRect(cx - size * 0.15, size * 0.49, size * 0.3, size * 0.2);
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(cx - size * 0.1, size * 0.56, size * 0.2, size * 0.05);
+  } else if (itemId === 'abbey_wine') {
+    // Tall Crimson Abbey Wine Bottle with wax seal
+    ctx.fillStyle = '#3b0d14';
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(cx - size * 0.065, size * 0.13);
+    ctx.lineTo(cx + size * 0.065, size * 0.13);
+    ctx.lineTo(cx + size * 0.075, size * 0.34);
+    ctx.quadraticCurveTo(cx + size * 0.19, size * 0.4, cx + size * 0.18, size * 0.56);
+    ctx.lineTo(cx + size * 0.17, size * 0.86);
+    ctx.lineTo(cx - size * 0.17, size * 0.86);
+    ctx.lineTo(cx - size * 0.18, size * 0.56);
+    ctx.quadraticCurveTo(cx - size * 0.19, size * 0.4, cx - size * 0.075, size * 0.34);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Red wax seal top & gold cross label
+    ctx.fillStyle = '#991b1b';
+    ctx.fillRect(cx - size * 0.07, size * 0.11, size * 0.14, size * 0.1);
+    ctx.fillStyle = '#e7dcc8';
+    ctx.fillRect(cx - size * 0.12, size * 0.5, size * 0.24, size * 0.22);
+    ctx.fillStyle = '#c5a059';
+    ctx.fillRect(cx - size * 0.018, size * 0.54, size * 0.036, size * 0.14);
+    ctx.fillRect(cx - size * 0.07, size * 0.585, size * 0.14, size * 0.035);
+  } else if (itemId === 'salted_meat') {
+    // Thick Smoked Salted Meat Slab tied with butcher twine
+    ctx.fillStyle = '#7f1d1d';
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.026);
+    ctx.beginPath();
+    ctx.roundRect(size * 0.16, size * 0.28, size * 0.68, size * 0.44, size * 0.1);
+    ctx.fill();
+    ctx.stroke();
+    // Smoked crust & marbling streaks
+    ctx.fillStyle = '#451212';
+    ctx.fillRect(size * 0.18, size * 0.29, size * 0.64, size * 0.1);
+    ctx.strokeStyle = '#e7d7c1';
+    ctx.lineWidth = Math.max(1.2, size * 0.028);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.34, size * 0.28);
+    ctx.lineTo(size * 0.34, size * 0.72);
+    ctx.moveTo(size * 0.64, size * 0.28);
+    ctx.lineTo(size * 0.64, size * 0.72);
+    ctx.stroke();
+    // Salt crystals
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(size * 0.44, size * 0.45, size * 0.04, size * 0.04);
+    ctx.fillRect(size * 0.52, size * 0.56, size * 0.04, size * 0.04);
+    ctx.fillRect(size * 0.24, size * 0.52, size * 0.035, size * 0.035);
+  } else if (itemId === 'aged_cheese') {
+    // Cellar Aged Cheese Wedge with dark wax rind & holes
+    ctx.fillStyle = '#ca8a04';
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.16, size * 0.56);
+    ctx.lineTo(size * 0.76, size * 0.26);
+    ctx.lineTo(size * 0.84, size * 0.48);
+    ctx.lineTo(size * 0.84, size * 0.72);
+    ctx.lineTo(size * 0.16, size * 0.72);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Top face highlight
+    ctx.fillStyle = '#eab308';
+    ctx.beginPath();
+    ctx.moveTo(size * 0.16, size * 0.56);
+    ctx.lineTo(size * 0.76, size * 0.26);
+    ctx.lineTo(size * 0.84, size * 0.48);
+    ctx.lineTo(size * 0.16, size * 0.56);
+    ctx.closePath();
+    ctx.fill();
+    // Cheese holes
+    ctx.fillStyle = '#854d0e';
+    ctx.beginPath();
+    ctx.arc(size * 0.4, size * 0.62, size * 0.055, 0, Math.PI * 2);
+    ctx.arc(size * 0.62, size * 0.58, size * 0.045, 0, Math.PI * 2);
+    ctx.arc(size * 0.72, size * 0.65, size * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (itemId === 'torn_cloth') {
+    // Folded frayed linen scrap
+    ctx.fillStyle = '#c8beac';
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.024);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.2, size * 0.28);
+    ctx.lineTo(size * 0.72, size * 0.22);
+    ctx.lineTo(size * 0.8, size * 0.54);
+    ctx.lineTo(size * 0.66, size * 0.78);
+    ctx.lineTo(size * 0.46, size * 0.7);
+    ctx.lineTo(size * 0.24, size * 0.8);
+    ctx.lineTo(size * 0.18, size * 0.52);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Fold crease & thread lines
+    ctx.strokeStyle = '#78716c';
+    ctx.lineWidth = Math.max(1, size * 0.02);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.24, size * 0.48);
+    ctx.lineTo(size * 0.74, size * 0.42);
+    ctx.moveTo(size * 0.34, size * 0.62);
+    ctx.lineTo(size * 0.64, size * 0.58);
+    ctx.stroke();
+  } else if (itemId === 'dry_wood') {
+    // Crossed weathered ash-wood branches/planks
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.024);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.55);
+    ctx.fillStyle = '#574c44';
+    ctx.fillRect(-size * 0.36, -size * 0.08, size * 0.72, size * 0.16);
+    ctx.strokeRect(-size * 0.36, -size * 0.08, size * 0.72, size * 0.16);
+    ctx.rotate(1.05);
+    ctx.fillStyle = '#443c36';
+    ctx.fillRect(-size * 0.32, -size * 0.075, size * 0.64, size * 0.15);
+    ctx.strokeRect(-size * 0.32, -size * 0.075, size * 0.64, size * 0.15);
+    ctx.restore();
+  } else if (itemId === 'scrap_iron') {
+    // Jagged rusted iron plates & bent nails
+    ctx.fillStyle = '#64748b';
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.18, size * 0.48);
+    ctx.lineTo(size * 0.46, size * 0.2);
+    ctx.lineTo(size * 0.8, size * 0.36);
+    ctx.lineTo(size * 0.68, size * 0.74);
+    ctx.lineTo(size * 0.26, size * 0.78);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Rust patina patches & metallic glint
+    ctx.fillStyle = '#7c2d12';
+    ctx.beginPath();
+    ctx.arc(size * 0.42, size * 0.54, size * 0.09, 0, Math.PI * 2);
+    ctx.arc(size * 0.62, size * 0.42, size * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.beginPath();
+    ctx.moveTo(size * 0.28, size * 0.44);
+    ctx.lineTo(size * 0.48, size * 0.26);
+    ctx.stroke();
+  } else if (itemId === 'pine_resin') {
+    // Amber pine resin lump with warm translucent gleam
+    const rGrad = ctx.createRadialGradient(cx - size * 0.06, cy - size * 0.08, size * 0.04, cx, cy, size * 0.32);
+    rGrad.addColorStop(0, '#fef08a');
+    rGrad.addColorStop(0.45, '#d97706');
+    rGrad.addColorStop(1, '#78350f');
+    ctx.fillStyle = rGrad;
+    ctx.strokeStyle = '#0d0a10';
+    ctx.lineWidth = Math.max(1.1, size * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(cx, size * 0.16);
+    ctx.bezierCurveTo(size * 0.78, size * 0.24, size * 0.82, size * 0.66, cx + size * 0.1, size * 0.82);
+    ctx.bezierCurveTo(size * 0.26, size * 0.84, size * 0.16, size * 0.56, size * 0.24, size * 0.36);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Specular highlight
+    ctx.fillStyle = 'rgba(255, 251, 235, 0.7)';
+    ctx.beginPath();
+    ctx.ellipse(cx - size * 0.08, cy - size * 0.1, size * 0.06, size * 0.11, -0.35, 0, Math.PI * 2);
     ctx.fill();
   } else if (itemId === 'bone_saw') {
     // Surgical Bone Saw with Wooden Handle, Steel Frame & Bloodied Teeth
@@ -7342,15 +7605,36 @@ export function getFloorTileTexture(
     ctx.fillRect(0, 44, 48, 4);
 
     if (tileType === 'CRACKED_WALL') {
-      // Glowing structural fissure indicating Brown Vial destructible wall
-      ctx.strokeStyle = '#e88d3a';
-      ctx.lineWidth = 2.5;
+      // Subtle weathered structural fracture (dark fissure + dusty stone rim + small rubble chips)
+      ctx.strokeStyle = 'rgba(107, 101, 94, 0.58)';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(23, 4);
+      ctx.lineTo(27, 17);
+      ctx.lineTo(19, 31);
+      ctx.lineTo(26, 45);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#050507';
+      ctx.lineWidth = 1.65;
       ctx.beginPath();
       ctx.moveTo(22, 3);
-      ctx.lineTo(28, 18);
-      ctx.lineTo(18, 32);
-      ctx.lineTo(27, 46);
+      ctx.lineTo(27, 17);
+      ctx.lineTo(18, 31);
+      ctx.lineTo(25, 45);
+      // Secondary fine hairline branch
+      ctx.moveTo(27, 17);
+      ctx.lineTo(34, 23);
+      ctx.moveTo(18, 31);
+      ctx.lineTo(12, 37);
       ctx.stroke();
+
+      // Tiny fallen rubble chips at base of crack
+      ctx.fillStyle = '#47423d';
+      ctx.fillRect(19, 43, 3, 2);
+      ctx.fillRect(26, 44, 2.5, 2);
+      ctx.fillStyle = '#6b655e';
+      ctx.fillRect(23, 42, 2, 1.8);
     }
 
     tileCache.set(key, canvas);
@@ -9243,7 +9527,7 @@ export function drawInventoryPaperdoll(
   const bg = ctx.createRadialGradient(w * 0.5, h * 0.44, 6, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
   bg.addColorStop(0, spec.isUndeadSummon ? '#20142c' : '#241b1e');
   bg.addColorStop(0.7, '#110d13');
-  bg.addColorStop(1, '#070509');
+  bg.addColorStop(1, '#0d0a10');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
 
@@ -9331,8 +9615,8 @@ export function drawInventoryPaperdoll(
     trim = '#facc15';
   }
 
-  ctx.strokeStyle = '#070509';
-  ctx.lineWidth = Math.max(1.5, 2 * scale);
+  ctx.strokeStyle = '#0d0a10';
+  ctx.lineWidth = Math.max(1.1, 1.2 * scale);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
@@ -9364,7 +9648,7 @@ export function drawInventoryPaperdoll(
     ctx.arc(cx, h * 0.22, 11 * scale, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#070509';
+    ctx.fillStyle = '#0d0a10';
     ctx.beginPath();
     ctx.arc(cx - 4 * scale, h * 0.22, 2.1 * scale, 0, Math.PI * 2);
     ctx.arc(cx + 4 * scale, h * 0.22, 2.1 * scale, 0, Math.PI * 2);
@@ -9418,14 +9702,14 @@ export function drawInventoryPaperdoll(
 
   // Armor trim / sash
   ctx.strokeStyle = trim;
-  ctx.lineWidth = 1.6 * scale;
+  ctx.lineWidth = Math.max(1.1, 1.05 * scale);
   ctx.beginPath();
   ctx.moveTo(cx - 14 * scale, h * 0.32);
   ctx.lineTo(cx, h * 0.45);
   ctx.lineTo(cx + 14 * scale, h * 0.32);
   ctx.stroke();
-  ctx.strokeStyle = '#070509';
-  ctx.lineWidth = Math.max(1.5, 2 * scale);
+  ctx.strokeStyle = '#0d0a10';
+  ctx.lineWidth = Math.max(1.1, 1.2 * scale);
 
   // Left Arm & Shield (or empty if 2-handed / severed)
   if (limbs.leftArm) {
@@ -9466,7 +9750,7 @@ export function drawInventoryPaperdoll(
         ? '#991b1b'
         : isBlessed
         ? '#fef08a'
-        : '#070509';
+        : '#0d0a10';
       ctx.beginPath();
       ctx.moveTo(sx - 11 * scale, sy - 14 * scale);
       ctx.lineTo(sx + 11 * scale, sy - 14 * scale);
@@ -9476,7 +9760,7 @@ export function drawInventoryPaperdoll(
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.strokeStyle = '#070509';
+      ctx.strokeStyle = '#0d0a10';
     }
   } else {
     drawArterialStump(ctx, cx - 21 * scale, h * 0.36, 7 * scale);
@@ -9589,7 +9873,7 @@ export function drawInventoryPaperdoll(
     ctx.ellipse(cx, h * 0.20, 12.5 * scale, 13.5 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#070509';
+    ctx.fillStyle = '#0d0a10';
     ctx.fillRect(cx - 8 * scale, h * 0.18, 16 * scale, 2.8 * scale);
     ctx.fillRect(cx - 1.5 * scale, h * 0.18, 3 * scale, 10 * scale);
   } else if (headId === 'beak_mask') {
@@ -9709,8 +9993,8 @@ export function drawCharacterBustPortrait(
 
   const cx = size * 0.5;
   const s = size / 64;
-  ctx.strokeStyle = '#070509';
-  ctx.lineWidth = Math.max(1.2, 1.6 * s);
+  ctx.strokeStyle = '#0d0a10';
+  ctx.lineWidth = Math.max(1.1, 1.15 * s);
 
   // Shoulders bust
   ctx.fillStyle =
@@ -9798,6 +10082,172 @@ export function drawCharacterBustPortrait(
 
   ctx.restore();
 }
+
+/**
+ * Renders a slain enemy corpse directly on the dungeon floor tile:
+ * - Organic multi-lobed dark crimson blood splatter underneath
+ * - 'intact': actual enemy sprite rotated ~90° lying flat with real severedLimbs
+ * - 'devoured': stripped pale ribcage/bone shards & darker dried blood smear
+ * - 'raised': faint necrotic ash ring & dried bloodstain
+ */
+export function drawFallenEnemyCorpse(
+  ctx: CanvasRenderingContext2D,
+  spriteKey: string,
+  x: number,
+  y: number,
+  tileW: number,
+  tileH: number,
+  severedLimbs: Set<string>,
+  state: 'intact' | 'devoured' | 'raised',
+  isBoss: boolean = false
+): void {
+  const cx = x + tileW * 0.5;
+  const cy = y + tileH * 0.56;
+  const mult = isBoss ? 1.38 : 1;
+
+  // Deterministic pseudo-random offset from spriteKey + tile coords
+  let seed = Math.round(x * 7 + y * 13);
+  for (let i = 0; i < spriteKey.length; i++) {
+    seed = (seed * 31 + spriteKey.charCodeAt(i)) % 997;
+  }
+  const jitter = (n: number) => Math.sin(seed * 0.23 + n * 1.9);
+
+  ctx.save();
+
+  // 1. Organic multi-lobed dark crimson blood splatter underneath
+  const baseColor =
+    state === 'intact'
+      ? 'rgba(108, 12, 18, 0.72)'
+      : state === 'devoured'
+      ? 'rgba(66, 8, 12, 0.76)'
+      : 'rgba(54, 14, 24, 0.56)';
+  const coreColor =
+    state === 'intact'
+      ? 'rgba(138, 18, 24, 0.62)'
+      : state === 'devoured'
+      ? 'rgba(84, 12, 16, 0.68)'
+      : 'rgba(72, 16, 36, 0.45)';
+
+  ctx.fillStyle = baseColor;
+  const lobes: Array<[number, number, number, number, number]> = [
+    [0, 0, tileW * 0.34 * mult, tileH * 0.19 * mult, 0.12],
+    [-tileW * 0.16 * mult, tileH * 0.06 * mult, tileW * 0.22 * mult, tileH * 0.13 * mult, -0.35],
+    [tileW * 0.18 * mult, -tileH * 0.04 * mult, tileW * 0.2 * mult, tileH * 0.12 * mult, 0.4],
+    [tileW * 0.05 * mult, tileH * 0.12 * mult, tileW * 0.18 * mult, tileH * 0.1 * mult, -0.15],
+  ];
+  for (let i = 0; i < lobes.length; i++) {
+    const [ox, oy, rx, ry, rot] = lobes[i];
+    ctx.beginPath();
+    ctx.ellipse(cx + ox + jitter(i) * 2.5, cy + oy + jitter(i + 4) * 2, rx, ry, rot, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = coreColor;
+  ctx.beginPath();
+  ctx.ellipse(cx + jitter(9) * 2, cy + jitter(10) * 1.5, tileW * 0.22 * mult, tileH * 0.12 * mult, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Small scattered droplets around main pool
+  for (let d = 0; d < 5; d++) {
+    const ang = d * 1.28 + jitter(d + 12) * 0.5;
+    const dist = tileW * (0.28 + (d % 3) * 0.07) * mult;
+    const dr = (1.4 + (d % 2) * 0.9) * mult;
+    ctx.beginPath();
+    ctx.ellipse(cx + Math.cos(ang) * dist, cy + Math.sin(ang) * dist * 0.6, dr * 1.25, dr * 0.85, ang, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (state === 'intact') {
+    // 2. Fallen enemy body: actual sprite rotated ~90° lying flat with real severedLimbs
+    ctx.save();
+    // Subtle dark floor contact shadow under fallen body
+    ctx.fillStyle = 'rgba(4, 3, 6, 0.48)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + tileH * 0.04, tileW * 0.36 * mult, tileH * 0.16 * mult, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.translate(cx, cy);
+    const flipDir = seed % 2 === 0 ? 1 : -1;
+    ctx.rotate(flipDir * (Math.PI * 0.48 + jitter(19) * 0.06));
+    ctx.scale(1, 0.78);
+    ctx.globalAlpha = 0.86;
+    if ('filter' in ctx) {
+      ctx.filter = 'brightness(0.72) saturate(0.68)';
+    }
+
+    const sprW = tileW * (isBoss ? 1.18 : 0.86);
+    const sprH = tileH * (isBoss ? 1.18 : 0.86);
+    drawPixelSprite(
+      ctx,
+      spriteKey,
+      -sprW * 0.5,
+      -sprH * 0.5,
+      sprW,
+      sprH,
+      severedLimbs,
+      false,
+      false,
+      false,
+      false
+    );
+    ctx.restore();
+  } else if (state === 'devoured') {
+    // 3. Devoured remains: stripped pale ribcage & scattered bone shards
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.75)';
+    ctx.lineWidth = 1.0;
+
+    // Spine bone
+    ctx.fillStyle = '#d6ccb8';
+    ctx.beginPath();
+    ctx.roundRect(cx - tileW * 0.2 * mult, cy - 2.2 * mult, tileW * 0.4 * mult, 4.4 * mult, 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Curved pale ribs
+    ctx.strokeStyle = '#dfd5c0';
+    ctx.lineWidth = Math.max(1.4, 2 * mult);
+    ctx.lineCap = 'round';
+    for (let r = -2; r <= 2; r++) {
+      const rx = cx + r * tileW * 0.068 * mult;
+      ctx.beginPath();
+      ctx.moveTo(rx, cy - 1.5 * mult);
+      ctx.quadraticCurveTo(rx - 2 * mult, cy - tileH * 0.13 * mult, rx + 3 * mult, cy - tileH * 0.16 * mult);
+      ctx.moveTo(rx, cy + 1.5 * mult);
+      ctx.quadraticCurveTo(rx - 2 * mult, cy + tileH * 0.12 * mult, rx + 3 * mult, cy + tileH * 0.15 * mult);
+      ctx.stroke();
+    }
+
+    // Small cracked skull / bone shards nearby
+    ctx.fillStyle = '#cfc4ae';
+    ctx.strokeStyle = 'rgba(10, 8, 13, 0.75)';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.ellipse(cx + tileW * 0.22 * mult, cy - tileH * 0.02, tileW * 0.08 * mult, tileH * 0.065 * mult, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    // 4. Raised corpse: faint necrotic ash ring & pale residual rune dust
+    ctx.strokeStyle = 'rgba(167, 139, 250, 0.38)';
+    ctx.lineWidth = Math.max(1.2, 1.6 * mult);
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, tileW * 0.32 * mult, tileH * 0.18 * mult, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.32)';
+    for (let a = 0; a < 7; a++) {
+      const ang = (a / 7) * Math.PI * 2;
+      const ax = cx + Math.cos(ang) * tileW * 0.18 * mult;
+      const ay = cy + Math.sin(ang) * tileH * 0.1 * mult;
+      ctx.beginPath();
+      ctx.arc(ax, ay, (1.5 + (a % 2) * 0.8) * mult, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+}
+
 
 
 

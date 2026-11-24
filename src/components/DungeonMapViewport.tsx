@@ -12,6 +12,7 @@ import {
 } from '../game/mapGen';
 export { hasLineOfSight, isDetectedByEnemy } from '../game/mapGen';
 import {
+  drawFallenEnemyCorpse,
   drawMultiTileLandmark,
   drawNpcSetDressing,
   drawPixelSprite,
@@ -538,13 +539,14 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
           const torchRatio = Math.max(0, Math.min(1, torchTimer / torchMax));
           const isTorchLit = torchTimer > 0;
           const isTorchLow = isTorchLit && torchRatio < 0.3;
-          const baseIndoorRadius = room.floor === 3 ? 6.8 : 8.6;
+          const easySightMult = player.difficulty === 'easy' ? 0.82 : 1;
+          const baseIndoorRadius = (room.floor === 3 ? 6.8 : 8.6) * easySightMult;
           const sightRadius = room.isExterior
             ? 11
             : !isTorchLit
             ? 1.85
             : isTorchLow
-            ? 2.3 + (torchRatio / 0.3) * (baseIndoorRadius - 2.3)
+            ? 2.1 + (torchRatio / 0.3) * (baseIndoorRadius - 2.1)
             : baseIndoorRadius;
 
           const secretHiddenSet = new Set<string>(
@@ -685,21 +687,37 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
             }
             const px = corpseInst.x * tileW;
             const py = corpseInst.y * tileH;
-            ctx.fillStyle = 'rgba(135, 20, 20, 0.82)';
-            ctx.beginPath();
-            ctx.ellipse(px + tileW / 2, py + tileH * 0.56, 19, 11, 0, 0, Math.PI * 2);
-            ctx.fill();
+            const corpseTpl = CONFIG.ENEMIES[corpseInst.templateId] || CONFIG.ENEMIES.fanatic_zealot;
+            const corpseState: 'intact' | 'devoured' | 'raised' = corpseInst.corpseRaised
+              ? 'raised'
+              : corpseInst.corpseDevoured
+              ? 'devoured'
+              : 'intact';
+            drawFallenEnemyCorpse(
+              ctx,
+              corpseTpl.spriteKey,
+              px,
+              py,
+              tileW,
+              tileH,
+              new Set(corpseInst.severedLimbs || []),
+              corpseState,
+              Boolean(corpseInst.isFloorBoss)
+            );
             const isNearPlayer =
               Math.abs(corpseInst.x - playerPos.x) + Math.abs(corpseInst.y - playerPos.y) <= 1;
             const canRaise =
               (player.skillLevels?.necromancy || 0) >= 1 &&
               !corpseInst.corpseRaised &&
+              !corpseInst.corpseDevoured &&
               player.party.length < 3;
-            if (!isNearPlayer && (!corpseInst.corpseDevoured || !corpseInst.corpseLooted || canRaise)) {
+            const canDevour = (player.affinities?.demonicPact || 0) >= 1 && !corpseInst.corpseDevoured;
+            const canDissect = (player.inventory.scroll_field_dissection || 0) > 0 && !corpseInst.corpseDevoured;
+            if (!isNearPlayer && (!corpseInst.corpseLooted || canRaise || canDevour || canDissect)) {
               ctx.fillStyle = !corpseInst.corpseLooted || canRaise ? '#fde047' : '#fca5a5';
               ctx.font = 'bold 9px "Noto Serif", serif';
               ctx.textAlign = 'center';
-              ctx.fillText('Xác Quái', px + tileW / 2, py + tileH * 0.56 + 3);
+              ctx.fillText('Xác Quái', px + tileW / 2, py + tileH * 0.92);
             }
           }
 
@@ -1336,14 +1354,37 @@ export const DungeonMapViewport: React.FC<DungeonMapViewportProps> = ({
                 c.x === ix &&
                 c.y === iy &&
                 (!c.corpseLooted ||
-                  !c.corpseDevoured ||
-                  ((player.skillLevels?.necromancy || 0) >= 1 && !c.corpseRaised && player.party.length < 3))
+                  (!c.corpseDevoured &&
+                    ((player.affinities?.demonicPact || 0) >= 1 ||
+                      (player.inventory.scroll_field_dissection || 0) > 0)) ||
+                  ((player.skillLevels?.necromancy || 0) >= 1 &&
+                    !c.corpseRaised &&
+                    !c.corpseDevoured &&
+                    player.party.length < 3))
             );
 
             let promptLabel: string | null = null;
 
             if (interactableCorpse) {
-              promptLabel = !interactableCorpse.corpseLooted ? '[F] Lục Xác Quái' : '[F] Xác Quái';
+              const canRaiseC =
+                (player.skillLevels?.necromancy || 0) >= 1 &&
+                !interactableCorpse.corpseRaised &&
+                !interactableCorpse.corpseDevoured &&
+                player.party.length < 3;
+              const canDissectC =
+                (player.inventory.scroll_field_dissection || 0) > 0 &&
+                !interactableCorpse.corpseDevoured;
+              const canDevourC =
+                (player.affinities?.demonicPact || 0) >= 1 && !interactableCorpse.corpseDevoured;
+              promptLabel = !interactableCorpse.corpseLooted
+                ? '[F] Lục Xác Quái'
+                : canRaiseC
+                ? '[F] Chiêu Hồn Xác'
+                : canDissectC
+                ? '[F] Giải Phẫu Xác'
+                : canDevourC
+                ? '[F] Nuốt Chửng (Huyết Quỷ)'
+                : '[F] Xác Quái';
             }
             else if (t === TILE.CRATE && !room.lootedCoords.includes(cKey)) promptLabel = '[F] Lục Thùng';
             else if (t === TILE.HERB && !room.lootedCoords.includes(cKey)) {

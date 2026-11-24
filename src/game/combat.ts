@@ -1,4 +1,4 @@
-import { CONFIG, EnemyTemplate, LimbConfig, SkillDef, WeaponCategory } from './config';
+import { CONFIG, DifficultyMode, EnemyTemplate, LimbConfig, SkillDef, WeaponCategory } from './config';
 import { MapEnemyInstance } from './mapGen';
 import { CHARACTER_INTRO_STEPS, IntroChoiceOption } from './narrative';
 import { SeededRNG } from './prng';
@@ -525,6 +525,7 @@ export function canPlayerEquipShield(
 
 export interface PlayerState {
   classId: string;
+  difficulty?: DifficultyMode;
   name: string;
   title: string;
   hp: number;
@@ -625,7 +626,15 @@ export interface PlayerState {
   };
 }
 
-export function createInitialPlayer(classId: string, customName?: string): PlayerState {
+export function getIncomingDamageMultiplier(player: PlayerState): number {
+  return player.difficulty === 'easy' ? 0.8 : 1;
+}
+
+export function createInitialPlayer(
+  classId: string,
+  customName?: string,
+  difficulty: DifficultyMode = 'normal'
+): PlayerState {
   const cls = CONFIG.CLASSES.find((c) => c.id === classId) || CONFIG.CLASSES[0];
   const inv: Record<string, number> = {
     ...cls.startingItems,
@@ -672,6 +681,7 @@ export function createInitialPlayer(classId: string, customName?: string): Playe
 
   return {
     classId: cls.id,
+    difficulty,
     name: trimmedName && trimmedName.length > 0 ? trimmedName : cls.name,
     title: cls.title,
     hp: classHp,
@@ -3990,7 +4000,8 @@ function finishCombatRoundWithEnemyTurn(
 
       // 3. Cánh Tay Nghi Lễ Phải (Lư Hương Huyết Hỏa): Sương Mù Chướng Khí
       if (censorRight) {
-        const magDmg = rng.int(12, 18);
+        const incomingMult = getIncomingDamageMultiplier(player);
+        const magDmg = Math.max(1, Math.round(rng.int(12, 18) * incomingMult));
         player.hp = Math.max(0, player.hp - magDmg);
         player.mind = Math.max(0, player.mind - 12);
         if (player.statuses.statusImmunityTurns <= 0 && (player.equippedHead !== 'beak_mask' || rng.chance(0.4))) {
@@ -4016,7 +4027,8 @@ function finishCombatRoundWithEnemyTurn(
       if (tendrils) {
         const aliveAllies = player.party.filter((a) => a.hp > 0);
         const pureTanks = aliveAllies.filter((a) => isPureTankSummon(a));
-        const drainDmg = rng.int(14, 22);
+        const incomingMult = getIncomingDamageMultiplier(player);
+        const drainDmg = Math.max(1, Math.round(rng.int(14, 22) * incomingMult));
         const targetPool = pureTanks.length > 0 ? pureTanks : aliveAllies;
         if (targetPool.length > 0 && rng.chance(pureTanks.length > 0 ? 0.8 : 0.65)) {
           const victimAlly = rng.pick(targetPool);
@@ -4039,15 +4051,16 @@ function finishCombatRoundWithEnemyTurn(
 
       // 5. Đầu Đội Vương Miện Gai Sắt: Sắc Lệnh Bạo Chúa (nếu có thành viên Lý Trí < 50)
       if (vaelisHead) {
+        const incomingMult = getIncomingDamageMultiplier(player);
         const lowMindAlly = player.party.find((a) => a.hp > 0 && a.mind < 50);
         if (lowMindAlly) {
-          const friendlyDmg = rng.int(12, 20);
+          const friendlyDmg = Math.max(1, Math.round(rng.int(12, 20) * incomingMult));
           player.hp = Math.max(0, player.hp - friendlyDmg);
           lastTakenDmg += friendlyDmg;
           logs.push(`[Sắc Lệnh Bạo Chúa] từ Vương Miện Gai Sắt khống chế Lý Trí rạn vỡ của [${lowMindAlly.name}], ép đồng đội vung vũ khí chém bạn (-${friendlyDmg} Sinh Lực)!`);
         } else if (player.mind < 50 && player.party.some((a) => a.hp > 0)) {
           const targetAlly = player.party.find((a) => a.hp > 0)!;
-          const friendlyDmg = rng.int(14, 22);
+          const friendlyDmg = Math.max(1, Math.round(rng.int(14, 22) * incomingMult));
           targetAlly.hp = Math.max(0, targetAlly.hp - friendlyDmg);
           logs.push(`[Sắc Lệnh Bạo Chúa] bóp nghẹt Lý Trí suy sụp của bạn, ép lưỡi kiếm hướng về phía [${targetAlly.name}] (-${friendlyDmg} Sinh Lực)!`);
           if (targetAlly.hp <= 0) {
@@ -4171,12 +4184,13 @@ function finishCombatRoundWithEnemyTurn(
       if (tpl.id === 'void_chimera') {
         const snakeHead = enemy.limbs.find((l) => l.id === 'snake_tail_head');
         if (snakeHead && snakeHead.hp > 0) {
-          player.hp = Math.max(0, player.hp - 10);
-          lastTakenDmg += 10;
+          const spitDmg = Math.max(1, Math.round(10 * getIncomingDamageMultiplier(player)));
+          player.hp = Math.max(0, player.hp - spitDmg);
+          lastTakenDmg += spitDmg;
           if (player.statuses.statusImmunityTurns <= 0 && (player.equippedHead !== 'beak_mask' || rng.chance(0.4))) {
             player.statuses.poisoned = true;
           }
-          logs.push('Đầu Rắn ở đuôi Bạch Hổ phun mưa nọc độc gây 10 sát thương và Nhiễm Độc!');
+          logs.push(`Đầu Rắn ở đuôi Bạch Hổ phun mưa nọc độc gây ${spitDmg} sát thương và Nhiễm Độc!`);
         }
       }
 
@@ -4395,10 +4409,11 @@ export function resolveCombatCoinFlipOutcome(
     player.mind = Math.max(0, player.mind - 15);
     logs.push(`SẤP MẶT ĐỊNH MỆNH! Vết thương toác máu chảy không ngừng (-${actualTaken} Sinh Lực, -15 Lý Trí, Chảy Máu Nặng)!`);
   } else {
-    player.hp = Math.max(0, player.hp - scaledDmg);
-    actualTaken = scaledDmg;
+    const execDmg = Math.max(1, Math.round(scaledDmg * getIncomingDamageMultiplier(player)));
+    player.hp = Math.max(0, player.hp - execDmg);
+    actualTaken = execDmg;
     player.mind = Math.max(0, player.mind - 12);
-    logs.push(`SẤP MẶT ĐỊNH MỆNH! Đòn xử tử xuyên thẳng qua giáp trụ (-${scaledDmg} Sinh Lực, -12 Lý Trí)!`);
+    logs.push(`SẤP MẶT ĐỊNH MỆNH! Đòn xử tử xuyên thẳng qua giáp trụ (-${execDmg} Sinh Lực, -12 Lý Trí)!`);
   }
 
   // Permadeath: immediately remove any fallen companion (hp <= 0) from player.party
@@ -5576,7 +5591,10 @@ function applyDamageToPlayer(
       }
     }
 
-    const allyDmg = Math.max(1, Math.round(rawDmg * (1 - allyRed)));
+    const allyDmg = Math.max(
+      1,
+      Math.round(rawDmg * (1 - allyRed) * getIncomingDamageMultiplier(player))
+    );
     ally.hp = Math.max(0, ally.hp - allyDmg);
     const wasProtectedFromSever = ally.guarding || (ally.divineAegisTurns || 0) > 0 || Boolean(allyShield?.preventLimbLoss && ally.guarding);
     logs.push(
@@ -5642,7 +5660,10 @@ function applyDamageToPlayer(
     reduction = Math.min(0.9, reduction + 0.2);
   }
 
-  const finalDmg = Math.max(1, Math.round(rawDmg * (1 - reduction)));
+  const finalDmg = Math.max(
+    1,
+    Math.round(rawDmg * (1 - reduction) * getIncomingDamageMultiplier(player))
+  );
   player.hp = Math.max(0, player.hp - finalDmg);
   logs.push(`${enemy.customName || tpl.name} gây ${finalDmg} sát thương lên bạn (Sinh Lực còn ${player.hp}/${player.maxHp}).`);
 
@@ -5820,6 +5841,13 @@ function handleEnemyDeath(
  * Devour Corpse (`Nuốt Chửng`) to restore Hunger & HP at the cost of +20 Corruption and locking Holy Mother magic
  */
 export function devourEnemyCorpse(player: PlayerState, enemy: MapEnemyInstance): { success: boolean; message: string } {
+  if ((player.affinities?.demonicPact || 0) < 1) {
+    return {
+      success: false,
+      message:
+        'Bản năng phàm trần khiến ngươi buồn nôn trước thứ thịt ô uế này — chỉ kẻ đã ký khế ước [Huyết Quỷ] mới có thể Nuốt Chửng xác quái!',
+    };
+  }
   if (!enemy.defeated || enemy.corpseDevoured) {
     return { success: false, message: 'Không có xác quái vật nào có thể Nuốt Chửng!' };
   }
@@ -5832,8 +5860,60 @@ export function devourEnemyCorpse(player: PlayerState, enemy: MapEnemyInstance):
   return {
     success: true,
     message:
-      'Máu đen đặc quánh ngấm vào huyết quản, cơn đói dịu xuống nhưng tiếng thì thầm của Thánh Mẫu bỗng im bặt.',
+      'Theo Khế Ước Huyết Quỷ, máu đen đặc quánh ngấm vào huyết quản, cơn đói dịu xuống nhưng tiếng thì thầm của Thánh Mẫu bỗng im bặt.',
   };
+}
+
+/**
+ * Overworld 0-Mind Suicide / Despair Check:
+ * - When mind is critically low (1..8), occasionally emits a dark diegetic whisper warning without triggering death.
+ * - When mind <= 0 on the overworld map, rolls against 14% chance per step (halved to 7% if `panicImmune`),
+ *   setting `player.hp = 0` and returning the dedicated `MIND_ZERO_SUICIDE` ending when triggered.
+ */
+export function evaluateZeroMindStepDespair(
+  player: PlayerState,
+  roll01: number
+): {
+  triggered: boolean;
+  warningMessage?: string;
+  ending?: { id: string; title: string; subtitle: string; epilogue: string };
+} {
+  if (player.mind > 0 && player.mind <= 8) {
+    if (roll01 < 0.25) {
+      return {
+        triggered: false,
+        warningMessage:
+          'Tiếng thì thầm sắc lạnh vang vọng sau gáy... Lý Trí đang cạn kiệt dần, hãy lập tức trấn an tinh thần trước khi bóng tối nuốt chửng ngươi!',
+      };
+    }
+    return { triggered: false };
+  }
+
+  if (player.mind <= 0) {
+    const despairChance = player.panicImmune ? 0.07 : 0.14;
+    if (roll01 < despairChance) {
+      player.hp = 0;
+      return {
+        triggered: true,
+        ending: {
+          id: 'MIND_ZERO_SUICIDE',
+          title: 'TÂM TRÍ TAN VỠ — TỰ KẾT LIỄU TRONG BÓNG TỐI',
+          subtitle: 'Lý Trí Cạn Kiệt • Tiếng Thì Thầm Nuốt Chửng Linh Hồn',
+          epilogue:
+            'Giữa hành lang câm lặng của Đại Giáo Đường Goethe, những giọng nói vô hình không còn gào thét từ bóng tối nữa — chúng vang lên từ chính bên trong hộp sọ ngươi. Đôi tay run rẩy buông rơi ngọn đuốc, rồi lạnh lùng hướng mũi thép về phía cổ họng mình để tìm chút tĩnh lặng cuối cùng. Khi máu ấm loang trên nền đá rêu phong, nỗi kinh hoàng cuối cùng cũng thôi bám riết.',
+        },
+      };
+    }
+    if (roll01 < despairChance + 0.22) {
+      return {
+        triggered: false,
+        warningMessage:
+          'Lý Trí đã chạm đáy (0)! Đôi tay ngươi run bần bật theo tiếng gọi tự hủy từ bóng tối — mỗi bước đi lúc này đều có thể là bước cuối cùng!',
+      };
+    }
+  }
+
+  return { triggered: false };
 }
 
 /**
